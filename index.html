@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bookshelf Search – Word Highlights (Enhanced OCR)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Tesseract.js v5 via CDN -->
+  <script src="https://unpkg.com/tesseract.js@v5.0.0/dist/tesseract.min.js"></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: #f5f5f5;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 1.4rem;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+      align-items: center;
+    }
+    label {
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    input[type="file"] {
+      font-size: 0.9rem;
+    }
+    button {
+      padding: 6px 12px;
+      font-size: 0.9rem;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background: #fff;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    #status {
+      font-size: 0.85rem;
+      color: #555;
+      margin-top: 4px;
+    }
+
+    .layout {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    @media (min-width: 900px) {
+      .layout {
+        flex-direction: row;
+        align-items: flex-start;
+      }
+    }
+
+    .image-wrapper {
+      position: relative;
+      flex: 2;
+      border: 1px solid #ddd;
+      background: #eee;
+      min-height: 200px;
+      overflow: auto;
+    }
+    #shelfImage {
+      display: block;
+      max-width: none; /* natural size for easier coords */
+    }
+
+    /* Yellow rectangular highlight */
+    .highlight-rect {
+      position: absolute;
+      border: 3px solid rgba(255, 255, 0, 0.95);
+      background: rgba(255, 255, 0, 0.18);
+      pointer-events: none;
+      box-sizing: border-box;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.45);
+    }
+
+    /* Big yellow circle around the word */
+    .highlight-circle {
+      position: absolute;
+      border: 4px solid rgba(255, 255, 0, 0.95);
+      border-radius: 50%;
+      pointer-events: none;
+      box-shadow: 0 0 14px rgba(0, 0, 0, 0.75);
+    }
+
+    .sidebar {
+      flex: 1;
+      min-width: 260px;
+      max-width: 360px;
+      padding: 8px;
+      border: 1px solid #ddd;
+      background: #fff;
+      border-radius: 4px;
+    }
+
+    .search-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .search-row input[type="text"] {
+      flex: 1;
+      padding: 4px 6px;
+      font-size: 0.9rem;
+      border-radius: 4px;
+      border: 1px solid #bbb;
+    }
+
+    .results {
+      max-height: 280px;
+      overflow: auto;
+      font-size: 0.85rem;
+    }
+    .result-item {
+      padding: 4px 0;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+    }
+    .result-item:hover {
+      background: #f0f0f0;
+    }
+    .result-item strong {
+      font-weight: 600;
+    }
+    .small {
+      font-size: 0.8rem;
+      color: #777;
+    }
+  </style>
+</head>
+<body>
+  <h1>Bookshelf Search – Word Highlights (Enhanced OCR)</h1>
+
+  <div class="controls">
+    <div>
+      <label for="imageInput">1. Upload a bookshelf photo (unrotated)</label><br />
+      <input id="imageInput" type="file" accept="image/*" />
+    </div>
+    <div>
+      <button id="scanButton" disabled>2. Scan image (OCR: 0°, +90°, −90°)</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div class="layout">
+    <div class="image-wrapper" id="imageWrapper">
+      <img id="shelfImage" alt="Bookshelf" />
+    </div>
+
+    <div class="sidebar">
+      <div class="search-row">
+        <input id="searchInput" type="text" placeholder="3. Search (e.g. dada, video, surrealist)" />
+        <button id="searchButton" disabled>Search</button>
+      </div>
+
+      <div class="small" id="ocrSummary">No OCR data yet.</div>
+
+      <details class="small" style="margin-top:4px; max-height:120px; overflow:auto;">
+        <summary>Debug: sample recognized words</summary>
+        <div id="debugWords"></div>
+      </details>
+
+      <hr />
+      <div class="results" id="results"></div>
+    </div>
+  </div>
+
+  <script>
+    const imageInput = document.getElementById('imageInput');
+    const shelfImage = document.getElementById('shelfImage');
+    const imageWrapper = document.getElementById('imageWrapper');
+    const scanButton = document.getElementById('scanButton');
+    const searchInput = document.getElementById('searchInput');
+    const searchButton = document.getElementById('searchButton');
+    const resultsEl = document.getElementById('results');
+    const statusEl = document.getElementById('status');
+    const ocrSummaryEl = document.getElementById('ocrSummary');
+    const debugWordsEl = document.getElementById('debugWords');
+
+    let ocrWords = [];  // {text, bbox {x0,y0,x1,y1} in original coords, confidence, source}
+    let currentImageURL = null;
+
+    // ---------- Load image ----------
+    imageInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (currentImageURL) URL.revokeObjectURL(currentImageURL);
+      currentImageURL = URL.createObjectURL(file);
+
+      // ensure onload handler is set before src
+      shelfImage.onload = () => {
+        scanButton.disabled = false;
+      };
+      shelfImage.src = currentImageURL;
+
+      ocrWords = [];
+      clearHighlights();
+      resultsEl.innerHTML = '';
+      debugWordsEl.textContent = '';
+      ocrSummaryEl.textContent = 'Image loaded. Run OCR (0°, +90°, −90°).';
+      searchButton.disabled = true;
+      scanButton.disabled = true; // re-enabled when image loads
+      statusEl.textContent = '';
+    });
+
+    // ---------- Image enhancement ----------
+    function enhanceCanvas(canvas) {
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      const contrast = 1.2; // 1.0 = no change; tweak as desired
+      const middle = 128;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+
+        // luminance grayscale
+        let v = 0.299 * r + 0.587 * g + 0.114 * b;
+
+        // simple contrast around mid-grey
+        v = (v - middle) * contrast + middle;
+        if (v < 0) v = 0;
+        if (v > 255) v = 255;
+
+        data[i] = data[i + 1] = data[i + 2] = v;
+        // alpha (data[i+3]) unchanged
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    // ---------- Canvas + transform helpers ----------
+    function createCanvasForOrientation(img, orientation) {
+      const W = img.naturalWidth;
+      const H = img.naturalHeight;
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      if (orientation === 'original') {
+        canvas.width = W;
+        canvas.height = H;
+        ctx.drawImage(img, 0, 0);
+        enhanceCanvas(canvas);
+      } else if (orientation === 'cw') {
+        canvas.width = H;
+        canvas.height = W;
+        ctx.translate(H, 0);
+        ctx.rotate(Math.PI / 2);
+        ctx.drawImage(img, 0, 0);
+        enhanceCanvas(canvas);
+      } else if (orientation === 'ccw') {
+        canvas.width = H;
+        canvas.height = W;
+        ctx.translate(0, W);
+        ctx.rotate(-Math.PI / 2);
+        ctx.drawImage(img, 0, 0);
+        enhanceCanvas(canvas);
+      }
+
+      return canvas;
+    }
+
+    function transformBboxFromCWToOriginal(bbox, origW, origH) {
+      const pts = [
+        { x: bbox.x0, y: bbox.y0 },
+        { x: bbox.x1, y: bbox.y0 },
+        { x: bbox.x0, y: bbox.y1 },
+        { x: bbox.x1, y: bbox.y1 },
+      ];
+      const mapped = pts.map((p) => {
+        const xo = p.y;
+        const yo = origH - 1 - p.x;
+        return { x: xo, y: yo };
+      });
+      const xs = mapped.map((p) => p.x);
+      const ys = mapped.map((p) => p.y);
+      return {
+        x0: clamp(Math.min(...xs), 0, origW),
+        y0: clamp(Math.min(...ys), 0, origH),
+        x1: clamp(Math.max(...xs), 0, origW),
+        y1: clamp(Math.max(...ys), 0, origH),
+      };
+    }
+
+    function transformBboxFromCCWToOriginal(bbox, origW, origH) {
+      const pts = [
+        { x: bbox.x0, y: bbox.y0 },
+        { x: bbox.x1, y: bbox.y0 },
+        { x: bbox.x0, y: bbox.y1 },
+        { x: bbox.x1, y: bbox.y1 },
+      ];
+      const mapped = pts.map((p) => {
+        const xo = origW - 1 - p.y;
+        const yo = p.x;
+        return { x: xo, y: yo };
+      });
+      const xs = mapped.map((p) => p.x);
+      const ys = mapped.map((p) => p.y);
+      return {
+        x0: clamp(Math.min(...xs), 0, origW),
+        y0: clamp(Math.min(...ys), 0, origH),
+        x1: clamp(Math.max(...xs), 0, origW),
+        y1: clamp(Math.max(...ys), 0, origH),
+      };
+    }
+
+    function clamp(v, min, max) {
+      return Math.min(Math.max(v, min), max);
+    }
+
+    // ---------- OCR 0° / +90° / −90° with psm 6 ----------
+    scanButton.addEventListener('click', async () => {
+      if (!shelfImage.src || !shelfImage.complete) return;
+
+      scanButton.disabled = true;
+      searchButton.disabled = true;
+      statusEl.textContent = 'Preparing OCR (0°, +90°, −90°)...';
+      clearHighlights();
+      resultsEl.innerHTML = '';
+      debugWordsEl.textContent = '';
+      ocrWords = [];
+
+      const origW = shelfImage.naturalWidth;
+      const origH = shelfImage.naturalHeight;
+
+      try {
+        const orientations = ['original', 'cw', 'ccw'];
+        let totalWords = 0;
+        let totalConf = 0;
+
+        for (const orientation of orientations) {
+          statusEl.textContent = `Running OCR for ${orientation}...`;
+          const canvas = createCanvasForOrientation(shelfImage, orientation);
+
+          const { data } = await Tesseract.recognize(
+            canvas,
+            'eng',
+            {
+              logger: (m) => {
+                if (m.status === 'recognizing text') {
+                  statusEl.textContent =
+                    `Recognizing text (${orientation}): ${(m.progress * 100).toFixed(1)}%`;
+                } else {
+                  statusEl.textContent = m.status;
+                }
+              },
+              // Page segmentation: 6 = Assume a single uniform block of text
+              tessedit_pageseg_mode: '6'
+            }
+          );
+
+          const words = (data.words || [])
+            .filter((w) => w.text && w.text.trim().length > 0)
+            .map((w) => {
+              let bboxOrig;
+              if (orientation === 'original') {
+                bboxOrig = w.bbox;
+              } else if (orientation === 'cw') {
+                bboxOrig = transformBboxFromCWToOriginal(w.bbox, origW, origH);
+              } else {
+                bboxOrig = transformBboxFromCCWToOriginal(w.bbox, origW, origH);
+              }
+              return {
+                text: w.text.trim(),
+                bbox: bboxOrig,
+                confidence: w.confidence,
+                source: orientation,
+              };
+            });
+
+          words.forEach((w) => {
+            totalWords += 1;
+            totalConf += (w.confidence || 0);
+            ocrWords.push(w);
+          });
+        }
+
+        const avgConf = totalWords > 0 ? (totalConf / totalWords).toFixed(1) : '0';
+
+        ocrSummaryEl.textContent =
+          `Combined ${totalWords} words from 3 orientations (avg conf ${avgConf}). ` +
+          `Search for any recognized word fragment.`;
+
+        const sample = ocrWords.slice(0, 80).map(
+          (w) => `${w.text} (${w.source})`
+        );
+        debugWordsEl.textContent = sample.join(' | ');
+
+        statusEl.textContent = 'OCR complete.';
+        searchButton.disabled = false;
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'Error during OCR – check console.';
+        scanButton.disabled = false;
+      }
+    });
+
+    // ---------- Search (word-level) ----------
+    searchButton.addEventListener('click', handleSearch);
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleSearch();
+    });
+
+    function handleSearch() {
+      const query = searchInput.value.trim().toLowerCase();
+      clearHighlights();
+      resultsEl.innerHTML = '';
+
+      if (!query) return;
+      if (!ocrWords.length) {
+        resultsEl.innerHTML = '<div>No OCR data yet. Scan the image first.</div>';
+        return;
+      }
+
+      const matches = [];
+      ocrWords.forEach((w, idx) => {
+        if (!w.text) return;
+        if (w.text.toLowerCase().includes(query)) {
+          matches.push({ index: idx, word: w });
+        }
+      });
+
+      if (!matches.length) {
+        resultsEl.innerHTML =
+          `<div>No matches for "<strong>${escapeHTML(query)}</strong>".</div>`;
+        return;
+      }
+
+      // Draw highlight on each match
+      matches.forEach(({ word }) => addWordHighlight(word.bbox));
+
+      // Results list
+      resultsEl.innerHTML = matches.map(({ index, word }) => `
+        <div class="result-item" data-index="${index}">
+          <strong>${escapeHTML(word.text)}</strong>
+          <span class="small"> (conf: ${word.confidence.toFixed(1)}, ${word.source})</span>
+        </div>
+      `).join('');
+
+      // Click to center on that word
+      resultsEl.querySelectorAll('.result-item').forEach((el) => {
+        el.addEventListener('click', () => {
+          const idx = parseInt(el.getAttribute('data-index'), 10);
+          const word = ocrWords[idx];
+          if (!word) return;
+          centerOnBBox(word.bbox);
+        });
+      });
+    }
+
+    // ---------- Highlight helpers (rect + circle) ----------
+    function clearHighlights() {
+      const rects = imageWrapper.querySelectorAll('.highlight-rect');
+      const circles = imageWrapper.querySelectorAll('.highlight-circle');
+      rects.forEach((el) => el.remove());
+      circles.forEach((el) => el.remove());
+    }
+
+    function addWordHighlight(bbox) {
+      if (!bbox) return;
+      const { x0, y0, x1, y1 } = bbox;
+
+      const rect = document.createElement('div');
+      rect.className = 'highlight-rect';
+      rect.style.left = `${x0}px`;
+      rect.style.top = `${y0}px`;
+      rect.style.width = `${x1 - x0}px`;
+      rect.style.height = `${y1 - y0}px`;
+      imageWrapper.appendChild(rect);
+
+      const cx = (x0 + x1) / 2;
+      const cy = (y0 + y1) / 2;
+      const halfW = (x1 - x0) / 2;
+      const halfH = (y1 - y0) / 2;
+      const radius = Math.max(halfW, halfH) * 1.6; // slightly bigger than the word box
+
+      const circle = document.createElement('div');
+      circle.className = 'highlight-circle';
+      circle.style.left = `${cx - radius}px`;
+      circle.style.top = `${cy - radius}px`;
+      circle.style.width = `${radius * 2}px`;
+      circle.style.height = `${radius * 2}px`;
+      imageWrapper.appendChild(circle);
+    }
+
+    function centerOnBBox(bbox) {
+      if (!bbox) return;
+      const { x0, y0, x1, y1 } = bbox;
+      const cx = (x0 + x1) / 2;
+      const cy = (y0 + y1) / 2;
+      const targetLeft = cx - imageWrapper.clientWidth / 2;
+      const targetTop = cy - imageWrapper.clientHeight / 2;
+
+      imageWrapper.scrollTo({
+        left: Math.max(0, targetLeft),
+        top: Math.max(0, targetTop),
+        behavior: 'smooth',
+      });
+    }
+
+    function escapeHTML(str) {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>
