@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Bookshelf Search – Word Highlights (Enhanced OCR)</title>
+  <title>Bookshelf Search – Single Image View</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <!-- Tesseract.js v5 via CDN -->
   <script src="https://unpkg.com/tesseract.js@v5.0.0/dist/tesseract.min.js"></script>
@@ -62,35 +62,45 @@
     }
 
     .image-wrapper {
-      position: relative;
       flex: 2;
-      border: 1px solid #ddd;
-      background: #eee;
-      min-height: 200px;
-      overflow: auto;
+      border: 3px solid #d4ff32;
+      background: #000;
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      max-height: 80vh;
+      overflow: hidden;
+    }
+    .image-inner {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+      max-height: 100%;
     }
     #shelfImage {
       display: block;
-      max-width: none; /* natural size for easier coords */
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      width: auto;
     }
 
-    /* Yellow rectangular highlight */
     .highlight-rect {
       position: absolute;
-      border: 3px solid rgba(255, 255, 0, 0.95);
-      background: rgba(255, 255, 0, 0.18);
-      pointer-events: none;
-      box-sizing: border-box;
+      border: 3px solid rgba(212, 255, 50, 0.95);
+      background: rgba(212, 255, 50, 0.18);
       box-shadow: 0 0 10px rgba(0, 0, 0, 0.45);
+      pointer-events: none;
+      display: none;
     }
-
-    /* Big yellow circle around the word */
     .highlight-circle {
       position: absolute;
-      border: 4px solid rgba(255, 255, 0, 0.95);
+      border: 4px solid rgba(212, 255, 50, 0.95);
       border-radius: 50%;
-      pointer-events: none;
       box-shadow: 0 0 14px rgba(0, 0, 0, 0.75);
+      pointer-events: none;
+      display: none;
     }
 
     .sidebar {
@@ -129,6 +139,9 @@
     .result-item:hover {
       background: #f0f0f0;
     }
+    .result-item.active {
+      background: #f9ffcf;
+    }
     .result-item strong {
       font-weight: 600;
     }
@@ -139,7 +152,7 @@
   </style>
 </head>
 <body>
-  <h1>Bookshelf Search – Word Highlights (Enhanced OCR)</h1>
+  <h1>Bookshelf Search – Single Image View</h1>
 
   <div class="controls">
     <div>
@@ -153,8 +166,12 @@
   </div>
 
   <div class="layout">
-    <div class="image-wrapper" id="imageWrapper">
-      <img id="shelfImage" alt="Bookshelf" />
+    <div class="image-wrapper">
+      <div class="image-inner">
+        <img id="shelfImage" alt="Bookshelf" />
+        <div id="highlightRect" class="highlight-rect"></div>
+        <div id="highlightCircle" class="highlight-circle"></div>
+      </div>
     </div>
 
     <div class="sidebar">
@@ -178,7 +195,8 @@
   <script>
     const imageInput = document.getElementById('imageInput');
     const shelfImage = document.getElementById('shelfImage');
-    const imageWrapper = document.getElementById('imageWrapper');
+    const highlightRect = document.getElementById('highlightRect');
+    const highlightCircle = document.getElementById('highlightCircle');
     const scanButton = document.getElementById('scanButton');
     const searchInput = document.getElementById('searchInput');
     const searchButton = document.getElementById('searchButton');
@@ -187,8 +205,9 @@
     const ocrSummaryEl = document.getElementById('ocrSummary');
     const debugWordsEl = document.getElementById('debugWords');
 
-    let ocrWords = [];  // {text, bbox {x0,y0,x1,y1} in original coords, confidence, source}
+    let ocrWords = [];  // {text, bbox {x0,y0,x1,y1}, confidence, source}
     let currentImageURL = null;
+    let activeBBox = null; // last highlighted bbox in original image coords
 
     // ---------- Load image ----------
     imageInput.addEventListener('change', (e) => {
@@ -198,14 +217,15 @@
       if (currentImageURL) URL.revokeObjectURL(currentImageURL);
       currentImageURL = URL.createObjectURL(file);
 
-      // ensure onload handler is set before src
       shelfImage.onload = () => {
         scanButton.disabled = false;
+        clearHighlight();
       };
       shelfImage.src = currentImageURL;
 
       ocrWords = [];
-      clearHighlights();
+      activeBBox = null;
+      clearHighlight();
       resultsEl.innerHTML = '';
       debugWordsEl.textContent = '';
       ocrSummaryEl.textContent = 'Image loaded. Run OCR (0°, +90°, −90°).';
@@ -220,7 +240,7 @@
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
 
-      const contrast = 1.2; // 1.0 = no change; tweak as desired
+      const contrast = 1.2;
       const middle = 128;
 
       for (let i = 0; i < data.length; i += 4) {
@@ -228,16 +248,13 @@
         const g = data[i + 1];
         const b = data[i + 2];
 
-        // luminance grayscale
-        let v = 0.299 * r + 0.587 * g + 0.114 * b;
+        let v = 0.299 * r + 0.587 * g + 0.114 * b; // luminance
 
-        // simple contrast around mid-grey
         v = (v - middle) * contrast + middle;
         if (v < 0) v = 0;
         if (v > 255) v = 255;
 
         data[i] = data[i + 1] = data[i + 2] = v;
-        // alpha (data[i+3]) unchanged
       }
 
       ctx.putImageData(imageData, 0, 0);
@@ -322,17 +339,18 @@
       return Math.min(Math.max(v, min), max);
     }
 
-    // ---------- OCR 0° / +90° / −90° with psm 6 ----------
+    // ---------- OCR 0° / +90° / −90° ----------
     scanButton.addEventListener('click', async () => {
       if (!shelfImage.src || !shelfImage.complete) return;
 
       scanButton.disabled = true;
       searchButton.disabled = true;
       statusEl.textContent = 'Preparing OCR (0°, +90°, −90°)...';
-      clearHighlights();
+      clearHighlight();
       resultsEl.innerHTML = '';
       debugWordsEl.textContent = '';
       ocrWords = [];
+      activeBBox = null;
 
       const origW = shelfImage.naturalWidth;
       const origH = shelfImage.naturalHeight;
@@ -358,7 +376,6 @@
                   statusEl.textContent = m.status;
                 }
               },
-              // Page segmentation: 6 = Assume a single uniform block of text
               tessedit_pageseg_mode: '6'
             }
           );
@@ -417,8 +434,9 @@
 
     function handleSearch() {
       const query = searchInput.value.trim().toLowerCase();
-      clearHighlights();
+      clearHighlight();
       resultsEl.innerHTML = '';
+      activeBBox = null;
 
       if (!query) return;
       if (!ocrWords.length) {
@@ -440,77 +458,87 @@
         return;
       }
 
-      // Draw highlight on each match
-      matches.forEach(({ word }) => addWordHighlight(word.bbox));
-
-      // Results list
-      resultsEl.innerHTML = matches.map(({ index, word }) => `
-        <div class="result-item" data-index="${index}">
+      resultsEl.innerHTML = matches.map(({ index, word }, i) => `
+        <div class="result-item ${i === 0 ? 'active' : ''}" data-index="${index}">
           <strong>${escapeHTML(word.text)}</strong>
           <span class="small"> (conf: ${word.confidence.toFixed(1)}, ${word.source})</span>
         </div>
       `).join('');
 
-      // Click to center on that word
       resultsEl.querySelectorAll('.result-item').forEach((el) => {
         el.addEventListener('click', () => {
           const idx = parseInt(el.getAttribute('data-index'), 10);
-          const word = ocrWords[idx];
-          if (!word) return;
-          centerOnBBox(word.bbox);
+          focusOnMatch(idx);
+          resultsEl.querySelectorAll('.result-item').forEach(e => e.classList.remove('active'));
+          el.classList.add('active');
         });
       });
+
+      // auto-focus first match
+      focusOnMatch(matches[0].index);
     }
 
-    // ---------- Highlight helpers (rect + circle) ----------
-    function clearHighlights() {
-      const rects = imageWrapper.querySelectorAll('.highlight-rect');
-      const circles = imageWrapper.querySelectorAll('.highlight-circle');
-      rects.forEach((el) => el.remove());
-      circles.forEach((el) => el.remove());
+    function focusOnMatch(wordIndex) {
+      const word = ocrWords[wordIndex];
+      if (!word) return;
+      activeBBox = word.bbox;
+      applyHighlight(activeBBox);
     }
 
-    function addWordHighlight(bbox) {
-      if (!bbox) return;
-      const { x0, y0, x1, y1 } = bbox;
+    // ---------- Highlight on full image ----------
+    function applyHighlight(bbox) {
+      if (!bbox || !shelfImage.complete) {
+        clearHighlight();
+        return;
+      }
 
-      const rect = document.createElement('div');
-      rect.className = 'highlight-rect';
-      rect.style.left = `${x0}px`;
-      rect.style.top = `${y0}px`;
-      rect.style.width = `${x1 - x0}px`;
-      rect.style.height = `${y1 - y0}px`;
-      imageWrapper.appendChild(rect);
+      const imgRect = shelfImage.getBoundingClientRect();
+      const naturalW = shelfImage.naturalWidth;
+      const naturalH = shelfImage.naturalHeight;
 
-      const cx = (x0 + x1) / 2;
-      const cy = (y0 + y1) / 2;
-      const halfW = (x1 - x0) / 2;
-      const halfH = (y1 - y0) / 2;
-      const radius = Math.max(halfW, halfH) * 1.6; // slightly bigger than the word box
+      if (!imgRect.width || !imgRect.height || !naturalW || !naturalH) {
+        clearHighlight();
+        return;
+      }
 
-      const circle = document.createElement('div');
-      circle.className = 'highlight-circle';
-      circle.style.left = `${cx - radius}px`;
-      circle.style.top = `${cy - radius}px`;
-      circle.style.width = `${radius * 2}px`;
-      circle.style.height = `${radius * 2}px`;
-      imageWrapper.appendChild(circle);
+      const scaleX = imgRect.width / naturalW;
+      const scaleY = imgRect.height / naturalH;
+
+      const x = bbox.x0 * scaleX;
+      const y = bbox.y0 * scaleY;
+      const w = (bbox.x1 - bbox.x0) * scaleX;
+      const h = (bbox.y1 - bbox.y0) * scaleY;
+
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      const radius = Math.max(w, h) * 1.4;
+
+      // rect
+      highlightRect.style.display = 'block';
+      highlightRect.style.left = `${x}px`;
+      highlightRect.style.top = `${y}px`;
+      highlightRect.style.width = `${w}px`;
+      highlightRect.style.height = `${h}px`;
+
+      // circle
+      highlightCircle.style.display = 'block';
+      highlightCircle.style.left = `${cx - radius}px`;
+      highlightCircle.style.top = `${cy - radius}px`;
+      highlightCircle.style.width = `${radius * 2}px`;
+      highlightCircle.style.height = `${radius * 2}px`;
     }
 
-    function centerOnBBox(bbox) {
-      if (!bbox) return;
-      const { x0, y0, x1, y1 } = bbox;
-      const cx = (x0 + x1) / 2;
-      const cy = (y0 + y1) / 2;
-      const targetLeft = cx - imageWrapper.clientWidth / 2;
-      const targetTop = cy - imageWrapper.clientHeight / 2;
-
-      imageWrapper.scrollTo({
-        left: Math.max(0, targetLeft),
-        top: Math.max(0, targetTop),
-        behavior: 'smooth',
-      });
+    function clearHighlight() {
+      highlightRect.style.display = 'none';
+      highlightCircle.style.display = 'none';
     }
+
+    // Reposition highlight when window size changes
+    window.addEventListener('resize', () => {
+      if (activeBBox) {
+        applyHighlight(activeBBox);
+      }
+    });
 
     function escapeHTML(str) {
       return str
