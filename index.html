@@ -24,12 +24,10 @@
       padding: 0;
     }
 
-    /* LOCK PAGE HEIGHT & DISABLE SCROLL (mobile Safari) */
     html,
     body {
       margin: 0;
-      height: 100%;
-      overflow: hidden;
+      padding: 0;
     }
 
     body {
@@ -41,16 +39,12 @@
 
     #app {
       position: relative;
-      width: 100vw;
-      height: 100vh;
-      overflow: hidden;
+      min-height: 100vh;
       background: #000;
     }
 
     /* Generic screen handling */
     .screen {
-      position: absolute;
-      inset: 0;
       display: none;
     }
 
@@ -65,14 +59,11 @@
     /* ADD IMAGE SCREEN */
     #screen-add {
       background: #111;
-      position: absolute;
-      inset: 0;
-    }
-
-    #screen-add.active {
+      min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
+      position: relative;
     }
 
     #screen-add .label {
@@ -91,8 +82,8 @@
 
     /* OCR (SCANNING + SEARCH) SCREEN */
     #screen-ocr {
-      position: absolute;
-      inset: 0;
+      min-height: 100vh;
+      position: relative;
       overflow: hidden;
       background: #000;
     }
@@ -213,19 +204,18 @@
       pointer-events: none;
     }
 
-    /* RESULTS SCREEN */
+    /* RESULTS SCREEN – scrollable */
     #screen-results {
-      position: absolute;
-      inset: 0;
+      position: relative;
+      min-height: 100vh;
       background: #000;
       color: #fff;
+      padding: 24px 0 40px;
     }
 
     #results-top-row {
-      position: absolute;
-      top: 32px;
-      left: 20px;
-      z-index: 10;
+      margin-left: 20px;
+      margin-bottom: 16px;
     }
 
     #btn-new-image {
@@ -240,32 +230,24 @@
       box-shadow: var(--shadow-soft);
     }
 
-    /* Image fills viewport; UI floats on top */
     #results-image-wrapper {
-      position: absolute;
-      inset: 0;
+      width: 100%;
       display: flex;
-      align-items: center;
       justify-content: center;
+      padding: 0 0 16px;
     }
 
     #results-image-inner {
       position: relative;
       width: 100%;
       max-width: 560px;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       overflow: hidden;
     }
 
     #results-image {
-      height: 100%;
-      width: auto;
-      max-width: 100%;
+      width: 100%;
+      height: auto;
       display: block;
-      object-fit: contain;
     }
 
     .highlight-rect {
@@ -285,16 +267,12 @@
     }
 
     #results-bottom {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 32px;
+      margin-top: 8px;
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 14px;
-      padding: 0 16px;
-      z-index: 10;
+      padding: 0 16px 40px;
     }
 
     #results-pills {
@@ -377,7 +355,7 @@
       </div>
     </div>
 
-    <!-- RESULTS -->
+    <!-- RESULTS (scrollable) -->
     <div id="screen-results" class="screen">
       <div id="results-top-row">
         <button id="btn-new-image">new image</button>
@@ -422,7 +400,7 @@
     const pillMain = document.getElementById("pill-main");
     const resultsImageInner = document.getElementById("results-image-inner");
 
-    let ocrWords = [];       // [{ text, bbox: {x0,y0,x1,y1} }] in original orientation
+    let ocrWords = [];       // [{ text, bbox: {x0,y0,x1,y1} }]
     let imageDataUrl = "";
     let matches = [];
     let matchIndex = 0;
