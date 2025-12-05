@@ -240,7 +240,7 @@
       box-shadow: var(--shadow-soft);
     }
 
-    /* Image fills full viewport height behind overlays */
+    /* Image wrapper fills viewport; image shrinks to fit between top+bottom UI */
     #results-image-wrapper {
       position: absolute;
       inset: 0;
@@ -261,10 +261,14 @@
       overflow: hidden;
     }
 
+    /* Key change: fit *inside* viewport with some room for overlays */
     #results-image {
-      height: 100%;
+      max-height: calc(100vh - 170px); /* room for top button + bottom controls */
+      max-width: 100%;
       width: auto;
+      height: auto;
       display: block;
+      object-fit: contain;
     }
 
     .highlight-rect {
