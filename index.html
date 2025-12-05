@@ -426,7 +426,7 @@
       }
     });
 
-    // ---------- Search (word-level) ----------
+    // ---------- Search (word-level + fuzzy) ----------
     searchButton.addEventListener('click', handleSearch);
     searchInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') handleSearch();
@@ -444,13 +444,41 @@
         return;
       }
 
-      const matches = [];
+      // 1) Exact substring matches first
+      const exactMatches = [];
       ocrWords.forEach((w, idx) => {
         if (!w.text) return;
-        if (w.text.toLowerCase().includes(query)) {
-          matches.push({ index: idx, word: w });
+        const lower = w.text.toLowerCase();
+        if (lower.includes(query)) {
+          exactMatches.push({ index: idx, word: w });
         }
       });
+
+      let matches = exactMatches;
+
+      // 2) If no exact matches, fall back to fuzzy matches
+      if (!matches.length) {
+        const fuzzyCandidates = [];
+        ocrWords.forEach((w, idx) => {
+          if (!w.text) return;
+          const lower = w.text.toLowerCase();
+          const dist = fuzzyDistance(query, lower);
+          const maxDist =
+            query.length <= 4 ? 1 :
+            query.length <= 7 ? 2 : 3; // small words stricter, longer words looser
+
+          if (dist <= maxDist) {
+            fuzzyCandidates.push({ index: idx, word: w, dist });
+          }
+        });
+
+        fuzzyCandidates.sort((a, b) => {
+          if (a.dist !== b.dist) return a.dist - b.dist;
+          return b.word.confidence - a.word.confidence;
+        });
+
+        matches = fuzzyCandidates;
+      }
 
       if (!matches.length) {
         resultsEl.innerHTML =
@@ -539,6 +567,51 @@
         applyHighlight(activeBBox);
       }
     });
+
+    // ---------- Fuzzy matching helpers ----------
+    function levenshtein(a, b) {
+      const m = a.length;
+      const n = b.length;
+      if (m === 0) return n;
+      if (n === 0) return m;
+
+      const dp = Array.from({ length: m + 1 }, () => new Array(n + 1));
+      for (let i = 0; i <= m; i++) dp[i][0] = i;
+      for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+      for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+          const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+          dp[i][j] = Math.min(
+            dp[i - 1][j] + 1,      // deletion
+            dp[i][j - 1] + 1,      // insertion
+            dp[i - 1][j - 1] + cost // substitution
+          );
+        }
+      }
+      return dp[m][n];
+    }
+
+    // Best distance between query and any substring of word of similar length
+    function fuzzyDistance(query, word) {
+      const qlen = query.length;
+      const wlen = word.length;
+      if (qlen === 0) return 0;
+      if (wlen === 0) return qlen;
+
+      let best = levenshtein(query, word); // whole word as a fallback
+
+      if (wlen > qlen) {
+        for (let start = 0; start <= wlen - qlen; start++) {
+          const chunk = word.slice(start, start + qlen);
+          const d = levenshtein(query, chunk);
+          if (d < best) best = d;
+          if (best === 0) break;
+        }
+      }
+
+      return best;
+    }
 
     function escapeHTML(str) {
       return str
