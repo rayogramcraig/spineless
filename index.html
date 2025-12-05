@@ -24,21 +24,25 @@
       padding: 0;
     }
 
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
-        sans-serif;
-      background: var(--bg-dark);
-      color: var(--white);
-    }
+	html,
+	body {
+	  margin: 0;
+	  height: 100%;
+	  overflow: hidden;           /* <- stop scrolling */
+	  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
+	    sans-serif;
+	  background: var(--bg-dark);
+	  color: var(--white);
+	}
 
-    #app {
-      position: relative;
-      width: 100vw;
-      height: 100vh;
-      overflow: hidden;
-      background: #000;
-    }
+	#app {
+	  position: relative;
+	  width: 100vw;
+	  height: 100vh;              /* or height: 100%; either is fine here */
+	  overflow: hidden;           /* already there, but keep it */
+	  background: #000;
+	}
+
 
     /* Generic screen handling */
     .screen {
@@ -209,6 +213,7 @@
 
     /* RESULTS SCREEN */
     #screen-results {
+     overflow: hidden;
       position: absolute;
       inset: 0;
       background: #000;
