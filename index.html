@@ -253,13 +253,21 @@
       overflow: hidden;
     }
 
-    #results-image {
-      max-width: 100%;
-      max-height: 100%;
-      width: auto;
-      height: auto;
-      display: block;
-    }
+/* BEFORE results: image should be full viewport height */
+#screen-results:not(.active) #results-image {
+  height: 100vh;
+  width: auto;
+  object-fit: contain;
+}
+
+/* WHEN results ARE showing, behave normally */
+#screen-results.active #results-image {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
 
     .highlight-rect {
       position: absolute;
