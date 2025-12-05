@@ -101,9 +101,9 @@
       position: absolute;
       inset: 0;
       background-position: center;
-      background-size: cover;
+      background-size: contain;  /* show full image */
+      background-repeat: no-repeat;
       filter: brightness(0.45);
-      transform: scale(1.02);
     }
 
     #ocr-overlay {
@@ -240,7 +240,6 @@
       box-shadow: var(--shadow-soft);
     }
 
-    /* Image wrapper fills viewport; image shrinks to fit between top+bottom UI */
     #results-image-wrapper {
       position: absolute;
       inset: 0;
@@ -261,9 +260,8 @@
       overflow: hidden;
     }
 
-    /* Key change: fit *inside* viewport with some room for overlays */
+    /* Image will be dynamically max-height'ed via JS */
     #results-image {
-      max-height: calc(100vh - 170px); /* room for top button + bottom controls */
       max-width: 100%;
       width: auto;
       height: auto;
@@ -424,6 +422,8 @@
     const pillRight = document.getElementById("pill-right");
     const pillMain = document.getElementById("pill-main");
     const resultsImageInner = document.getElementById("results-image-inner");
+    const resultsTopRow = document.getElementById("results-top-row");
+    const resultsBottom = document.getElementById("results-bottom");
 
     let ocrWords = [];       // [{ text, bbox: {x0,y0,x1,y1} }] in original orientation
     let imageDataUrl = "";
@@ -437,6 +437,23 @@
       );
       el.classList.add("active");
     }
+
+    // Dynamically fit image between top and bottom overlays (no cropping)
+    function updateResultsImageSize() {
+      if (!screenResults.classList.contains("active")) return;
+      const topRect = resultsTopRow.getBoundingClientRect();
+      const bottomRect = resultsBottom.getBoundingClientRect();
+      const topSpace = topRect.bottom; // px from top to bottom of top row
+      const bottomSpace = window.innerHeight - bottomRect.top; // px from bottom to top of bottom bar
+      const available = window.innerHeight - topSpace - bottomSpace;
+      const maxHeight = available > 0 ? available : window.innerHeight;
+      resultsImage.style.maxHeight = maxHeight + "px";
+    }
+
+    window.addEventListener("resize", () => {
+      updateResultsImageSize();
+      if (matches.length) drawMatch();
+    });
 
     // --- bbox mapping helpers ---------------------------------------- //
 
@@ -496,6 +513,7 @@
       const reader = new FileReader();
       reader.onload = (ev) => {
         imageDataUrl = ev.target.result;
+        ocrBg.style.backgroundImage = `url(${imageDataUrl})`; // for scanning screen
         startOCR(imageDataUrl); // 3-pass OCR
       };
       reader.readAsDataURL(file);
@@ -506,7 +524,6 @@
     async function startOCR(dataUrl) {
       showScreen(screenOCR);
       screenOCR.classList.remove("mode-search");
-      ocrBg.style.backgroundImage = `url(${dataUrl})`;
       ocrProgress.classList.remove("hidden");
       ocrProgress.textContent = "scanning…";
 
@@ -667,6 +684,7 @@
       matchIndex = 0;
       setupResultsScreen();
       showScreen(screenResults);
+      updateResultsImageSize();
       drawMatch();
     }
 
@@ -677,6 +695,12 @@
       pillMain.textContent = currentTerm;
       pillLeft.textContent = currentTerm;
       pillRight.textContent = currentTerm;
+
+      // When the image actually finishes loading, size it and redraw highlight
+      resultsImage.onload = () => {
+        updateResultsImageSize();
+        if (matches.length) drawMatch();
+      };
     }
 
     function drawMatch() {
@@ -686,9 +710,15 @@
       const img = resultsImage;
 
       if (!img.naturalWidth || !img.naturalHeight) {
-        img.onload = () => drawMatch();
+        img.onload = () => {
+          updateResultsImageSize();
+          drawMatch();
+        };
         return;
       }
+
+      // Ensure we are using the final sized image
+      updateResultsImageSize();
 
       const displayWidth = img.clientWidth;
       const displayHeight = img.clientHeight;
