@@ -427,8 +427,8 @@
   let ocrWords = [];       // [{ text, bbox: {x0,y0,x1,y1} }] in ORIGINAL orientation
   let imageDataUrl = "";
 
-  // Search terms history (for carousel)
-  let searchHistory = [];   // ["Term1", "Term2", ...]
+  // Alphabetical list of unique terms (lowercase) that have hits
+  let termList = [];       // ["apple", "book", ...]
   let currentTermIndex = -1;
   let currentTerm = "";
 
@@ -507,10 +507,35 @@
     const reader = new FileReader();
     reader.onload = (ev) => {
       imageDataUrl = ev.target.result;
-      startOCR(imageDataUrl); // now does 3-pass OCR
+      startOCR(imageDataUrl); // 3-pass OCR
     };
     reader.readAsDataURL(file);
   });
+
+  // --- build alphabetical term list -------------------------------- //
+
+  function buildTermList() {
+    if (!ocrWords.length) {
+      termList = [];
+      return;
+    }
+
+    // Basic cleanup: lowercase, strip punctuation from ends, ignore 1-char tokens
+    const cleaned = ocrWords
+      .map((w) => (w.text || "").trim())
+      .filter(Boolean)
+      .map((t) =>
+        t
+          .toLowerCase()
+          .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "")
+          .trim()
+      )
+      .filter((t) => t.length > 1);
+
+    termList = Array.from(new Set(cleaned)).sort((a, b) =>
+      a.localeCompare(b)
+    );
+  }
 
   // --- 3-pass OCR (base, cw, ccw) ---------------------------------- //
 
@@ -521,9 +546,9 @@
     ocrProgress.classList.remove("hidden");
     ocrProgress.textContent = "scanning…";
 
-    // reset search state
+    // reset state
     ocrWords = [];
-    searchHistory = [];
+    termList = [];
     currentTermIndex = -1;
     currentTerm = "";
     clearHighlights();
@@ -606,6 +631,7 @@
       }
 
       ocrWords = allWords;
+      buildTermList();
       ocrProgress.classList.add("hidden");
 
       // scanning → search transition
@@ -629,14 +655,13 @@
       autosuggestEl.innerHTML = "";
       return;
     }
+
     const q = query.toLowerCase();
-    const suggestions = Array.from(
-      new Set(
-        ocrWords
-          .map((w) => w.text)
-          .filter((t) => t.toLowerCase().startsWith(q))
-      )
-    ).slice(0, 20);
+
+    // Use termList so suggestions line up with carousel
+    const suggestions = termList
+      .filter((t) => t.startsWith(q))
+      .slice(0, 20);
 
     if (!suggestions.length) {
       autosuggestEl.classList.remove("visible");
@@ -674,32 +699,25 @@
   });
 
   function runSearch(term) {
-    if (!ocrWords.length) return;
-    const trimmed = term.trim();
-    if (!trimmed) return;
+    if (!ocrWords.length || !termList.length) return;
+    const raw = term.trim();
+    if (!raw) return;
 
-    const q = trimmed.toLowerCase();
+    const lowerTerm = raw.toLowerCase();
 
-    const matches = ocrWords.filter(
-      (w) => w.text && w.text.toLowerCase().includes(q)
-    );
+    // Find exact in termList, else first term that starts with it, else fail.
+    let idx = termList.findIndex((t) => t === lowerTerm);
+    if (idx === -1) {
+      idx = termList.findIndex((t) => t.startsWith(lowerTerm));
+    }
 
-    if (!matches.length) {
-      alert(`No matches found for “${trimmed}”`);
+    if (idx === -1) {
+      alert(`No matches found for “${raw}”`);
       return;
     }
 
-    // Update history
-    const existingIndex = searchHistory.findIndex(
-      (t) => t.toLowerCase() === trimmed.toLowerCase()
-    );
-    if (existingIndex === -1) {
-      searchHistory.push(trimmed);
-      currentTermIndex = searchHistory.length - 1;
-    } else {
-      currentTermIndex = existingIndex;
-    }
-    currentTerm = searchHistory[currentTermIndex];
+    currentTermIndex = idx;
+    currentTerm = termList[currentTermIndex];
 
     setupResultsScreen();
     showScreen(screenResults);
@@ -710,9 +728,9 @@
 
   function setupResultsScreen() {
     resultsImage.src = imageDataUrl;
-    pillMain.textContent = currentTerm || "";
 
-    if (!searchHistory.length) {
+    if (currentTermIndex < 0 || !termList.length) {
+      pillMain.textContent = "";
       pillLeft.textContent = "";
       pillRight.textContent = "";
       pillLeft.classList.add("disabled");
@@ -720,20 +738,22 @@
       return;
     }
 
-    if (searchHistory.length === 1) {
-      pillLeft.textContent = searchHistory[0];
-      pillRight.textContent = searchHistory[0];
+    pillMain.textContent = termList[currentTermIndex];
+
+    if (termList.length === 1) {
+      pillLeft.textContent = termList[0];
+      pillRight.textContent = termList[0];
       pillLeft.classList.add("disabled");
       pillRight.classList.add("disabled");
       return;
     }
 
-    const len = searchHistory.length;
+    const len = termList.length;
     const prevIndex = (currentTermIndex - 1 + len) % len;
     const nextIndex = (currentTermIndex + 1) % len;
 
-    pillLeft.textContent = searchHistory[prevIndex];
-    pillRight.textContent = searchHistory[nextIndex];
+    pillLeft.textContent = termList[prevIndex];
+    pillRight.textContent = termList[nextIndex];
     pillLeft.classList.remove("disabled");
     pillRight.classList.remove("disabled");
   }
@@ -748,8 +768,10 @@
     if (!term || !ocrWords.length || !resultsImage.src) return;
 
     const q = term.toLowerCase();
+
+    // Exact word match (case-insensitive)
     const matches = ocrWords.filter(
-      (w) => w.text && w.text.toLowerCase().includes(q)
+      (w) => w.text && w.text.toLowerCase() === q
     );
 
     clearHighlights();
@@ -795,27 +817,37 @@
   }
 
   function goPrevTerm() {
-    if (!searchHistory.length) return;
-    if (searchHistory.length === 1) {
-      drawHighlightsForTerm(searchHistory[0]);
+    if (!termList.length) return;
+
+    if (termList.length === 1) {
+      currentTermIndex = 0;
+      currentTerm = termList[0];
+      setupResultsScreen();
+      drawHighlightsForTerm(currentTerm);
       return;
     }
-    const len = searchHistory.length;
+
+    const len = termList.length;
     currentTermIndex = (currentTermIndex - 1 + len) % len;
-    currentTerm = searchHistory[currentTermIndex];
+    currentTerm = termList[currentTermIndex];
     setupResultsScreen();
     drawHighlightsForTerm(currentTerm);
   }
 
   function goNextTerm() {
-    if (!searchHistory.length) return;
-    if (searchHistory.length === 1) {
-      drawHighlightsForTerm(searchHistory[0]);
+    if (!termList.length) return;
+
+    if (termList.length === 1) {
+      currentTermIndex = 0;
+      currentTerm = termList[0];
+      setupResultsScreen();
+      drawHighlightsForTerm(currentTerm);
       return;
     }
-    const len = searchHistory.length;
+
+    const len = termList.length;
     currentTermIndex = (currentTermIndex + 1) % len;
-    currentTerm = searchHistory[currentTermIndex];
+    currentTerm = termList[currentTermIndex];
     setupResultsScreen();
     drawHighlightsForTerm(currentTerm);
   }
@@ -851,7 +883,7 @@
   btnNewImage.addEventListener("click", () => {
     imageInput.value = "";
     ocrWords = [];
-    searchHistory = [];
+    termList = [];
     currentTermIndex = -1;
     currentTerm = "";
     clearHighlights();
