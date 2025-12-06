@@ -215,8 +215,6 @@
       color: #fff;
     }
 
-    /* no display here; .screen.active controls that */
-
     #results-top-row {
       position: absolute;
       top: 32px;
@@ -264,20 +262,19 @@
       display: block;
     }
 
+    /* Layer that will hold all highlight rectangles */
+    #highlightsLayer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
     .highlight-rect {
       position: absolute;
       border: 3px solid #ffeb3b;
       border-radius: 8px;
       pointer-events: none;
       box-shadow: 0 0 0 4px rgba(255, 235, 59, 0.25);
-    }
-
-    .highlight-circle {
-      position: absolute;
-      border-radius: 50%;
-      border: 4px solid #dfff00;
-      box-shadow: 0 0 0 4px rgba(223, 255, 0, 0.3);
-      pointer-events: none;
     }
 
     #results-bottom {
@@ -319,6 +316,12 @@
       background: rgba(0, 0, 0, 0.4);
       color: #fff;
       border: 2px solid rgba(255, 255, 255, 0.25);
+    }
+
+    .pill-side.disabled {
+      opacity: 0.3;
+      border-style: dashed;
+      pointer-events: none;
     }
 
     .pill-main {
@@ -387,8 +390,7 @@
       <div id="results-image-wrapper">
         <div id="results-image-inner">
           <img id="results-image" src="" alt="Bookshelf" />
-          <div id="highlightRect" class="highlight-rect"></div>
-          <div id="highlightCircle" class="highlight-circle"></div>
+          <div id="highlightsLayer"></div>
         </div>
       </div>
 
@@ -414,19 +416,20 @@
   const autosuggestEl = document.getElementById("autosuggest");
 
   const resultsImage = document.getElementById("results-image");
-  const highlightRect = document.getElementById("highlightRect");
-  const highlightCircle = document.getElementById("highlightCircle");
   const btnNewImage = document.getElementById("btn-new-image");
   const btnNewSearch = document.getElementById("new-search-btn");
   const pillLeft = document.getElementById("pill-left");
   const pillRight = document.getElementById("pill-right");
   const pillMain = document.getElementById("pill-main");
   const resultsImageInner = document.getElementById("results-image-inner");
+  const highlightsLayer = document.getElementById("highlightsLayer");
 
   let ocrWords = [];       // [{ text, bbox: {x0,y0,x1,y1} }] in ORIGINAL orientation
   let imageDataUrl = "";
-  let matches = [];
-  let matchIndex = 0;
+
+  // Search terms history (for carousel)
+  let searchHistory = [];   // ["Term1", "Term2", ...]
+  let currentTermIndex = -1;
   let currentTerm = "";
 
   function showScreen(el) {
@@ -517,6 +520,18 @@
     ocrBg.style.backgroundImage = `url(${dataUrl})`;
     ocrProgress.classList.remove("hidden");
     ocrProgress.textContent = "scanning…";
+
+    // reset search state
+    ocrWords = [];
+    searchHistory = [];
+    currentTermIndex = -1;
+    currentTerm = "";
+    clearHighlights();
+    pillMain.textContent = "";
+    pillLeft.textContent = "";
+    pillRight.textContent = "";
+    pillLeft.classList.add("disabled");
+    pillRight.classList.add("disabled");
 
     try {
       const img = new Image();
@@ -660,93 +675,155 @@
 
   function runSearch(term) {
     if (!ocrWords.length) return;
-    currentTerm = term;
-    const q = term.toLowerCase();
+    const trimmed = term.trim();
+    if (!trimmed) return;
 
-    matches = ocrWords.filter(
+    const q = trimmed.toLowerCase();
+
+    const matches = ocrWords.filter(
       (w) => w.text && w.text.toLowerCase().includes(q)
     );
 
     if (!matches.length) {
-      alert(`No matches found for “${term}”`);
+      alert(`No matches found for “${trimmed}”`);
       return;
     }
 
-    matchIndex = 0;
+    // Update history
+    const existingIndex = searchHistory.findIndex(
+      (t) => t.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (existingIndex === -1) {
+      searchHistory.push(trimmed);
+      currentTermIndex = searchHistory.length - 1;
+    } else {
+      currentTermIndex = existingIndex;
+    }
+    currentTerm = searchHistory[currentTermIndex];
+
     setupResultsScreen();
     showScreen(screenResults);
-    drawMatch();
+    drawHighlightsForTerm(currentTerm);
   }
 
   // --- results view + highlighting --------------------------------- //
 
   function setupResultsScreen() {
     resultsImage.src = imageDataUrl;
-    pillMain.textContent = currentTerm;
-    pillLeft.textContent = currentTerm;
-    pillRight.textContent = currentTerm;
+    pillMain.textContent = currentTerm || "";
+
+    if (!searchHistory.length) {
+      pillLeft.textContent = "";
+      pillRight.textContent = "";
+      pillLeft.classList.add("disabled");
+      pillRight.classList.add("disabled");
+      return;
+    }
+
+    if (searchHistory.length === 1) {
+      pillLeft.textContent = searchHistory[0];
+      pillRight.textContent = searchHistory[0];
+      pillLeft.classList.add("disabled");
+      pillRight.classList.add("disabled");
+      return;
+    }
+
+    const len = searchHistory.length;
+    const prevIndex = (currentTermIndex - 1 + len) % len;
+    const nextIndex = (currentTermIndex + 1) % len;
+
+    pillLeft.textContent = searchHistory[prevIndex];
+    pillRight.textContent = searchHistory[nextIndex];
+    pillLeft.classList.remove("disabled");
+    pillRight.classList.remove("disabled");
   }
 
-  function drawMatch() {
+  function clearHighlights() {
+    while (highlightsLayer.firstChild) {
+      highlightsLayer.removeChild(highlightsLayer.firstChild);
+    }
+  }
+
+  function drawHighlightsForTerm(term) {
+    if (!term || !ocrWords.length || !resultsImage.src) return;
+
+    const q = term.toLowerCase();
+    const matches = ocrWords.filter(
+      (w) => w.text && w.text.toLowerCase().includes(q)
+    );
+
+    clearHighlights();
     if (!matches.length) return;
-    const m = matches[matchIndex];
-    const bbox = m.bbox;
+
     const img = resultsImage;
 
+    // ensure image layout is up to date
     if (!img.naturalWidth || !img.naturalHeight) {
-      img.onload = () => drawMatch();
+      img.onload = () => drawHighlightsForTerm(term);
       return;
     }
 
     const displayWidth = img.clientWidth;
     const displayHeight = img.clientHeight;
 
+    if (!displayWidth || !displayHeight) return;
+
     const scaleX = displayWidth / img.naturalWidth;
     const scaleY = displayHeight / img.naturalHeight;
-
-    const x = bbox.x0 * scaleX;
-    const y = bbox.y0 * scaleY;
-    const w = (bbox.x1 - bbox.x0) * scaleX;
-    const h = (bbox.y1 - bbox.y0) * scaleY;
 
     const imgRect = img.getBoundingClientRect();
     const wrapRect = resultsImageInner.getBoundingClientRect();
     const offsetLeft = imgRect.left - wrapRect.left;
     const offsetTop = imgRect.top - wrapRect.top;
 
-    // yellow rectangle
-    highlightRect.style.left = offsetLeft + x + "px";
-    highlightRect.style.top = offsetTop + y + "px";
-    highlightRect.style.width = Math.max(w, 16) + "px";
-    highlightRect.style.height = Math.max(h, 16) + "px";
+    matches.forEach((m) => {
+      const bbox = m.bbox;
+      const x = bbox.x0 * scaleX;
+      const y = bbox.y0 * scaleY;
+      const w = (bbox.x1 - bbox.x0) * scaleX;
+      const h = (bbox.y1 - bbox.y0) * scaleY;
 
-    // circle around it
-    const radius = Math.max(w, h) * 1.6;
-    const centerX = offsetLeft + x + w / 2;
-    const centerY = offsetTop + y + h / 2;
+      const rect = document.createElement("div");
+      rect.className = "highlight-rect";
+      rect.style.left = offsetLeft + x + "px";
+      rect.style.top = offsetTop + y + "px";
+      rect.style.width = Math.max(w, 16) + "px";
+      rect.style.height = Math.max(h, 16) + "px";
 
-    highlightCircle.style.width = radius + "px";
-    highlightCircle.style.height = radius + "px";
-    highlightCircle.style.left = centerX - radius / 2 + "px";
-    highlightCircle.style.top = centerY - radius / 2 + "px";
+      highlightsLayer.appendChild(rect);
+    });
   }
 
-  function goNext() {
-    if (!matches.length) return;
-    matchIndex = (matchIndex + 1) % matches.length;
-    drawMatch();
+  function goPrevTerm() {
+    if (!searchHistory.length) return;
+    if (searchHistory.length === 1) {
+      drawHighlightsForTerm(searchHistory[0]);
+      return;
+    }
+    const len = searchHistory.length;
+    currentTermIndex = (currentTermIndex - 1 + len) % len;
+    currentTerm = searchHistory[currentTermIndex];
+    setupResultsScreen();
+    drawHighlightsForTerm(currentTerm);
   }
 
-  function goPrev() {
-    if (!matches.length) return;
-    matchIndex = (matchIndex - 1 + matches.length) % matches.length;
-    drawMatch();
+  function goNextTerm() {
+    if (!searchHistory.length) return;
+    if (searchHistory.length === 1) {
+      drawHighlightsForTerm(searchHistory[0]);
+      return;
+    }
+    const len = searchHistory.length;
+    currentTermIndex = (currentTermIndex + 1) % len;
+    currentTerm = searchHistory[currentTermIndex];
+    setupResultsScreen();
+    drawHighlightsForTerm(currentTerm);
   }
 
-  pillLeft.addEventListener("click", goPrev);
-  pillRight.addEventListener("click", goNext);
+  pillLeft.addEventListener("click", goPrevTerm);
+  pillRight.addEventListener("click", goNextTerm);
 
-  // swipe on image to move between matches
+  // swipe on image to move between search terms
   let touchStartX = null;
   resultsImageInner.addEventListener("touchstart", (e) => {
     touchStartX = e.touches[0].clientX;
@@ -756,16 +833,28 @@
     if (touchStartX == null) return;
     const dx = e.changedTouches[0].clientX - touchStartX;
     if (Math.abs(dx) > 40) {
-      if (dx < 0) goNext();
-      else goPrev();
+      if (dx < 0) goNextTerm();
+      else goPrevTerm();
     }
     touchStartX = null;
+  });
+
+  // Redraw highlights on resize (to keep boxes aligned)
+  window.addEventListener("resize", () => {
+    if (screenResults.classList.contains("active") && currentTerm) {
+      drawHighlightsForTerm(currentTerm);
+    }
   });
 
   // --- new image / new search -------------------------------------- //
 
   btnNewImage.addEventListener("click", () => {
     imageInput.value = "";
+    ocrWords = [];
+    searchHistory = [];
+    currentTermIndex = -1;
+    currentTerm = "";
+    clearHighlights();
     showScreen(screenAdd);
   });
 
