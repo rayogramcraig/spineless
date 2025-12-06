@@ -24,13 +24,8 @@
       padding: 0;
     }
 
-    html,
     body {
       margin: 0;
-      padding: 0;
-    }
-
-    body {
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
         sans-serif;
       background: var(--bg-dark);
@@ -39,12 +34,16 @@
 
     #app {
       position: relative;
-      min-height: 100vh;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
       background: #000;
     }
 
     /* Generic screen handling */
     .screen {
+      position: absolute;
+      inset: 0;
       display: none;
     }
 
@@ -59,11 +58,15 @@
     /* ADD IMAGE SCREEN */
     #screen-add {
       background: #111;
-      min-height: 100vh;
+      position: absolute;
+      inset: 0;
+    }
+
+    /* When active, center the label */
+    #screen-add.active {
       display: flex;
       align-items: center;
       justify-content: center;
-      position: relative;
     }
 
     #screen-add .label {
@@ -82,8 +85,8 @@
 
     /* OCR (SCANNING + SEARCH) SCREEN */
     #screen-ocr {
-      min-height: 100vh;
-      position: relative;
+      position: absolute;
+      inset: 0;
       overflow: hidden;
       background: #000;
     }
@@ -92,9 +95,9 @@
       position: absolute;
       inset: 0;
       background-position: center;
-      background-size: contain;  /* show full image */
-      background-repeat: no-repeat;
+      background-size: cover;
       filter: brightness(0.45);
+      transform: scale(1.02);
     }
 
     #ocr-overlay {
@@ -204,18 +207,21 @@
       pointer-events: none;
     }
 
-    /* RESULTS SCREEN – scrollable */
+    /* RESULTS SCREEN */
     #screen-results {
-      position: relative;
-      min-height: 100vh;
+      position: absolute;
+      inset: 0;
       background: #000;
       color: #fff;
-      padding: 24px 0 40px;
     }
 
+    /* no display here; .screen.active controls that */
+
     #results-top-row {
-      margin-left: 20px;
-      margin-bottom: 16px;
+      position: absolute;
+      top: 32px;
+      left: 20px;
+      z-index: 10;
     }
 
     #btn-new-image {
@@ -231,21 +237,29 @@
     }
 
     #results-image-wrapper {
-      width: 100%;
+      position: absolute;
+      inset: 0;
+      padding: 56px 0 140px;
       display: flex;
+      align-items: center;
       justify-content: center;
-      padding: 0 0 16px;
     }
 
     #results-image-inner {
       position: relative;
       width: 100%;
       max-width: 560px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       overflow: hidden;
     }
 
     #results-image {
-      width: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
       height: auto;
       display: block;
     }
@@ -267,12 +281,16 @@
     }
 
     #results-bottom {
-      margin-top: 8px;
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 32px;
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 14px;
-      padding: 0 16px 40px;
+      padding: 0 16px;
+      z-index: 10;
     }
 
     #results-pills {
@@ -331,7 +349,12 @@
   <div id="app">
     <!-- ADD IMAGE -->
     <div id="screen-add" class="screen active">
-      <input type="file" id="imageInput" accept="image/*" />
+      <!-- This input covers the whole screen invisibly; any click/tap opens the picker -->
+      <input
+        type="file"
+        id="imageInput"
+        accept="image/*"
+      />
       <div class="label">add image</div>
     </div>
 
@@ -355,7 +378,7 @@
       </div>
     </div>
 
-    <!-- RESULTS (scrollable) -->
+    <!-- RESULTS -->
     <div id="screen-results" class="screen">
       <div id="results-top-row">
         <button id="btn-new-image">new image</button>
@@ -380,371 +403,379 @@
     </div>
   </div>
 
-  <script>
-    const screenAdd = document.getElementById("screen-add");
-    const screenOCR = document.getElementById("screen-ocr");
-    const screenResults = document.getElementById("screen-results");
-    const imageInput = document.getElementById("imageInput");
-    const ocrBg = document.getElementById("ocr-bg");
-    const ocrProgress = document.getElementById("ocr-progress");
-    const searchInput = document.getElementById("searchInput");
-    const autosuggestEl = document.getElementById("autosuggest");
+<script>
+  const screenAdd = document.getElementById("screen-add");
+  const screenOCR = document.getElementById("screen-ocr");
+  const screenResults = document.getElementById("screen-results");
+  const imageInput = document.getElementById("imageInput");
+  const ocrBg = document.getElementById("ocr-bg");
+  const ocrProgress = document.getElementById("ocr-progress");
+  const searchInput = document.getElementById("searchInput");
+  const autosuggestEl = document.getElementById("autosuggest");
 
-    const resultsImage = document.getElementById("results-image");
-    const highlightRect = document.getElementById("highlightRect");
-    const highlightCircle = document.getElementById("highlightCircle");
-    const btnNewImage = document.getElementById("btn-new-image");
-    const btnNewSearch = document.getElementById("new-search-btn");
-    const pillLeft = document.getElementById("pill-left");
-    const pillRight = document.getElementById("pill-right");
-    const pillMain = document.getElementById("pill-main");
-    const resultsImageInner = document.getElementById("results-image-inner");
+  const resultsImage = document.getElementById("results-image");
+  const highlightRect = document.getElementById("highlightRect");
+  const highlightCircle = document.getElementById("highlightCircle");
+  const btnNewImage = document.getElementById("btn-new-image");
+  const btnNewSearch = document.getElementById("new-search-btn");
+  const pillLeft = document.getElementById("pill-left");
+  const pillRight = document.getElementById("pill-right");
+  const pillMain = document.getElementById("pill-main");
+  const resultsImageInner = document.getElementById("results-image-inner");
 
-    let ocrWords = [];       // [{ text, bbox: {x0,y0,x1,y1} }]
-    let imageDataUrl = "";
-    let matches = [];
-    let matchIndex = 0;
-    let currentTerm = "";
+  let ocrWords = [];       // [{ text, bbox: {x0,y0,x1,y1} }] in ORIGINAL orientation
+  let imageDataUrl = "";
+  let matches = [];
+  let matchIndex = 0;
+  let currentTerm = "";
 
-    function showScreen(el) {
-      [screenAdd, screenOCR, screenResults].forEach((s) =>
-        s.classList.remove("active")
-      );
-      el.classList.add("active");
+  function showScreen(el) {
+    [screenAdd, screenOCR, screenResults].forEach((s) =>
+      s.classList.remove("active")
+    );
+    el.classList.add("active");
+  }
+
+  // --- bbox mapping helpers ---------------------------------------- //
+
+  // Take a bbox from a rotated canvas (kind: 'base' | 'cw' | 'ccw')
+  // and map it back into the original image coordinate system.
+  function mapBboxToOriginal(bbox, kind, W, H) {
+    let { x0, y0, x1, y1 } = bbox;
+
+    // corners in rotated space
+    const corners = [
+      [x0, y0],
+      [x1, y1],
+    ];
+
+    function fromBase(u, v) {
+      return { x: u, y: v };
     }
 
-    // --- bbox mapping helpers ---------------------------------------- //
+    // cw canvas width=H, height=W, created via:
+    // ctx.translate(H,0); ctx.rotate(Math.PI/2); ctx.drawImage(img,0,0);
+    // orig (x,y) -> cw (u,v) = (H - y, x)
+    // inverse: (u,v) -> orig (x = v, y = H - u)
+    function fromCW(u, v) {
+      const x = v;
+      const y = H - u;
+      return { x, y };
+    }
 
-    function mapBboxToOriginal(bbox, kind, W, H) {
-      let { x0, y0, x1, y1 } = bbox;
+    // ccw canvas width=H, height=W, created via:
+    // ctx.translate(0,W); ctx.rotate(-Math.PI/2); ctx.drawImage(img,0,0);
+    // orig (x,y) -> ccw (u,v) = (y, W - x)
+    // inverse: (u,v) -> orig (x = W - v, y = u)
+    function fromCCW(u, v) {
+      const x = W - v;
+      const y = u;
+      return { x, y };
+    }
 
-      const corners = [
-        [x0, y0],
-        [x1, y1],
-      ];
+    const mapped = corners.map(([u, v]) => {
+      if (kind === "base") return fromBase(u, v);
+      if (kind === "cw") return fromCW(u, v);
+      return fromCCW(u, v); // 'ccw'
+    });
 
-      function fromBase(u, v) {
-        return { x: u, y: v };
-      }
+    const xs = mapped.map((p) => p.x);
+    const ys = mapped.map((p) => p.y);
 
-      // cw: orig (x,y) -> (u,v) = (H - y, x); inverse (u,v) -> (x=v, y=H-u)
-      function fromCW(u, v) {
-        const x = v;
-        const y = H - u;
-        return { x, y };
-      }
+    let nx0 = Math.min(xs[0], xs[1]);
+    let ny0 = Math.min(ys[0], ys[1]);
+    let nx1 = Math.max(xs[0], xs[1]);
+    let ny1 = Math.max(ys[0], ys[1]);
 
-      // ccw: orig (x,y) -> (u,v) = (y, W - x); inverse (u,v) -> (x=W-v, y=u)
-      function fromCCW(u, v) {
-        const x = W - v;
-        const y = u;
-        return { x, y };
-      }
+    // clamp to original image bounds
+    nx0 = Math.max(0, Math.min(W, nx0));
+    nx1 = Math.max(0, Math.min(W, nx1));
+    ny0 = Math.max(0, Math.min(H, ny0));
+    ny1 = Math.max(0, Math.min(H, ny1));
 
-      const mapped = corners.map(([u, v]) => {
-        if (kind === "base") return fromBase(u, v);
-        if (kind === "cw") return fromCW(u, v);
-        return fromCCW(u, v); // 'ccw'
+    return { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
+  }
+
+  // --- file handling ------------------------------------------------ //
+
+  imageInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      imageDataUrl = ev.target.result;
+      startOCR(imageDataUrl); // now does 3-pass OCR
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // --- 3-pass OCR (base, cw, ccw) ---------------------------------- //
+
+  async function startOCR(dataUrl) {
+    showScreen(screenOCR);
+    screenOCR.classList.remove("mode-search");
+    ocrBg.style.backgroundImage = `url(${dataUrl})`;
+    ocrProgress.classList.remove("hidden");
+    ocrProgress.textContent = "scanning…";
+
+    try {
+      const img = new Image();
+      img.src = dataUrl;
+
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = (err) =>
+          reject(new Error("Could not load image for OCR"));
       });
 
-      const xs = mapped.map((p) => p.x);
-      const ys = mapped.map((p) => p.y);
+      const W = img.naturalWidth;
+      const H = img.naturalHeight;
 
-      let nx0 = Math.min(xs[0], xs[1]);
-      let ny0 = Math.min(ys[0], ys[1]);
-      let nx1 = Math.max(xs[0], xs[1]);
-      let ny1 = Math.max(ys[0], ys[1]);
+      // base canvas (no rotation)
+      const baseCanvas = document.createElement("canvas");
+      baseCanvas.width = W;
+      baseCanvas.height = H;
+      baseCanvas.getContext("2d").drawImage(img, 0, 0);
 
-      nx0 = Math.max(0, Math.min(W, nx0));
-      nx1 = Math.max(0, Math.min(W, nx1));
-      ny0 = Math.max(0, Math.min(H, ny0));
-      ny1 = Math.max(0, Math.min(H, ny1));
+      // 90° clockwise
+      const cwCanvas = document.createElement("canvas");
+      cwCanvas.width = H;
+      cwCanvas.height = W;
+      const ctxCW = cwCanvas.getContext("2d");
+      ctxCW.translate(H, 0);
+      ctxCW.rotate(Math.PI / 2);
+      ctxCW.drawImage(img, 0, 0);
 
-      return { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
-    }
+      // 90° counter-clockwise
+      const ccwCanvas = document.createElement("canvas");
+      ccwCanvas.width = H;
+      ccwCanvas.height = W;
+      const ctxCCW = ccwCanvas.getContext("2d");
+      ctxCCW.translate(0, W);
+      ctxCCW.rotate(-Math.PI / 2);
+      ctxCCW.drawImage(img, 0, 0);
 
-    // --- file handling ------------------------------------------------ //
+      const passes = [
+        { kind: "base", canvas: baseCanvas },
+        { kind: "cw", canvas: cwCanvas },
+        { kind: "ccw", canvas: ccwCanvas },
+      ];
 
-    imageInput.addEventListener("change", (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        imageDataUrl = ev.target.result;
-        ocrBg.style.backgroundImage = `url(${imageDataUrl})`; // scanning bg
-        startOCR(imageDataUrl); // 3-pass OCR
-      };
-      reader.readAsDataURL(file);
-    });
+      let allWords = [];
 
-    // --- 3-pass OCR (base, cw, ccw) ---------------------------------- //
+      for (let i = 0; i < passes.length; i++) {
+        const { kind, canvas } = passes[i];
+        const passIndex = i + 1;
+        const passTotal = passes.length;
 
-    async function startOCR(dataUrl) {
-      showScreen(screenOCR);
-      screenOCR.classList.remove("mode-search");
-      ocrProgress.classList.remove("hidden");
-      ocrProgress.textContent = "scanning…";
-
-      try {
-        const img = new Image();
-        img.src = dataUrl;
-
-        await new Promise((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = (err) =>
-            reject(new Error("Could not load image for OCR"));
+        const result = await Tesseract.recognize(canvas, "eng", {
+          logger: (m) => {
+            if (m.status === "recognizing text") {
+              const pct = Math.round((m.progress || 0) * 100);
+              ocrProgress.textContent = `scanning ${passIndex}/${passTotal}… ${pct}%`;
+            } else {
+              ocrProgress.textContent = `scanning ${passIndex}/${passTotal}…`;
+            }
+          },
         });
 
-        const W = img.naturalWidth;
-        const H = img.naturalHeight;
+        const words = result.data.words || [];
+        const mapped = words
+          .filter((w) => w.text && w.text.trim().length)
+          .map((w) => ({
+            text: w.text.trim(),
+            bbox: mapBboxToOriginal(w.bbox, kind, W, H),
+          }));
 
-        // base canvas
-        const baseCanvas = document.createElement("canvas");
-        baseCanvas.width = W;
-        baseCanvas.height = H;
-        baseCanvas.getContext("2d").drawImage(img, 0, 0);
-
-        // 90° clockwise
-        const cwCanvas = document.createElement("canvas");
-        cwCanvas.width = H;
-        cwCanvas.height = W;
-        const ctxCW = cwCanvas.getContext("2d");
-        ctxCW.translate(H, 0);
-        ctxCW.rotate(Math.PI / 2);
-        ctxCW.drawImage(img, 0, 0);
-
-        // 90° counter-clockwise
-        const ccwCanvas = document.createElement("canvas");
-        ccwCanvas.width = H;
-        ccwCanvas.height = W;
-        const ctxCCW = ccwCanvas.getContext("2d");
-        ctxCCW.translate(0, W);
-        ctxCCW.rotate(-Math.PI / 2);
-        ctxCCW.drawImage(img, 0, 0);
-
-        const passes = [
-          { kind: "base", canvas: baseCanvas },
-          { kind: "cw", canvas: cwCanvas },
-          { kind: "ccw", canvas: ccwCanvas },
-        ];
-
-        let allWords = [];
-
-        for (let i = 0; i < passes.length; i++) {
-          const { kind, canvas } = passes[i];
-          const passIndex = i + 1;
-          const passTotal = passes.length;
-
-          const result = await Tesseract.recognize(canvas, "eng", {
-            logger: (m) => {
-              if (m.status === "recognizing text") {
-                const pct = Math.round((m.progress || 0) * 100);
-                ocrProgress.textContent = `scanning ${passIndex}/${passTotal}… ${pct}%`;
-              } else {
-                ocrProgress.textContent = `scanning ${passIndex}/${passTotal}…`;
-              }
-            },
-          });
-
-          const words = result.data.words || [];
-          const mapped = words
-            .filter((w) => w.text && w.text.trim().length)
-            .map((w) => ({
-              text: w.text.trim(),
-              bbox: mapBboxToOriginal(w.bbox, kind, W, H),
-            }));
-
-          allWords = allWords.concat(mapped);
-        }
-
-        ocrWords = allWords;
-        ocrProgress.classList.add("hidden");
-
-        // scanning → search transition
-        screenOCR.classList.add("mode-search");
-        setTimeout(() => searchInput.focus(), 450);
-      } catch (err) {
-        console.error(err);
-        alert(
-          "There was a problem reading the image.\n\n" +
-            (err && err.message ? err.message : String(err))
-        );
-        showScreen(screenAdd);
-      }
-    }
-
-    // --- search + autosuggest ---------------------------------------- //
-
-    function updateAutosuggest(query) {
-      if (!query) {
-        autosuggestEl.classList.remove("visible");
-        autosuggestEl.innerHTML = "";
-        return;
-      }
-      const q = query.toLowerCase();
-      const suggestions = Array.from(
-        new Set(
-          ocrWords
-            .map((w) => w.text)
-            .filter((t) => t.toLowerCase().startsWith(q))
-        )
-      ).slice(0, 20);
-
-      if (!suggestions.length) {
-        autosuggestEl.classList.remove("visible");
-        autosuggestEl.innerHTML = "";
-        return;
+        allWords = allWords.concat(mapped);
       }
 
-      autosuggestEl.innerHTML = suggestions
-        .map(
-          (s) =>
-            `<div class="autosuggest-item" data-value="${s}">${s}</div>`
-        )
-        .join("");
-      autosuggestEl.classList.add("visible");
-    }
+      ocrWords = allWords;
+      ocrProgress.classList.add("hidden");
 
-    searchInput.addEventListener("input", (e) => {
-      updateAutosuggest(e.target.value.trim());
-    });
-
-    searchInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        const term = searchInput.value.trim();
-        if (term) runSearch(term);
-      }
-    });
-
-    autosuggestEl.addEventListener("click", (e) => {
-      const item = e.target.closest(".autosuggest-item");
-      if (!item) return;
-      const value = item.dataset.value;
-      searchInput.value = value;
-      autosuggestEl.classList.remove("visible");
-      runSearch(value);
-    });
-
-    function runSearch(term) {
-      if (!ocrWords.length) return;
-      currentTerm = term;
-      const q = term.toLowerCase();
-
-      matches = ocrWords.filter(
-        (w) => w.text && w.text.toLowerCase().includes(q)
-      );
-
-      if (!matches.length) {
-        alert(`No matches found for “${term}”`);
-        return;
-      }
-
-      matchIndex = 0;
-      setupResultsScreen();
-      showScreen(screenResults);
-      drawMatch();
-    }
-
-    // --- results view + highlighting --------------------------------- //
-
-    function setupResultsScreen() {
-      resultsImage.src = imageDataUrl;
-      pillMain.textContent = currentTerm;
-      pillLeft.textContent = currentTerm;
-      pillRight.textContent = currentTerm;
-
-      resultsImage.onload = () => {
-        if (matches.length) drawMatch();
-      };
-    }
-
-    function drawMatch() {
-      if (!matches.length) return;
-      const m = matches[matchIndex];
-      const bbox = m.bbox;
-      const img = resultsImage;
-
-      if (!img.naturalWidth || !img.naturalHeight) {
-        img.onload = () => drawMatch();
-        return;
-      }
-
-      const displayWidth = img.clientWidth;
-      const displayHeight = img.clientHeight;
-
-      const scaleX = displayWidth / img.naturalWidth;
-      const scaleY = displayHeight / img.naturalHeight;
-
-      const x = bbox.x0 * scaleX;
-      const y = bbox.y0 * scaleY;
-      const w = (bbox.x1 - bbox.x0) * scaleX;
-      const h = (bbox.y1 - bbox.y0) * scaleY;
-
-      const imgRect = img.getBoundingClientRect();
-      const wrapRect = resultsImageInner.getBoundingClientRect();
-      const offsetLeft = imgRect.left - wrapRect.left;
-      const offsetTop = imgRect.top - wrapRect.top;
-
-      highlightRect.style.left = offsetLeft + x + "px";
-      highlightRect.style.top = offsetTop + y + "px";
-      highlightRect.style.width = Math.max(w, 16) + "px";
-      highlightRect.style.height = Math.max(h, 16) + "px";
-
-      const radius = Math.max(w, h) * 1.6;
-      const centerX = offsetLeft + x + w / 2;
-      const centerY = offsetTop + y + h / 2;
-
-      highlightCircle.style.width = radius + "px";
-      highlightCircle.style.height = radius + "px";
-      highlightCircle.style.left = centerX - radius / 2 + "px";
-      highlightCircle.style.top = centerY - radius / 2 + "px";
-    }
-
-    function goNext() {
-      if (!matches.length) return;
-      matchIndex = (matchIndex + 1) % matches.length;
-      drawMatch();
-    }
-
-    function goPrev() {
-      if (!matches.length) return;
-      matchIndex = (matchIndex - 1 + matches.length) % matches.length;
-      drawMatch();
-    }
-
-    pillLeft.addEventListener("click", goPrev);
-    pillRight.addEventListener("click", goNext);
-
-    // swipe on image to move between matches
-    let touchStartX = null;
-    resultsImageInner.addEventListener("touchstart", (e) => {
-      touchStartX = e.touches[0].clientX;
-    });
-
-    resultsImageInner.addEventListener("touchend", (e) => {
-      if (touchStartX == null) return;
-      const dx = e.changedTouches[0].clientX - touchStartX;
-      if (Math.abs(dx) > 40) {
-        if (dx < 0) goNext();
-        else goPrev();
-      }
-      touchStartX = null;
-    });
-
-    // --- new image / new search -------------------------------------- //
-
-    btnNewImage.addEventListener("click", () => {
-      imageInput.value = "";
-      showScreen(screenAdd);
-    });
-
-    btnNewSearch.addEventListener("click", () => {
-      showScreen(screenOCR);
+      // scanning → search transition
       screenOCR.classList.add("mode-search");
-      searchInput.value = "";
+      setTimeout(() => searchInput.focus(), 450);
+    } catch (err) {
+      console.error(err);
+      alert(
+        "There was a problem reading the image.\n\n" +
+          (err && err.message ? err.message : String(err))
+      );
+      showScreen(screenAdd);
+    }
+  }
+
+  // --- search + autosuggest ---------------------------------------- //
+
+  function updateAutosuggest(query) {
+    if (!query) {
       autosuggestEl.classList.remove("visible");
-      setTimeout(() => searchInput.focus(), 200);
-    });
-  </script>
+      autosuggestEl.innerHTML = "";
+      return;
+    }
+    const q = query.toLowerCase();
+    const suggestions = Array.from(
+      new Set(
+        ocrWords
+          .map((w) => w.text)
+          .filter((t) => t.toLowerCase().startsWith(q))
+      )
+    ).slice(0, 20);
+
+    if (!suggestions.length) {
+      autosuggestEl.classList.remove("visible");
+      autosuggestEl.innerHTML = "";
+      return;
+    }
+
+    autosuggestEl.innerHTML = suggestions
+      .map(
+        (s) =>
+          `<div class="autosuggest-item" data-value="${s}">${s}</div>`
+      )
+      .join("");
+    autosuggestEl.classList.add("visible");
+  }
+
+  searchInput.addEventListener("input", (e) => {
+    updateAutosuggest(e.target.value.trim());
+  });
+
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const term = searchInput.value.trim();
+      if (term) runSearch(term);
+    }
+  });
+
+  autosuggestEl.addEventListener("click", (e) => {
+    const item = e.target.closest(".autosuggest-item");
+    if (!item) return;
+    const value = item.dataset.value;
+    searchInput.value = value;
+    autosuggestEl.classList.remove("visible");
+    runSearch(value);
+  });
+
+  function runSearch(term) {
+    if (!ocrWords.length) return;
+    currentTerm = term;
+    const q = term.toLowerCase();
+
+    matches = ocrWords.filter(
+      (w) => w.text && w.text.toLowerCase().includes(q)
+    );
+
+    if (!matches.length) {
+      alert(`No matches found for “${term}”`);
+      return;
+    }
+
+    matchIndex = 0;
+    setupResultsScreen();
+    showScreen(screenResults);
+    drawMatch();
+  }
+
+  // --- results view + highlighting --------------------------------- //
+
+  function setupResultsScreen() {
+    resultsImage.src = imageDataUrl;
+    pillMain.textContent = currentTerm;
+    pillLeft.textContent = currentTerm;
+    pillRight.textContent = currentTerm;
+  }
+
+  function drawMatch() {
+    if (!matches.length) return;
+    const m = matches[matchIndex];
+    const bbox = m.bbox;
+    const img = resultsImage;
+
+    if (!img.naturalWidth || !img.naturalHeight) {
+      img.onload = () => drawMatch();
+      return;
+    }
+
+    const displayWidth = img.clientWidth;
+    const displayHeight = img.clientHeight;
+
+    const scaleX = displayWidth / img.naturalWidth;
+    const scaleY = displayHeight / img.naturalHeight;
+
+    const x = bbox.x0 * scaleX;
+    const y = bbox.y0 * scaleY;
+    const w = (bbox.x1 - bbox.x0) * scaleX;
+    const h = (bbox.y1 - bbox.y0) * scaleY;
+
+    const imgRect = img.getBoundingClientRect();
+    const wrapRect = resultsImageInner.getBoundingClientRect();
+    const offsetLeft = imgRect.left - wrapRect.left;
+    const offsetTop = imgRect.top - wrapRect.top;
+
+    // yellow rectangle
+    highlightRect.style.left = offsetLeft + x + "px";
+    highlightRect.style.top = offsetTop + y + "px";
+    highlightRect.style.width = Math.max(w, 16) + "px";
+    highlightRect.style.height = Math.max(h, 16) + "px";
+
+    // circle around it
+    const radius = Math.max(w, h) * 1.6;
+    const centerX = offsetLeft + x + w / 2;
+    const centerY = offsetTop + y + h / 2;
+
+    highlightCircle.style.width = radius + "px";
+    highlightCircle.style.height = radius + "px";
+    highlightCircle.style.left = centerX - radius / 2 + "px";
+    highlightCircle.style.top = centerY - radius / 2 + "px";
+  }
+
+  function goNext() {
+    if (!matches.length) return;
+    matchIndex = (matchIndex + 1) % matches.length;
+    drawMatch();
+  }
+
+  function goPrev() {
+    if (!matches.length) return;
+    matchIndex = (matchIndex - 1 + matches.length) % matches.length;
+    drawMatch();
+  }
+
+  pillLeft.addEventListener("click", goPrev);
+  pillRight.addEventListener("click", goNext);
+
+  // swipe on image to move between matches
+  let touchStartX = null;
+  resultsImageInner.addEventListener("touchstart", (e) => {
+    touchStartX = e.touches[0].clientX;
+  });
+
+  resultsImageInner.addEventListener("touchend", (e) => {
+    if (touchStartX == null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 40) {
+      if (dx < 0) goNext();
+      else goPrev();
+    }
+    touchStartX = null;
+  });
+
+  // --- new image / new search -------------------------------------- //
+
+  btnNewImage.addEventListener("click", () => {
+    imageInput.value = "";
+    showScreen(screenAdd);
+  });
+
+  btnNewSearch.addEventListener("click", () => {
+    showScreen(screenOCR);
+    screenOCR.classList.add("mode-search");
+    searchInput.value = "";
+    autosuggestEl.classList.remove("visible");
+    setTimeout(() => searchInput.focus(), 200);
+  });
+</script>
 </body>
 </html>
