@@ -5,15 +5,17 @@
   <title>Spineless</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+  <!-- iOS web app meta -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="spineless">
 
+  <!-- Favicons -->
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="icon" href="favicon.ico">
 
+  <!-- iOS home screen icons -->
   <link rel="apple-touch-icon" sizes="120x120" href="apple-touch-icon-120x120.png">
   <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon-152x152.png">
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180x180.png">
@@ -21,6 +23,7 @@
 
   <!-- Tesseract.js for OCR -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+
   <style>
     :root {
       --bg-dark: #111;
@@ -56,7 +59,6 @@
       background: #000;
     }
 
-    /* Generic screen handling */
     .screen {
       position: absolute;
       inset: 0;
@@ -74,8 +76,6 @@
     /* ADD IMAGE SCREEN */
     #screen-add {
       background: #111;
-      position: absolute;
-      inset: 0;
     }
 
     #screen-add.active {
@@ -114,17 +114,53 @@
       transform: scale(1.02);
     }
 
-    /* glowing scan band overlay */
+    /* scan overlay container */
     #scan-gradient {
       position: absolute;
       inset: 0;
       pointer-events: none;
       opacity: 0;
-      transition: opacity 0.35s ease;
+      transition: opacity 0.25s ease;
+      overflow: hidden;
       mix-blend-mode: screen;
     }
 
-    /* common scanning text */
+    #scan-band {
+      position: absolute;
+      box-shadow: 0 0 32px rgba(232, 255, 41, 0.9);
+    }
+
+    /* 0°: horizontal band */
+    #scan-gradient.mode-0 #scan-band {
+      width: 100%;
+      height: 60%;
+      left: 0;
+      background: linear-gradient(
+        to bottom,
+        rgba(232, 255, 41, 0) 0%,
+        rgba(232, 255, 41, 0.12) 20%,
+        rgba(232, 255, 41, 0.98) 50%,
+        rgba(232, 255, 41, 0.12) 80%,
+        rgba(232, 255, 41, 0) 100%
+      );
+    }
+
+    /* 90° / -90°: vertical band */
+    #scan-gradient.mode-90 #scan-band,
+    #scan-gradient.mode-neg90 #scan-band {
+      height: 100%;
+      width: 60%;
+      top: 0;
+      background: linear-gradient(
+        to right,
+        rgba(232, 255, 41, 0) 0%,
+        rgba(232, 255, 41, 0.12) 20%,
+        rgba(232, 255, 41, 0.98) 50%,
+        rgba(232, 255, 41, 0.12) 80%,
+        rgba(232, 255, 41, 0) 100%
+      );
+    }
+
     #ocr-overlay {
       position: absolute;
       inset: 0;
@@ -158,7 +194,7 @@
     }
 
     #scan-angle {
-      margin-top: 0.25em;
+      margin-top: 0.2em;
       font-size: 2.8rem;
       font-weight: 700;
     }
@@ -219,7 +255,7 @@
       background: rgba(0, 0, 0, 0.04);
     }
 
-    /* transition from scanning → search */
+    /* scanning → search transition */
     #screen-ocr.mode-search .scanning-label {
       opacity: 0;
       transform: translate(-50%, -30px);
@@ -248,72 +284,8 @@
       pointer-events: none;
     }
 
-    /* scan band animations */
-
-    @keyframes scan-vertical {
-      0%   { background-position: 0% -100%; }
-      50%  { background-position: 0% 0%; }
-      100% { background-position: 0% 100%; }
-    }
-
-    @keyframes scan-horizontal-right {
-      0%   { background-position: -100% 0%; }
-      100% { background-position: 100% 0%; }
-    }
-
-    @keyframes scan-horizontal-left {
-      0%   { background-position: 100% 0%; }
-      100% { background-position: -100% 0%; }
-    }
-
-    /* 0° pass: horizontal band sweeping down */
-    #screen-ocr.scanning.scan-mode-0 #scan-gradient {
-      opacity: 1;
-      background: linear-gradient(
-        to bottom,
-        rgba(232, 255, 41, 0) 0%,
-        rgba(232, 255, 41, 0.05) 18%,
-        rgba(232, 255, 41, 0.95) 50%,
-        rgba(232, 255, 41, 0.05) 82%,
-        rgba(232, 255, 41, 0) 100%
-      );
-      background-size: 100% 260%;
-      animation: scan-vertical 1.6s ease-in-out infinite;
-    }
-
-    /* 90° pass: vertical band sweeping right */
-    #screen-ocr.scanning.scan-mode-90 #scan-gradient {
-      opacity: 1;
-      background: linear-gradient(
-        to right,
-        rgba(232, 255, 41, 0) 0%,
-        rgba(232, 255, 41, 0.05) 18%,
-        rgba(232, 255, 41, 0.95) 50%,
-        rgba(232, 255, 41, 0.05) 82%,
-        rgba(232, 255, 41, 0) 100%
-      );
-      background-size: 260% 100%;
-      animation: scan-horizontal-right 1.6s ease-in-out infinite;
-    }
-
-    /* -90° pass: vertical band sweeping left */
-    #screen-ocr.scanning.scan-mode-neg90 #scan-gradient {
-      opacity: 1;
-      background: linear-gradient(
-        to right,
-        rgba(232, 255, 41, 0) 0%,
-        rgba(232, 255, 41, 0.05) 18%,
-        rgba(232, 255, 41, 0.95) 50%,
-        rgba(232, 255, 41, 0.05) 82%,
-        rgba(232, 255, 41, 0) 100%
-      );
-      background-size: 260% 100%;
-      animation: scan-horizontal-left 1.6s ease-in-out infinite;
-    }
-
     /* RESULTS SCREEN */
     #screen-results {
-      position: absolute;
       inset: 0;
       background: #000;
       color: #fff;
@@ -372,12 +344,17 @@
       pointer-events: none;
     }
 
-    /* crosshair segments */
+    /* diagonal fading crosshair */
     .crosshair-line {
       position: absolute;
-      background: #d5ff39;
-      box-shadow: 0 0 10px rgba(213,255,57,0.8);
+      background: linear-gradient(
+        to right,
+        rgba(213, 255, 57, 1) 0%,
+        rgba(213, 255, 57, 0) 100%
+      );
+      box-shadow: 0 0 8px rgba(213, 255, 57, 0.7);
       pointer-events: none;
+      transform-origin: 0 50%;
     }
 
     #results-bottom {
@@ -455,18 +432,16 @@
   <div id="app">
     <!-- ADD IMAGE -->
     <div id="screen-add" class="screen active">
-      <input
-        type="file"
-        id="imageInput"
-        accept="image/*"
-      />
+      <input type="file" id="imageInput" accept="image/*" />
       <div class="label">add image</div>
     </div>
 
     <!-- OCR / SCANNING -->
     <div id="screen-ocr" class="screen">
       <div id="ocr-bg"></div>
-      <div id="scan-gradient"></div>
+      <div id="scan-gradient">
+        <div id="scan-band"></div>
+      </div>
       <div id="ocr-overlay">
         <div id="ocr-progress" class="hidden">scanning…</div>
 
@@ -533,6 +508,8 @@
 
   const scanWordEl = document.getElementById("scan-word");
   const scanAngleEl = document.getElementById("scan-angle");
+  const scanGradient = document.getElementById("scan-gradient");
+  const scanBand = document.getElementById("scan-band");
 
   let ocrWords = [];
   let imageDataUrl = "";
@@ -662,17 +639,48 @@
     );
   }
 
-  function setScanVisual(angleLabel, modeClass) {
-    screenOCR.classList.remove("scan-mode-0", "scan-mode-90", "scan-mode-neg90");
-    if (modeClass) screenOCR.classList.add(modeClass);
-    if (scanWordEl) scanWordEl.textContent = "reading";
-    if (scanAngleEl) scanAngleEl.textContent = angleLabel;
+  function setScanMode(angleLabel, modeClass) {
+    screenOCR.classList.add("scanning");
+    scanGradient.style.opacity = "1";
+    scanGradient.classList.remove("mode-0", "mode-90", "mode-neg90");
+    if (modeClass) scanGradient.classList.add(modeClass);
+    scanWordEl.textContent = "reading";
+    scanAngleEl.textContent = angleLabel;
+    updateScanProgress(0);
+  }
+
+  function updateScanProgress(progress) {
+    const p = Math.max(0, Math.min(1, progress || 0));
+    const h = screenOCR.clientHeight || window.innerHeight;
+    const w = screenOCR.clientWidth || window.innerWidth;
+
+    if (scanGradient.classList.contains("mode-0")) {
+      const bandHeight = h * 0.6;
+      const start = -bandHeight;
+      const end = h;
+      const y = start + (end - start) * p;
+      scanBand.style.top = y + "px";
+      scanBand.style.left = "0px";
+    } else if (scanGradient.classList.contains("mode-90")) {
+      const bandWidth = w * 0.6;
+      const start = -bandWidth;
+      const end = w;
+      const x = start + (end - start) * p;
+      scanBand.style.left = x + "px";
+      scanBand.style.top = "0px";
+    } else if (scanGradient.classList.contains("mode-neg90")) {
+      const bandWidth = w * 0.6;
+      const start = w;
+      const end = -bandWidth;
+      const x = start + (end - start) * p;
+      scanBand.style.left = x + "px";
+      scanBand.style.top = "0px";
+    }
   }
 
   async function startOCR(dataUrl) {
     showScreen(screenOCR);
     screenOCR.classList.remove("mode-search");
-    screenOCR.classList.add("scanning");
     ocrBg.style.backgroundImage = `url(${dataUrl})`;
     ocrProgress.classList.remove("hidden");
     ocrProgress.textContent = "scanning…";
@@ -723,9 +731,9 @@
       ctxCCW.drawImage(img, 0, 0);
 
       const passes = [
-        { kind: "base", canvas: baseCanvas, label: "0°", modeClass: "scan-mode-0" },
-        { kind: "cw",   canvas: cwCanvas,   label: "90°", modeClass: "scan-mode-90" },
-        { kind: "ccw",  canvas: ccwCanvas,  label: "-90°", modeClass: "scan-mode-neg90" },
+        { kind: "base", canvas: baseCanvas, label: "0°", modeClass: "mode-0" },
+        { kind: "cw",   canvas: cwCanvas,   label: "90°", modeClass: "mode-90" },
+        { kind: "ccw",  canvas: ccwCanvas,  label: "-90°", modeClass: "mode-neg90" },
       ];
 
       let allWords = [];
@@ -735,18 +743,21 @@
         const passIndex = i + 1;
         const passTotal = passes.length;
 
-        setScanVisual(label, modeClass);
+        setScanMode(label, modeClass);
 
         const result = await Tesseract.recognize(canvas, "eng", {
           logger: (m) => {
             if (m.status === "recognizing text") {
               const pct = Math.round((m.progress || 0) * 100);
               ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}… ${pct}%`;
+              updateScanProgress(m.progress || 0);
             } else {
               ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}…`;
             }
           },
         });
+
+        updateScanProgress(1);
 
         const words = result.data.words || [];
         const mapped = words
@@ -759,12 +770,12 @@
         allWords = allWords.concat(mapped);
       }
 
+      scanGradient.style.opacity = "0";
+
       ocrWords = allWords;
       buildTermList();
       ocrProgress.classList.add("hidden");
 
-      // done scanning
-      screenOCR.classList.remove("scanning", "scan-mode-0", "scan-mode-90", "scan-mode-neg90");
       screenOCR.classList.add("mode-search");
       setTimeout(() => searchInput.focus(), 450);
     } catch (err) {
@@ -773,7 +784,7 @@
         "There was a problem reading the image.\n\n" +
           (err && err.message ? err.message : String(err))
       );
-      screenOCR.classList.remove("scanning", "scan-mode-0", "scan-mode-90", "scan-mode-neg90");
+      scanGradient.style.opacity = "0";
       showScreen(screenAdd);
     }
   }
@@ -897,12 +908,11 @@
     }
   }
 
-  // Crosshair (unchanged from your version: + shape)
+  // Diagonal crosshair with fade from center outward
   function drawHighlightsForTerm(term) {
     if (!term || !ocrWords.length || !resultsImage.src) return;
 
     const q = term.toLowerCase();
-
     const matches = ocrWords.filter(
       (w) => w.text && w.text.toLowerCase() === q
     );
@@ -945,54 +955,42 @@
     const centerX = offsetLeft + x + w / 2;
     const centerY = offsetTop + y + h / 2;
 
-    const gapPadding = 8;
+    const gapPadding = 10;
     const lineThickness = 4;
 
     const gapX = w / 2 + gapPadding;
     const gapY = h / 2 + gapPadding;
 
-    function addLine(left, top, width, height) {
-      if (width <= 0 || height <= 0) return;
+    function addDiagonal(startX, startY, endX, endY) {
       const line = document.createElement("div");
       line.className = "crosshair-line";
-      line.style.left = left + "px";
-      line.style.top = top + "px";
-      line.style.width = width + "px";
-      line.style.height = height + "px";
+
+      const dx = endX - startX;
+      const dy = endY - startY;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+      line.style.width = length + "px";
+      line.style.height = lineThickness + "px";
+      line.style.left = startX + "px";
+      line.style.top = startY + "px";
+      line.style.transform = `rotate(${angle}deg)`;
+      line.style.transformOrigin = "0 50%";
+
       highlightsLayer.appendChild(line);
     }
 
-    // Vertical top
-    addLine(
-      centerX - lineThickness / 2,
-      imgTop,
-      lineThickness,
-      Math.max(0, centerY - gapY - imgTop)
-    );
+    // top-left arm (↖ from center)
+    addDiagonal(centerX - gapX, centerY - gapY, imgLeft, imgTop);
 
-    // Vertical bottom
-    addLine(
-      centerX - lineThickness / 2,
-      centerY + gapY,
-      lineThickness,
-      Math.max(0, imgBottom - (centerY + gapY))
-    );
+    // bottom-right arm (↘ from center)
+    addDiagonal(centerX + gapX, centerY + gapY, imgRight, imgBottom);
 
-    // Horizontal left
-    addLine(
-      imgLeft,
-      centerY - lineThickness / 2,
-      Math.max(0, centerX - gapX - imgLeft),
-      lineThickness
-    );
+    // top-right arm (↗ from center)
+    addDiagonal(centerX + gapX, centerY - gapY, imgRight, imgTop);
 
-    // Horizontal right
-    addLine(
-      centerX + gapX,
-      centerY - lineThickness / 2,
-      Math.max(0, imgRight - (centerX + gapX)),
-      lineThickness
-    );
+    // bottom-left arm (↙ from center)
+    addDiagonal(centerX - gapX, centerY + gapY, imgLeft, imgBottom);
   }
 
   function goPrevTerm() {
