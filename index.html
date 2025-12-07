@@ -7,14 +7,13 @@
 
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="spineless">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="spineless">
 
-<link rel="apple-touch-icon" sizes="120x120" href="apple-touch-icon-120x120.png">
-<link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon-152x152.png">
-<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180x180.png">
-<link rel="apple-touch-icon" href="apple-touch-icon-v2.png">
-	
+  <link rel="apple-touch-icon" sizes="120x120" href="apple-touch-icon-120x120.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon-152x152.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180x180.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon-v2.png">
 
   <!-- Tesseract.js for OCR -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
@@ -74,7 +73,6 @@
       inset: 0;
     }
 
-    /* When active, center the label */
     #screen-add.active {
       display: flex;
       align-items: center;
@@ -84,10 +82,9 @@
     #screen-add .label {
       font-size: 3rem;
       font-weight: 700;
-      pointer-events: none; /* clicks go to the overlay input */
+      pointer-events: none;
     }
 
-    /* Invisible file input overlay that covers entire screen */
     #imageInput {
       position: absolute;
       inset: 0;
@@ -193,7 +190,6 @@
       background: rgba(0, 0, 0, 0.04);
     }
 
-    /* SCANNING → SEARCH TRANSITION */
     #screen-ocr.mode-search .scanning-label {
       opacity: 0;
       transform: translate(-50%, -30px);
@@ -206,7 +202,6 @@
       transform: translate(-50%, 0);
     }
 
-    /* OCR progress badge */
     #ocr-progress {
       position: absolute;
       top: 24px;
@@ -274,19 +269,18 @@
       display: block;
     }
 
-    /* Layer that will hold all highlight rectangles */
     #highlightsLayer {
       position: absolute;
       inset: 0;
       pointer-events: none;
     }
 
-    .highlight-rect {
+    /* crosshair segments */
+    .crosshair-line {
       position: absolute;
-      border: 3px solid #ffeb3b;
-      border-radius: 8px;
+      background: #d5ff39;
+      box-shadow: 0 0 10px rgba(213,255,57,0.8);
       pointer-events: none;
-      box-shadow: 0 0 0 4px rgba(255, 235, 59, 0.25);
     }
 
     #results-bottom {
@@ -341,7 +335,7 @@
       color: #fff;
       border: none;
       box-shadow: var(--shadow-soft);
-      pointer-events: none; /* purely visual */
+      pointer-events: none;
     }
 
     #new-search-btn {
@@ -362,9 +356,7 @@
 </head>
 <body>
   <div id="app">
-    <!-- ADD IMAGE -->
     <div id="screen-add" class="screen active">
-      <!-- This input covers the whole screen invisibly; any click/tap opens the picker -->
       <input
         type="file"
         id="imageInput"
@@ -373,7 +365,6 @@
       <div class="label">add image</div>
     </div>
 
-    <!-- OCR (SCANNING + SEARCH TRANSITION) -->
     <div id="screen-ocr" class="screen">
       <div id="ocr-bg"></div>
       <div id="ocr-overlay">
@@ -393,7 +384,6 @@
       </div>
     </div>
 
-    <!-- RESULTS -->
     <div id="screen-results" class="screen">
       <div id="results-top-row">
         <button id="btn-new-image">new image</button>
@@ -436,11 +426,10 @@
   const resultsImageInner = document.getElementById("results-image-inner");
   const highlightsLayer = document.getElementById("highlightsLayer");
 
-  let ocrWords = [];       // [{ text, bbox: {x0,y0,x1,y1} }] in ORIGINAL orientation
+  let ocrWords = [];
   let imageDataUrl = "";
 
-  // Alphabetical list of unique terms (lowercase) from OCR
-  let termList = [];       // ["apple", "book", ...]
+  let termList = [];
   let currentTermIndex = -1;
   let currentTerm = "";
 
@@ -451,8 +440,6 @@
     el.classList.add("active");
   }
 
-  // --- "Dictionary word" heuristic --------------------------------- //
-
   const SHORT_COMMON_WORDS = new Set([
     "a","an","as","at","be","by","do","go","he","if","in","is","it","me","my",
     "no","of","on","or","so","to","up","us","we"
@@ -461,23 +448,13 @@
   function isDictionaryWord(word) {
     if (!word) return false;
     const w = word.toLowerCase();
-
-    // explicitly allow very common short words
     if (SHORT_COMMON_WORDS.has(w)) return true;
-
-    // letters only; discard tokens with digits/punctuation
     if (!/^[a-z]+$/.test(w)) return false;
-
-    // ignore ultra-short leftovers like "aa"
     if (w.length < 3) return false;
-
-    // must contain at least one vowel-ish
     if (!/[aeiouy]/.test(w)) return false;
-
     return true;
   }
 
-  // Find previous/next indices that are dictionary words, skipping junk
   function findPrevDictIndex(startIndex) {
     if (!termList.length) return -1;
     let idx = startIndex;
@@ -498,14 +475,9 @@
     return -1;
   }
 
-  // --- bbox mapping helpers ---------------------------------------- //
-
-  // Take a bbox from a rotated canvas (kind: 'base' | 'cw' | 'ccw')
-  // and map it back into the original image coordinate system.
   function mapBboxToOriginal(bbox, kind, W, H) {
     let { x0, y0, x1, y1 } = bbox;
 
-    // corners in rotated space
     const corners = [
       [x0, y0],
       [x1, y1],
@@ -515,20 +487,12 @@
       return { x: u, y: v };
     }
 
-    // cw canvas width=H, height=W, created via:
-    // ctx.translate(H,0); ctx.rotate(Math.PI/2); ctx.drawImage(img,0,0);
-    // orig (x,y) -> cw (u,v) = (H - y, x)
-    // inverse: (u,v) -> orig (x = v, y = H - u)
     function fromCW(u, v) {
       const x = v;
       const y = H - u;
       return { x, y };
     }
 
-    // ccw canvas width=H, height=W, created via:
-    // ctx.translate(0,W); ctx.rotate(-Math.PI/2); ctx.drawImage(img,0,0);
-    // orig (x,y) -> ccw (u,v) = (y, W - x)
-    // inverse: (u,v) -> orig (x = W - v, y = u)
     function fromCCW(u, v) {
       const x = W - v;
       const y = u;
@@ -538,7 +502,7 @@
     const mapped = corners.map(([u, v]) => {
       if (kind === "base") return fromBase(u, v);
       if (kind === "cw") return fromCW(u, v);
-      return fromCCW(u, v); // 'ccw'
+      return fromCCW(u, v);
     });
 
     const xs = mapped.map((p) => p.x);
@@ -549,7 +513,6 @@
     let nx1 = Math.max(xs[0], xs[1]);
     let ny1 = Math.max(ys[0], ys[1]);
 
-    // clamp to original image bounds
     nx0 = Math.max(0, Math.min(W, nx0));
     nx1 = Math.max(0, Math.min(W, nx1));
     ny0 = Math.max(0, Math.min(H, ny0));
@@ -558,20 +521,16 @@
     return { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
   }
 
-  // --- file handling ------------------------------------------------ //
-
   imageInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       imageDataUrl = ev.target.result;
-      startOCR(imageDataUrl); // 3-pass OCR
+      startOCR(imageDataUrl);
     };
     reader.readAsDataURL(file);
   });
-
-  // --- build alphabetical term list -------------------------------- //
 
   function buildTermList() {
     if (!ocrWords.length) {
@@ -579,7 +538,6 @@
       return;
     }
 
-    // Basic cleanup: lowercase, strip punctuation from ends, ignore 1-char tokens
     const cleaned = ocrWords
       .map((w) => (w.text || "").trim())
       .filter(Boolean)
@@ -596,8 +554,6 @@
     );
   }
 
-  // --- 3-pass OCR (base, cw, ccw) ---------------------------------- //
-
   async function startOCR(dataUrl) {
     showScreen(screenOCR);
     screenOCR.classList.remove("mode-search");
@@ -605,7 +561,6 @@
     ocrProgress.classList.remove("hidden");
     ocrProgress.textContent = "scanning…";
 
-    // reset state
     ocrWords = [];
     termList = [];
     currentTermIndex = -1;
@@ -630,13 +585,11 @@
       const W = img.naturalWidth;
       const H = img.naturalHeight;
 
-      // base canvas (no rotation)
       const baseCanvas = document.createElement("canvas");
       baseCanvas.width = W;
       baseCanvas.height = H;
       baseCanvas.getContext("2d").drawImage(img, 0, 0);
 
-      // 90° clockwise
       const cwCanvas = document.createElement("canvas");
       cwCanvas.width = H;
       cwCanvas.height = W;
@@ -645,7 +598,6 @@
       ctxCW.rotate(Math.PI / 2);
       ctxCW.drawImage(img, 0, 0);
 
-      // 90° counter-clockwise
       const ccwCanvas = document.createElement("canvas");
       ccwCanvas.width = H;
       ccwCanvas.height = W;
@@ -693,7 +645,6 @@
       buildTermList();
       ocrProgress.classList.add("hidden");
 
-      // scanning → search transition
       screenOCR.classList.add("mode-search");
       setTimeout(() => searchInput.focus(), 450);
     } catch (err) {
@@ -706,8 +657,6 @@
     }
   }
 
-  // --- search + autosuggest ---------------------------------------- //
-
   function updateAutosuggest(query) {
     if (!query) {
       autosuggestEl.classList.remove("visible");
@@ -717,7 +666,6 @@
 
     const q = query.toLowerCase();
 
-    // Use termList so suggestions line up with carousel
     const suggestions = termList
       .filter((t) => t.startsWith(q))
       .slice(0, 20);
@@ -743,7 +691,7 @@
 
   searchInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
-      const term = searchInput.value.trim();
+      const term = e.target.value.trim();
       if (term) runSearch(term);
     }
   });
@@ -764,7 +712,6 @@
 
     const lowerTerm = raw.toLowerCase();
 
-    // Find exact in termList, else first term that starts with it, else fail.
     let idx = termList.findIndex((t) => t === lowerTerm);
     if (idx === -1) {
       idx = termList.findIndex((t) => t.startsWith(lowerTerm));
@@ -783,8 +730,6 @@
     drawHighlightsForTerm(currentTerm);
   }
 
-  // --- results view + highlighting --------------------------------- //
-
   function setupResultsScreen() {
     resultsImage.src = imageDataUrl;
 
@@ -799,11 +744,9 @@
 
     pillMain.textContent = termList[currentTermIndex];
 
-    // find dictionary neighbors
     const prevIndex = findPrevDictIndex(currentTermIndex);
     const nextIndex = findNextDictIndex(currentTermIndex);
 
-    // if we have fewer than 1 valid dictionary words, disable sides
     if (prevIndex === -1 && nextIndex === -1) {
       pillLeft.textContent = "";
       pillRight.textContent = "";
@@ -812,7 +755,6 @@
       return;
     }
 
-    // if only one dictionary word in the whole list
     if (prevIndex === nextIndex || (prevIndex === -1 || nextIndex === -1)) {
       const idx = prevIndex !== -1 ? prevIndex : nextIndex;
       pillLeft.textContent = termList[idx];
@@ -834,12 +776,12 @@
     }
   }
 
+  // NEW: draw crosshair instead of box
   function drawHighlightsForTerm(term) {
     if (!term || !ocrWords.length || !resultsImage.src) return;
 
     const q = term.toLowerCase();
 
-    // Exact word match (case-insensitive)
     const matches = ocrWords.filter(
       (w) => w.text && w.text.toLowerCase() === q
     );
@@ -849,7 +791,6 @@
 
     const img = resultsImage;
 
-    // ensure image layout is up to date
     if (!img.naturalWidth || !img.naturalHeight) {
       img.onload = () => drawHighlightsForTerm(term);
       return;
@@ -857,7 +798,6 @@
 
     const displayWidth = img.clientWidth;
     const displayHeight = img.clientHeight;
-
     if (!displayWidth || !displayHeight) return;
 
     const scaleX = displayWidth / img.naturalWidth;
@@ -868,28 +808,77 @@
     const offsetLeft = imgRect.left - wrapRect.left;
     const offsetTop = imgRect.top - wrapRect.top;
 
-    matches.forEach((m) => {
-      const bbox = m.bbox;
-      const x = bbox.x0 * scaleX;
-      const y = bbox.y0 * scaleY;
-      const w = (bbox.x1 - bbox.x0) * scaleX;
-      const h = (bbox.y1 - bbox.y0) * scaleY;
+    const imgLeft = offsetLeft;
+    const imgTop = offsetTop;
+    const imgRight = offsetLeft + displayWidth;
+    const imgBottom = offsetTop + displayHeight;
 
-      const rect = document.createElement("div");
-      rect.className = "highlight-rect";
-      rect.style.left = offsetLeft + x + "px";
-      rect.style.top = offsetTop + y + "px";
-      rect.style.width = Math.max(w, 16) + "px";
-      rect.style.height = Math.max(h, 16) + "px";
+    // Use the first match as the “target” for the crosshair
+    const target = matches[0];
+    const bbox = target.bbox;
 
-      highlightsLayer.appendChild(rect);
-    });
+    const x = bbox.x0 * scaleX;
+    const y = bbox.y0 * scaleY;
+    const w = (bbox.x1 - bbox.x0) * scaleX;
+    const h = (bbox.y1 - bbox.y0) * scaleY;
+
+    const centerX = offsetLeft + x + w / 2;
+    const centerY = offsetTop + y + h / 2;
+
+    const gapPadding = 8;        // extra space around the word
+    const lineThickness = 4;
+
+    const gapX = w / 2 + gapPadding;
+    const gapY = h / 2 + gapPadding;
+
+    function addLine(left, top, width, height) {
+      if (width <= 0 || height <= 0) return;
+      const line = document.createElement("div");
+      line.className = "crosshair-line";
+      line.style.left = left + "px";
+      line.style.top = top + "px";
+      line.style.width = width + "px";
+      line.style.height = height + "px";
+      highlightsLayer.appendChild(line);
+    }
+
+    // Vertical top segment
+    addLine(
+      centerX - lineThickness / 2,
+      imgTop,
+      lineThickness,
+      Math.max(0, centerY - gapY - imgTop)
+    );
+
+    // Vertical bottom segment
+    addLine(
+      centerX - lineThickness / 2,
+      centerY + gapY,
+      lineThickness,
+      Math.max(0, imgBottom - (centerY + gapY))
+    );
+
+    // Horizontal left segment
+    addLine(
+      imgLeft,
+      centerY - lineThickness / 2,
+      Math.max(0, centerX - gapX - imgLeft),
+      lineThickness
+    );
+
+    // Horizontal right segment
+    addLine(
+      centerX + gapX,
+      centerY - lineThickness / 2,
+      Math.max(0, imgRight - (centerX + gapX)),
+      lineThickness
+    );
   }
 
   function goPrevTerm() {
     if (!termList.length) return;
     const newIndex = findPrevDictIndex(currentTermIndex);
-    if (newIndex === -1) return; // no dictionary words
+    if (newIndex === -1) return;
     currentTermIndex = newIndex;
     currentTerm = termList[currentTermIndex];
     setupResultsScreen();
@@ -899,7 +888,7 @@
   function goNextTerm() {
     if (!termList.length) return;
     const newIndex = findNextDictIndex(currentTermIndex);
-    if (newIndex === -1) return; // no dictionary words
+    if (newIndex === -1) return;
     currentTermIndex = newIndex;
     currentTerm = termList[currentTermIndex];
     setupResultsScreen();
@@ -909,7 +898,6 @@
   pillLeft.addEventListener("click", goPrevTerm);
   pillRight.addEventListener("click", goNextTerm);
 
-  // swipe on image to move between search terms
   let touchStartX = null;
   resultsImageInner.addEventListener("touchstart", (e) => {
     touchStartX = e.touches[0].clientX;
@@ -925,14 +913,11 @@
     touchStartX = null;
   });
 
-  // Redraw highlights on resize (to keep boxes aligned)
   window.addEventListener("resize", () => {
     if (screenResults.classList.contains("active") && currentTerm) {
       drawHighlightsForTerm(currentTerm);
     }
   });
-
-  // --- new image / new search -------------------------------------- //
 
   btnNewImage.addEventListener("click", () => {
     imageInput.value = "";
