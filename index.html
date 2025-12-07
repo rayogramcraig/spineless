@@ -5,8 +5,8 @@
   <title>Bookshelf Search</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
   <!-- Tesseract.js for OCR -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
@@ -431,7 +431,7 @@
   let ocrWords = [];       // [{ text, bbox: {x0,y0,x1,y1} }] in ORIGINAL orientation
   let imageDataUrl = "";
 
-  // Alphabetical list of unique terms (lowercase) that have hits
+  // Alphabetical list of unique terms (lowercase) from OCR
   let termList = [];       // ["apple", "book", ...]
   let currentTermIndex = -1;
   let currentTerm = "";
@@ -441,6 +441,53 @@
       s.classList.remove("active")
     );
     el.classList.add("active");
+  }
+
+  // --- "Dictionary word" heuristic --------------------------------- //
+
+  const SHORT_COMMON_WORDS = new Set([
+    "a","an","as","at","be","by","do","go","he","if","in","is","it","me","my",
+    "no","of","on","or","so","to","up","us","we"
+  ]);
+
+  function isDictionaryWord(word) {
+    if (!word) return false;
+    const w = word.toLowerCase();
+
+    // explicitly allow very common short words
+    if (SHORT_COMMON_WORDS.has(w)) return true;
+
+    // letters only; discard tokens with digits/punctuation
+    if (!/^[a-z]+$/.test(w)) return false;
+
+    // ignore ultra-short leftovers like "aa"
+    if (w.length < 3) return false;
+
+    // must contain at least one vowel-ish
+    if (!/[aeiouy]/.test(w)) return false;
+
+    return true;
+  }
+
+  // Find previous/next indices that are dictionary words, skipping junk
+  function findPrevDictIndex(startIndex) {
+    if (!termList.length) return -1;
+    let idx = startIndex;
+    for (let steps = 0; steps < termList.length; steps++) {
+      idx = (idx - 1 + termList.length) % termList.length;
+      if (isDictionaryWord(termList[idx])) return idx;
+    }
+    return -1;
+  }
+
+  function findNextDictIndex(startIndex) {
+    if (!termList.length) return -1;
+    let idx = startIndex;
+    for (let steps = 0; steps < termList.length; steps++) {
+      idx = (idx + 1) % termList.length;
+      if (isDictionaryWord(termList[idx])) return idx;
+    }
+    return -1;
   }
 
   // --- bbox mapping helpers ---------------------------------------- //
@@ -744,17 +791,28 @@
 
     pillMain.textContent = termList[currentTermIndex];
 
-    if (termList.length === 1) {
-      pillLeft.textContent = termList[0];
-      pillRight.textContent = termList[0];
+    // find dictionary neighbors
+    const prevIndex = findPrevDictIndex(currentTermIndex);
+    const nextIndex = findNextDictIndex(currentTermIndex);
+
+    // if we have fewer than 1 valid dictionary words, disable sides
+    if (prevIndex === -1 && nextIndex === -1) {
+      pillLeft.textContent = "";
+      pillRight.textContent = "";
       pillLeft.classList.add("disabled");
       pillRight.classList.add("disabled");
       return;
     }
 
-    const len = termList.length;
-    const prevIndex = (currentTermIndex - 1 + len) % len;
-    const nextIndex = (currentTermIndex + 1) % len;
+    // if only one dictionary word in the whole list
+    if (prevIndex === nextIndex || (prevIndex === -1 || nextIndex === -1)) {
+      const idx = prevIndex !== -1 ? prevIndex : nextIndex;
+      pillLeft.textContent = termList[idx];
+      pillRight.textContent = termList[idx];
+      pillLeft.classList.add("disabled");
+      pillRight.classList.add("disabled");
+      return;
+    }
 
     pillLeft.textContent = termList[prevIndex];
     pillRight.textContent = termList[nextIndex];
@@ -822,17 +880,9 @@
 
   function goPrevTerm() {
     if (!termList.length) return;
-
-    if (termList.length === 1) {
-      currentTermIndex = 0;
-      currentTerm = termList[0];
-      setupResultsScreen();
-      drawHighlightsForTerm(currentTerm);
-      return;
-    }
-
-    const len = termList.length;
-    currentTermIndex = (currentTermIndex - 1 + len) % len;
+    const newIndex = findPrevDictIndex(currentTermIndex);
+    if (newIndex === -1) return; // no dictionary words
+    currentTermIndex = newIndex;
     currentTerm = termList[currentTermIndex];
     setupResultsScreen();
     drawHighlightsForTerm(currentTerm);
@@ -840,17 +890,9 @@
 
   function goNextTerm() {
     if (!termList.length) return;
-
-    if (termList.length === 1) {
-      currentTermIndex = 0;
-      currentTerm = termList[0];
-      setupResultsScreen();
-      drawHighlightsForTerm(currentTerm);
-      return;
-    }
-
-    const len = termList.length;
-    currentTermIndex = (currentTermIndex + 1) % len;
+    const newIndex = findNextDictIndex(currentTermIndex);
+    if (newIndex === -1) return; // no dictionary words
+    currentTermIndex = newIndex;
     currentTerm = termList[currentTermIndex];
     setupResultsScreen();
     drawHighlightsForTerm(currentTerm);
