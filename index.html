@@ -404,27 +404,100 @@
       pointer-events: none;
     }
 
+    .pill-main-wrapper {
+      flex: 1;
+      max-width: 38%;
+      position: relative;
+      display: flex;
+      justify-content: center;
+    }
+
     .pill-main {
       background: var(--accent);
       color: #fff;
       border: none;
       box-shadow: var(--shadow-soft);
       pointer-events: none;
+      width: 100%;
+    }
+
+    #pill-badge {
+      position: absolute;
+      top: -8px;
+      right: -4px;
+      min-width: 24px;
+      height: 24px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: #fff;
+      color: #111;
+      font-size: 0.9rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    #results-bottom-row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
     }
 
     #new-search-btn {
-      padding: 12px 20px;
+      padding: 10px 18px;
       border-radius: 999px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 1.1rem;
+      font-weight: 600;
+      box-shadow: var(--shadow-soft);
+      cursor: pointer;
+      width: auto;
+      min-width: 44%;
+      text-align: center;
+    }
+
+    #instance-nav {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .hit-nav-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 1.6rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow-soft);
+      cursor: pointer;
+    }
+
+    #hit-counter {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
       border: none;
       background: #fff;
       color: #111;
-      font-size: 1.2rem;
-      font-weight: 500;
+      font-size: 1.4rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       box-shadow: var(--shadow-soft);
-      cursor: pointer;
-      width: 70%;
-      max-width: 420px;
-      text-align: center;
     }
   </style>
 </head>
@@ -479,10 +552,21 @@
       <div id="results-bottom">
         <div id="results-pills">
           <button id="pill-left" class="pill pill-side"></button>
-          <div id="pill-main" class="pill pill-main"></div>
+          <div class="pill-main-wrapper">
+            <div id="pill-main" class="pill pill-main"></div>
+            <div id="pill-badge" class="pill-badge hidden"></div>
+          </div>
           <button id="pill-right" class="pill pill-side"></button>
         </div>
-        <button id="new-search-btn">new search</button>
+
+        <div id="results-bottom-row">
+          <button id="new-search-btn">new search</button>
+          <div id="instance-nav" class="hidden">
+            <button id="hit-prev" class="hit-nav-btn">&#9664;</button>
+            <div id="hit-counter">1</div>
+            <button id="hit-next" class="hit-nav-btn">&#9654;</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -503,6 +587,7 @@
   const pillLeft = document.getElementById("pill-left");
   const pillRight = document.getElementById("pill-right");
   const pillMain = document.getElementById("pill-main");
+  const pillBadge = document.getElementById("pill-badge");
   const resultsImageInner = document.getElementById("results-image-inner");
   const highlightsLayer = document.getElementById("highlightsLayer");
 
@@ -511,12 +596,21 @@
   const scanGradient = document.getElementById("scan-gradient");
   const scanBand = document.getElementById("scan-band");
 
+  const instanceNav = document.getElementById("instance-nav");
+  const hitPrevBtn = document.getElementById("hit-prev");
+  const hitNextBtn = document.getElementById("hit-next");
+  const hitCounter = document.getElementById("hit-counter");
+
   let ocrWords = [];
   let imageDataUrl = "";
 
   let termList = [];
   let currentTermIndex = -1;
   let currentTerm = "";
+
+  // per-term instance tracking
+  let currentMatches = [];
+  let currentMatchIndex = 0;
 
   function showScreen(el) {
     [screenAdd, screenOCR, screenResults].forEach((s) =>
@@ -689,12 +783,16 @@
     termList = [];
     currentTermIndex = -1;
     currentTerm = "";
+    currentMatches = [];
+    currentMatchIndex = 0;
     clearHighlights();
     pillMain.textContent = "";
     pillLeft.textContent = "";
     pillRight.textContent = "";
     pillLeft.classList.add("disabled");
     pillRight.classList.add("disabled");
+    pillBadge.classList.add("hidden");
+    instanceNav.classList.add("hidden");
 
     try {
       const img = new Image();
@@ -731,7 +829,7 @@
       ctxCCW.drawImage(img, 0, 0);
 
       const passes = [
-        { kind: "base", canvas: baseCanvas, label: "0°", modeClass: "mode-0" },
+        { kind: "base", canvas: baseCanvas, label: "0°",  modeClass: "mode-0" },
         { kind: "cw",   canvas: cwCanvas,   label: "90°", modeClass: "mode-90" },
         { kind: "ccw",  canvas: ccwCanvas,  label: "-90°", modeClass: "mode-neg90" },
       ];
@@ -837,6 +935,14 @@
     runSearch(value);
   });
 
+  function getMatchesForTerm(term) {
+    if (!term || !ocrWords.length) return [];
+    const q = term.toLowerCase();
+    return ocrWords.filter(
+      (w) => w.text && w.text.toLowerCase() === q
+    );
+  }
+
   function runSearch(term) {
     if (!ocrWords.length || !termList.length) return;
     const raw = term.trim();
@@ -857,9 +963,21 @@
     currentTermIndex = idx;
     currentTerm = termList[currentTermIndex];
 
+    currentMatches = getMatchesForTerm(currentTerm);
+    currentMatchIndex = 0;
+
     setupResultsScreen();
     showScreen(screenResults);
-    drawHighlightsForTerm(currentTerm);
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  function updateInstanceNav() {
+    if (!currentMatches || currentMatches.length <= 1) {
+      instanceNav.classList.add("hidden");
+      return;
+    }
+    instanceNav.classList.remove("hidden");
+    hitCounter.textContent = String(currentMatchIndex + 1);
   }
 
   function setupResultsScreen() {
@@ -871,10 +989,20 @@
       pillRight.textContent = "";
       pillLeft.classList.add("disabled");
       pillRight.classList.add("disabled");
+      pillBadge.classList.add("hidden");
+      instanceNav.classList.add("hidden");
       return;
     }
 
     pillMain.textContent = termList[currentTermIndex];
+
+    // badge shows only when there are multiple hits
+    if (currentMatches && currentMatches.length > 1) {
+      pillBadge.textContent = currentMatches.length;
+      pillBadge.classList.remove("hidden");
+    } else {
+      pillBadge.classList.add("hidden");
+    }
 
     const prevIndex = findPrevDictIndex(currentTermIndex);
     const nextIndex = findNextDictIndex(currentTermIndex);
@@ -884,22 +1012,20 @@
       pillRight.textContent = "";
       pillLeft.classList.add("disabled");
       pillRight.classList.add("disabled");
-      return;
-    }
-
-    if (prevIndex === nextIndex || (prevIndex === -1 || nextIndex === -1)) {
+    } else if (prevIndex === nextIndex || (prevIndex === -1 || nextIndex === -1)) {
       const idx = prevIndex !== -1 ? prevIndex : nextIndex;
       pillLeft.textContent = termList[idx];
       pillRight.textContent = termList[idx];
       pillLeft.classList.add("disabled");
       pillRight.classList.add("disabled");
-      return;
+    } else {
+      pillLeft.textContent = termList[prevIndex];
+      pillRight.textContent = termList[nextIndex];
+      pillLeft.classList.remove("disabled");
+      pillRight.classList.remove("disabled");
     }
 
-    pillLeft.textContent = termList[prevIndex];
-    pillRight.textContent = termList[nextIndex];
-    pillLeft.classList.remove("disabled");
-    pillRight.classList.remove("disabled");
+    updateInstanceNav();
   }
 
   function clearHighlights() {
@@ -909,21 +1035,27 @@
   }
 
   // Diagonal crosshair with fade from center outward
-  function drawHighlightsForTerm(term) {
+  function drawHighlightsForTerm(term, matchIndex = 0) {
     if (!term || !ocrWords.length || !resultsImage.src) return;
 
-    const q = term.toLowerCase();
-    const matches = ocrWords.filter(
-      (w) => w.text && w.text.toLowerCase() === q
-    );
+    const matches = (currentMatches && currentMatches.length)
+      ? currentMatches
+      : getMatchesForTerm(term);
 
     clearHighlights();
-    if (!matches.length) return;
+    if (!matches.length) {
+      instanceNav.classList.add("hidden");
+      pillBadge.classList.add("hidden");
+      return;
+    }
+
+    if (matchIndex < 0) matchIndex = 0;
+    if (matchIndex >= matches.length) matchIndex = matches.length - 1;
 
     const img = resultsImage;
 
     if (!img.naturalWidth || !img.naturalHeight) {
-      img.onload = () => drawHighlightsForTerm(term);
+      img.onload = () => drawHighlightsForTerm(term, matchIndex);
       return;
     }
 
@@ -944,7 +1076,7 @@
     const imgRight = offsetLeft + displayWidth;
     const imgBottom = offsetTop + displayHeight;
 
-    const target = matches[0];
+    const target = matches[matchIndex];
     const bbox = target.bbox;
 
     const x = bbox.x0 * scaleX;
@@ -991,6 +1123,8 @@
 
     // bottom-left arm (↙ from center)
     addDiagonal(centerX - gapX, centerY + gapY, imgLeft, imgBottom);
+
+    updateInstanceNav();
   }
 
   function goPrevTerm() {
@@ -999,8 +1133,10 @@
     if (newIndex === -1) return;
     currentTermIndex = newIndex;
     currentTerm = termList[currentTermIndex];
+    currentMatches = getMatchesForTerm(currentTerm);
+    currentMatchIndex = 0;
     setupResultsScreen();
-    drawHighlightsForTerm(currentTerm);
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
   }
 
   function goNextTerm() {
@@ -1009,12 +1145,29 @@
     if (newIndex === -1) return;
     currentTermIndex = newIndex;
     currentTerm = termList[currentTermIndex];
+    currentMatches = getMatchesForTerm(currentTerm);
+    currentMatchIndex = 0;
     setupResultsScreen();
-    drawHighlightsForTerm(currentTerm);
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
   }
 
   pillLeft.addEventListener("click", goPrevTerm);
   pillRight.addEventListener("click", goNextTerm);
+
+  // per-term instance nav
+  hitPrevBtn.addEventListener("click", () => {
+    if (!currentMatches.length) return;
+    currentMatchIndex =
+      (currentMatchIndex - 1 + currentMatches.length) % currentMatches.length;
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  });
+
+  hitNextBtn.addEventListener("click", () => {
+    if (!currentMatches.length) return;
+    currentMatchIndex =
+      (currentMatchIndex + 1) % currentMatches.length;
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  });
 
   let touchStartX = null;
   resultsImageInner.addEventListener("touchstart", (e) => {
@@ -1033,7 +1186,7 @@
 
   window.addEventListener("resize", () => {
     if (screenResults.classList.contains("active") && currentTerm) {
-      drawHighlightsForTerm(currentTerm);
+      drawHighlightsForTerm(currentTerm, currentMatchIndex);
     }
   });
 
@@ -1043,6 +1196,8 @@
     termList = [];
     currentTermIndex = -1;
     currentTerm = "";
+    currentMatches = [];
+    currentMatchIndex = 0;
     clearHighlights();
     showScreen(screenAdd);
   });
