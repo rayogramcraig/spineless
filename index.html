@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Bookshelf Search</title>
+  <title>Spineless</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -10,11 +10,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="spineless">
 
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="icon" href="favicon.ico">
+
   <link rel="apple-touch-icon" sizes="120x120" href="apple-touch-icon-120x120.png">
   <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon-152x152.png">
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180x180.png">
   <link rel="apple-touch-icon" href="apple-touch-icon-v2.png">
-  	
 
   <!-- Tesseract.js for OCR -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
@@ -28,6 +31,7 @@
       --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.35);
       --transition-fast: 0.4s ease;
       --transition-med: 0.6s ease;
+      --scan-yellow: #e8ff29;
     }
 
     * {
@@ -110,6 +114,17 @@
       transform: scale(1.02);
     }
 
+    /* glowing scan band overlay */
+    #scan-gradient {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.35s ease;
+      mix-blend-mode: screen;
+    }
+
+    /* common scanning text */
     #ocr-overlay {
       position: absolute;
       inset: 0;
@@ -129,10 +144,23 @@
     }
 
     .scanning-label {
-      font-size: 3rem;
-      font-weight: 700;
-      bottom: 20vh;
+      bottom: 18vh;
       opacity: 1;
+      text-align: center;
+      color: var(--scan-yellow);
+      text-shadow: 0 0 16px rgba(0, 0, 0, 0.9);
+    }
+
+    #scan-word {
+      font-size: 3rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    #scan-angle {
+      margin-top: 0.25em;
+      font-size: 2.8rem;
+      font-weight: 700;
     }
 
     .search-container {
@@ -191,10 +219,15 @@
       background: rgba(0, 0, 0, 0.04);
     }
 
+    /* transition from scanning → search */
     #screen-ocr.mode-search .scanning-label {
       opacity: 0;
       transform: translate(-50%, -30px);
       pointer-events: none;
+    }
+
+    #screen-ocr.mode-search #scan-gradient {
+      opacity: 0;
     }
 
     #screen-ocr.mode-search .search-container {
@@ -213,6 +246,69 @@
       padding: 6px 12px;
       border-radius: 999px;
       pointer-events: none;
+    }
+
+    /* scan band animations */
+
+    @keyframes scan-vertical {
+      0%   { background-position: 0% -100%; }
+      50%  { background-position: 0% 0%; }
+      100% { background-position: 0% 100%; }
+    }
+
+    @keyframes scan-horizontal-right {
+      0%   { background-position: -100% 0%; }
+      100% { background-position: 100% 0%; }
+    }
+
+    @keyframes scan-horizontal-left {
+      0%   { background-position: 100% 0%; }
+      100% { background-position: -100% 0%; }
+    }
+
+    /* 0° pass: horizontal band sweeping down */
+    #screen-ocr.scanning.scan-mode-0 #scan-gradient {
+      opacity: 1;
+      background: linear-gradient(
+        to bottom,
+        rgba(232, 255, 41, 0) 0%,
+        rgba(232, 255, 41, 0.05) 18%,
+        rgba(232, 255, 41, 0.95) 50%,
+        rgba(232, 255, 41, 0.05) 82%,
+        rgba(232, 255, 41, 0) 100%
+      );
+      background-size: 100% 260%;
+      animation: scan-vertical 1.6s ease-in-out infinite;
+    }
+
+    /* 90° pass: vertical band sweeping right */
+    #screen-ocr.scanning.scan-mode-90 #scan-gradient {
+      opacity: 1;
+      background: linear-gradient(
+        to right,
+        rgba(232, 255, 41, 0) 0%,
+        rgba(232, 255, 41, 0.05) 18%,
+        rgba(232, 255, 41, 0.95) 50%,
+        rgba(232, 255, 41, 0.05) 82%,
+        rgba(232, 255, 41, 0) 100%
+      );
+      background-size: 260% 100%;
+      animation: scan-horizontal-right 1.6s ease-in-out infinite;
+    }
+
+    /* -90° pass: vertical band sweeping left */
+    #screen-ocr.scanning.scan-mode-neg90 #scan-gradient {
+      opacity: 1;
+      background: linear-gradient(
+        to right,
+        rgba(232, 255, 41, 0) 0%,
+        rgba(232, 255, 41, 0.05) 18%,
+        rgba(232, 255, 41, 0.95) 50%,
+        rgba(232, 255, 41, 0.05) 82%,
+        rgba(232, 255, 41, 0) 100%
+      );
+      background-size: 260% 100%;
+      animation: scan-horizontal-left 1.6s ease-in-out infinite;
     }
 
     /* RESULTS SCREEN */
@@ -276,23 +372,12 @@
       pointer-events: none;
     }
 
-    .highlight-rect {
-      position: absolute;
-      border: 3px solid #ffeb3b;
-      border-radius: 8px;
-      pointer-events: none;
-      box-shadow: 0 0 0 4px rgba(255, 235, 59, 0.25);
-    }
+    /* crosshair segments */
     .crosshair-line {
       position: absolute;
-      background: linear-gradient(
-        to right,
-        rgba(213, 255, 57, 1) 0%,
-        rgba(213, 255, 57, 0) 100%
-      );
-      box-shadow: 0 0 8px rgba(213, 255, 57, 0.7);
+      background: #d5ff39;
+      box-shadow: 0 0 10px rgba(213,255,57,0.8);
       pointer-events: none;
-      transform-origin: 0 50%;
     }
 
     #results-bottom {
@@ -378,12 +463,17 @@
       <div class="label">add image</div>
     </div>
 
-    <!-- OCR (SCANNING + SEARCH TRANSITION) -->
+    <!-- OCR / SCANNING -->
     <div id="screen-ocr" class="screen">
       <div id="ocr-bg"></div>
+      <div id="scan-gradient"></div>
       <div id="ocr-overlay">
         <div id="ocr-progress" class="hidden">scanning…</div>
-        <div class="scanning-label">scanning</div>
+
+        <div class="scanning-label">
+          <div id="scan-word">reading</div>
+          <div id="scan-angle">0°</div>
+        </div>
 
         <div class="search-container">
           <input
@@ -441,11 +531,13 @@
   const resultsImageInner = document.getElementById("results-image-inner");
   const highlightsLayer = document.getElementById("highlightsLayer");
 
-  let ocrWords = [];       // [{ text, bbox: {x0,y0,x1,y1} }] in ORIGINAL orientation
+  const scanWordEl = document.getElementById("scan-word");
+  const scanAngleEl = document.getElementById("scan-angle");
+
+  let ocrWords = [];
   let imageDataUrl = "";
 
-  // Alphabetical list of unique terms (lowercase) from OCR
-  let termList = [];       // ["apple", "book", ...]
+  let termList = [];
   let currentTermIndex = -1;
   let currentTerm = "";
 
@@ -456,8 +548,6 @@
     el.classList.add("active");
   }
 
-  // --- "Dictionary word" heuristic --------------------------------- //
-
   const SHORT_COMMON_WORDS = new Set([
     "a","an","as","at","be","by","do","go","he","if","in","is","it","me","my",
     "no","of","on","or","so","to","up","us","we"
@@ -466,23 +556,13 @@
   function isDictionaryWord(word) {
     if (!word) return false;
     const w = word.toLowerCase();
-
-    // explicitly allow very common short words
     if (SHORT_COMMON_WORDS.has(w)) return true;
-
-    // letters only; discard tokens with digits/punctuation
     if (!/^[a-z]+$/.test(w)) return false;
-
-    // ignore ultra-short leftovers like "aa"
     if (w.length < 3) return false;
-
-    // must contain at least one vowel-ish
     if (!/[aeiouy]/.test(w)) return false;
-
     return true;
   }
 
-  // Find previous/next indices that are dictionary words, skipping junk
   function findPrevDictIndex(startIndex) {
     if (!termList.length) return -1;
     let idx = startIndex;
@@ -503,14 +583,9 @@
     return -1;
   }
 
-  // --- bbox mapping helpers ---------------------------------------- //
-
-  // Take a bbox from a rotated canvas (kind: 'base' | 'cw' | 'ccw')
-  // and map it back into the original image coordinate system.
   function mapBboxToOriginal(bbox, kind, W, H) {
     let { x0, y0, x1, y1 } = bbox;
 
-    // corners in rotated space
     const corners = [
       [x0, y0],
       [x1, y1],
@@ -520,20 +595,12 @@
       return { x: u, y: v };
     }
 
-    // cw canvas width=H, height=W, created via:
-    // ctx.translate(H,0); ctx.rotate(Math.PI/2); ctx.drawImage(img,0,0);
-    // orig (x,y) -> cw (u,v) = (H - y, x)
-    // inverse: (u,v) -> orig (x = v, y = H - u)
     function fromCW(u, v) {
       const x = v;
       const y = H - u;
       return { x, y };
     }
 
-    // ccw canvas width=H, height=W, created via:
-    // ctx.translate(0,W); ctx.rotate(-Math.PI/2); ctx.drawImage(img,0,0);
-    // orig (x,y) -> ccw (u,v) = (y, W - x)
-    // inverse: (u,v) -> orig (x = W - v, y = u)
     function fromCCW(u, v) {
       const x = W - v;
       const y = u;
@@ -543,7 +610,7 @@
     const mapped = corners.map(([u, v]) => {
       if (kind === "base") return fromBase(u, v);
       if (kind === "cw") return fromCW(u, v);
-      return fromCCW(u, v); // 'ccw'
+      return fromCCW(u, v);
     });
 
     const xs = mapped.map((p) => p.x);
@@ -554,7 +621,6 @@
     let nx1 = Math.max(xs[0], xs[1]);
     let ny1 = Math.max(ys[0], ys[1]);
 
-    // clamp to original image bounds
     nx0 = Math.max(0, Math.min(W, nx0));
     nx1 = Math.max(0, Math.min(W, nx1));
     ny0 = Math.max(0, Math.min(H, ny0));
@@ -563,20 +629,16 @@
     return { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
   }
 
-  // --- file handling ------------------------------------------------ //
-
   imageInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       imageDataUrl = ev.target.result;
-      startOCR(imageDataUrl); // 3-pass OCR
+      startOCR(imageDataUrl);
     };
     reader.readAsDataURL(file);
   });
-
-  // --- build alphabetical term list -------------------------------- //
 
   function buildTermList() {
     if (!ocrWords.length) {
@@ -584,7 +646,6 @@
       return;
     }
 
-    // Basic cleanup: lowercase, strip punctuation from ends, ignore 1-char tokens
     const cleaned = ocrWords
       .map((w) => (w.text || "").trim())
       .filter(Boolean)
@@ -601,16 +662,21 @@
     );
   }
 
-  // --- 3-pass OCR (base, cw, ccw) ---------------------------------- //
+  function setScanVisual(angleLabel, modeClass) {
+    screenOCR.classList.remove("scan-mode-0", "scan-mode-90", "scan-mode-neg90");
+    if (modeClass) screenOCR.classList.add(modeClass);
+    if (scanWordEl) scanWordEl.textContent = "reading";
+    if (scanAngleEl) scanAngleEl.textContent = angleLabel;
+  }
 
   async function startOCR(dataUrl) {
     showScreen(screenOCR);
     screenOCR.classList.remove("mode-search");
+    screenOCR.classList.add("scanning");
     ocrBg.style.backgroundImage = `url(${dataUrl})`;
     ocrProgress.classList.remove("hidden");
     ocrProgress.textContent = "scanning…";
 
-    // reset state
     ocrWords = [];
     termList = [];
     currentTermIndex = -1;
@@ -635,13 +701,11 @@
       const W = img.naturalWidth;
       const H = img.naturalHeight;
 
-      // base canvas (no rotation)
       const baseCanvas = document.createElement("canvas");
       baseCanvas.width = W;
       baseCanvas.height = H;
       baseCanvas.getContext("2d").drawImage(img, 0, 0);
 
-      // 90° clockwise
       const cwCanvas = document.createElement("canvas");
       cwCanvas.width = H;
       cwCanvas.height = W;
@@ -650,7 +714,6 @@
       ctxCW.rotate(Math.PI / 2);
       ctxCW.drawImage(img, 0, 0);
 
-      // 90° counter-clockwise
       const ccwCanvas = document.createElement("canvas");
       ccwCanvas.width = H;
       ccwCanvas.height = W;
@@ -660,25 +723,27 @@
       ctxCCW.drawImage(img, 0, 0);
 
       const passes = [
-        { kind: "base", canvas: baseCanvas },
-        { kind: "cw", canvas: cwCanvas },
-        { kind: "ccw", canvas: ccwCanvas },
+        { kind: "base", canvas: baseCanvas, label: "0°", modeClass: "scan-mode-0" },
+        { kind: "cw",   canvas: cwCanvas,   label: "90°", modeClass: "scan-mode-90" },
+        { kind: "ccw",  canvas: ccwCanvas,  label: "-90°", modeClass: "scan-mode-neg90" },
       ];
 
       let allWords = [];
 
       for (let i = 0; i < passes.length; i++) {
-        const { kind, canvas } = passes[i];
+        const { kind, canvas, label, modeClass } = passes[i];
         const passIndex = i + 1;
         const passTotal = passes.length;
+
+        setScanVisual(label, modeClass);
 
         const result = await Tesseract.recognize(canvas, "eng", {
           logger: (m) => {
             if (m.status === "recognizing text") {
               const pct = Math.round((m.progress || 0) * 100);
-              ocrProgress.textContent = `scanning ${passIndex}/${passTotal}… ${pct}%`;
+              ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}… ${pct}%`;
             } else {
-              ocrProgress.textContent = `scanning ${passIndex}/${passTotal}…`;
+              ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}…`;
             }
           },
         });
@@ -698,7 +763,8 @@
       buildTermList();
       ocrProgress.classList.add("hidden");
 
-      // scanning → search transition
+      // done scanning
+      screenOCR.classList.remove("scanning", "scan-mode-0", "scan-mode-90", "scan-mode-neg90");
       screenOCR.classList.add("mode-search");
       setTimeout(() => searchInput.focus(), 450);
     } catch (err) {
@@ -707,11 +773,10 @@
         "There was a problem reading the image.\n\n" +
           (err && err.message ? err.message : String(err))
       );
+      screenOCR.classList.remove("scanning", "scan-mode-0", "scan-mode-90", "scan-mode-neg90");
       showScreen(screenAdd);
     }
   }
-
-  // --- search + autosuggest ---------------------------------------- //
 
   function updateAutosuggest(query) {
     if (!query) {
@@ -722,7 +787,6 @@
 
     const q = query.toLowerCase();
 
-    // Use termList so suggestions line up with carousel
     const suggestions = termList
       .filter((t) => t.startsWith(q))
       .slice(0, 20);
@@ -748,7 +812,7 @@
 
   searchInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
-      const term = searchInput.value.trim();
+      const term = e.target.value.trim();
       if (term) runSearch(term);
     }
   });
@@ -769,7 +833,6 @@
 
     const lowerTerm = raw.toLowerCase();
 
-    // Find exact in termList, else first term that starts with it, else fail.
     let idx = termList.findIndex((t) => t === lowerTerm);
     if (idx === -1) {
       idx = termList.findIndex((t) => t.startsWith(lowerTerm));
@@ -788,8 +851,6 @@
     drawHighlightsForTerm(currentTerm);
   }
 
-  // --- results view + highlighting --------------------------------- //
-
   function setupResultsScreen() {
     resultsImage.src = imageDataUrl;
 
@@ -804,11 +865,9 @@
 
     pillMain.textContent = termList[currentTermIndex];
 
-    // find dictionary neighbors
     const prevIndex = findPrevDictIndex(currentTermIndex);
     const nextIndex = findNextDictIndex(currentTermIndex);
 
-    // if we have fewer than 1 valid dictionary words, disable sides
     if (prevIndex === -1 && nextIndex === -1) {
       pillLeft.textContent = "";
       pillRight.textContent = "";
@@ -817,7 +876,6 @@
       return;
     }
 
-    // if only one dictionary word in the whole list
     if (prevIndex === nextIndex || (prevIndex === -1 || nextIndex === -1)) {
       const idx = prevIndex !== -1 ? prevIndex : nextIndex;
       pillLeft.textContent = termList[idx];
@@ -839,7 +897,7 @@
     }
   }
 
-  // 45° X crosshair with fade-out from the middle
+  // Crosshair (unchanged from your version: + shape)
   function drawHighlightsForTerm(term) {
     if (!term || !ocrWords.length || !resultsImage.src) return;
 
@@ -876,7 +934,6 @@
     const imgRight = offsetLeft + displayWidth;
     const imgBottom = offsetTop + displayHeight;
 
-    // Use the first match as the “target”
     const target = matches[0];
     const bbox = target.bbox;
 
@@ -888,70 +945,60 @@
     const centerX = offsetLeft + x + w / 2;
     const centerY = offsetTop + y + h / 2;
 
-    const gapPadding = 10;       // gap around the text
+    const gapPadding = 8;
     const lineThickness = 4;
 
     const gapX = w / 2 + gapPadding;
     const gapY = h / 2 + gapPadding;
 
-    function addDiagonal(startX, startY, endX, endY) {
+    function addLine(left, top, width, height) {
+      if (width <= 0 || height <= 0) return;
       const line = document.createElement("div");
       line.className = "crosshair-line";
-
-      const dx = endX - startX;
-      const dy = endY - startY;
-      const length = Math.sqrt(dx * dx + dy * dy);
-      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-
-      line.style.width = length + "px";
-      line.style.height = lineThickness + "px";
-      line.style.left = startX + "px";
-      line.style.top = startY + "px";
-      line.style.transform = `rotate(${angle}deg)`;
-      line.style.transformOrigin = "0 50%";
-
+      line.style.left = left + "px";
+      line.style.top = top + "px";
+      line.style.width = width + "px";
+      line.style.height = height + "px";
       highlightsLayer.appendChild(line);
     }
 
-    // Each segment starts near the center-gap (bright) and goes to an edge (fades)
-
-    // top-left arm (↖ from center)
-    addDiagonal(
-      centerX - gapX,
-      centerY - gapY,
-      imgLeft,
-      imgTop
+    // Vertical top
+    addLine(
+      centerX - lineThickness / 2,
+      imgTop,
+      lineThickness,
+      Math.max(0, centerY - gapY - imgTop)
     );
 
-    // bottom-right arm (↘ from center)
-    addDiagonal(
-      centerX + gapX,
+    // Vertical bottom
+    addLine(
+      centerX - lineThickness / 2,
       centerY + gapY,
-      imgRight,
-      imgBottom
+      lineThickness,
+      Math.max(0, imgBottom - (centerY + gapY))
     );
 
-    // top-right arm (↗ from center)
-    addDiagonal(
-      centerX + gapX,
-      centerY - gapY,
-      imgRight,
-      imgTop
-    );
-
-    // bottom-left arm (↙ from center)
-    addDiagonal(
-      centerX - gapX,
-      centerY + gapY,
+    // Horizontal left
+    addLine(
       imgLeft,
-      imgBottom
+      centerY - lineThickness / 2,
+      Math.max(0, centerX - gapX - imgLeft),
+      lineThickness
+    );
+
+    // Horizontal right
+    addLine(
+      centerX + gapX,
+      centerY - lineThickness / 2,
+      Math.max(0, imgRight - (centerX + gapX)),
+      lineThickness
     );
   }
 
   function goPrevTerm() {
     if (!termList.length) return;
     const newIndex = findPrevDictIndex(currentTermIndex);
-    if (newIndex === -1) return; // no dictionary words
+    if (newIndex === -1) return;
     currentTermIndex = newIndex;
     currentTerm = termList[currentTermIndex];
     setupResultsScreen();
@@ -961,7 +1008,7 @@
   function goNextTerm() {
     if (!termList.length) return;
     const newIndex = findNextDictIndex(currentTermIndex);
-    if (newIndex === -1) return; // no dictionary words
+    if (newIndex === -1) return;
     currentTermIndex = newIndex;
     currentTerm = termList[currentTermIndex];
     setupResultsScreen();
@@ -971,7 +1018,6 @@
   pillLeft.addEventListener("click", goPrevTerm);
   pillRight.addEventListener("click", goNextTerm);
 
-  // swipe on image to move between search terms
   let touchStartX = null;
   resultsImageInner.addEventListener("touchstart", (e) => {
     touchStartX = e.touches[0].clientX;
@@ -987,14 +1033,11 @@
     touchStartX = null;
   });
 
-  // Redraw highlights on resize (to keep boxes aligned)
   window.addEventListener("resize", () => {
     if (screenResults.classList.contains("active") && currentTerm) {
       drawHighlightsForTerm(currentTerm);
     }
   });
-
-  // --- new image / new search -------------------------------------- //
 
   btnNewImage.addEventListener("click", () => {
     imageInput.value = "";
