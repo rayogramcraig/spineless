@@ -668,14 +668,15 @@
       return { x: u, y: v };
     }
 
-   // 🔧 FIXED 90° mapping
+    // ✅ Correct 90° clockwise mapping
     function fromCW(u, v) {
-      // canvas (u,v) -> original (x,y)
-      const x = H - v;
-      const y = u;
+      // canvas (u, v) -> original (x, y)
+      const x = v;
+      const y = H - u;
       return { x, y };
     }
 
+    // ✅ Correct -90° (counter-clockwise) mapping
     function fromCCW(u, v) {
       const x = W - v;
       const y = u;
@@ -684,8 +685,8 @@
 
     const mapped = corners.map(([u, v]) => {
       if (kind === "base") return fromBase(u, v);
-      if (kind === "cw") return fromCW(u, v);
-      return fromCCW(u, v);
+      if (kind === "cw")   return fromCW(u, v);
+      return fromCCW(u, v); // kind === "ccw"
     });
 
     const xs = mapped.map((p) => p.x);
@@ -703,6 +704,7 @@
 
     return { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
   }
+
 
   imageInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
