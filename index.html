@@ -391,15 +391,14 @@
       cursor: pointer;
     }
 
-	.pill-side {
-	    background: rgba(0, 0, 0, 0.4);
-	    color: #fff;
-	    border: 2px solid rgba(255, 255, 255, 0.25);
-	    font-size: .8rem;
-	    max-width: min-content;
-	}
-	
-	
+    .pill-side {
+      background: rgba(0, 0, 0, 0.4);
+      color: #fff;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      font-size: .8rem;
+      max-width: min-content;
+    }
+
     .pill-side.disabled {
       opacity: 0.3;
       border-style: dashed;
@@ -449,20 +448,20 @@
       gap: 12px;
     }
 
-	#new-search-btn {
-	    padding: 10px 18px;
-	    border-radius: 999px;
-	    border: none;
-	    background: #583922;
-	    color: #fff;
-	    font-size: 1.1rem;
-	    font-weight: 200;
-	    box-shadow: var(--shadow-soft);
-	    cursor: pointer;
-	    width: auto;
-	    min-width: 44%;
-	    text-align: center;
-	}
+    #new-search-btn {
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: none;
+      background: #583922;
+      color: #fff;
+      font-size: 1.1rem;
+      font-weight: 200;
+      box-shadow: var(--shadow-soft);
+      cursor: pointer;
+      width: auto;
+      min-width: 44%;
+      text-align: center;
+    }
 
     #instance-nav {
       display: flex;
@@ -499,7 +498,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: var(--shadow-soft);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
     }
   </style>
 </head>
@@ -668,15 +667,14 @@
       return { x: u, y: v };
     }
 
-    // ✅ Correct 90° clockwise mapping
+    // 90° clockwise
     function fromCW(u, v) {
-      // canvas (u, v) -> original (x, y)
       const x = v;
       const y = H - u;
       return { x, y };
     }
 
-    // ✅ Correct -90° (counter-clockwise) mapping
+    // -90° counter-clockwise
     function fromCCW(u, v) {
       const x = W - v;
       const y = u;
@@ -704,7 +702,6 @@
 
     return { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
   }
-
 
   imageInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
@@ -941,12 +938,20 @@
     runSearch(value);
   });
 
+  // NEW: normalize term function so list + matching use the same logic
+  function normalizeToken(t) {
+    return (t || "")
+      .toLowerCase()
+      .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "")
+      .trim();
+  }
+
+  // FIXED: now matches normalized OCR tokens, so "why," matches "why" etc.
   function getMatchesForTerm(term) {
     if (!term || !ocrWords.length) return [];
-    const q = term.toLowerCase();
-    return ocrWords.filter(
-      (w) => w.text && w.text.toLowerCase() === q
-    );
+    const q = normalizeToken(term);
+    if (!q) return [];
+    return ocrWords.filter((w) => normalizeToken(w.text) === q);
   }
 
   function runSearch(term) {
