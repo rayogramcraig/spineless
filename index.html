@@ -775,6 +775,39 @@
     }
   }
 
+  // Grayscale + small contrast boost preprocessing
+  function applyGrayscaleAndContrast(canvas, contrastValue = 20) {
+    const ctx = canvas.getContext("2d");
+    const { width, height } = canvas;
+    if (!width || !height) return;
+
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    const c = contrastValue;
+    const factor = (259 * (c + 255)) / (255 * (259 - c));
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      // grayscale
+      let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+
+      // contrast around 128
+      gray = factor * (gray - 128) + 128;
+      gray = Math.max(0, Math.min(255, gray));
+
+      data[i] = gray;
+      data[i + 1] = gray;
+      data[i + 2] = gray;
+      // alpha unchanged: data[i + 3]
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+  }
+
   async function startOCR(dataUrl) {
     showScreen(screenOCR);
     screenOCR.classList.remove("mode-search");
@@ -830,6 +863,11 @@
       ctxCCW.translate(0, W);
       ctxCCW.rotate(-Math.PI / 2);
       ctxCCW.drawImage(img, 0, 0);
+
+      // NEW: grayscale + small contrast boost on each orientation canvas
+      applyGrayscaleAndContrast(baseCanvas, 20);
+      applyGrayscaleAndContrast(cwCanvas, 20);
+      applyGrayscaleAndContrast(ccwCanvas, 20);
 
       const passes = [
         { kind: "base", canvas: baseCanvas, label: "0°",  modeClass: "mode-0" },
