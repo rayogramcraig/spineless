@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Spineless</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 
   <!-- iOS web app meta -->
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -41,6 +41,12 @@
       box-sizing: border-box;
       margin: 0;
       padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      touch-action: pan-x pan-y; /* allow scrolling, block pinch-zoom where supported */
     }
 
     body {
@@ -802,7 +808,7 @@
       data[i] = gray;
       data[i + 1] = gray;
       data[i + 2] = gray;
-      // alpha unchanged: data[i + 3]
+      // alpha unchanged
     }
 
     ctx.putImageData(imageData, 0, 0);
@@ -864,7 +870,7 @@
       ctxCCW.rotate(-Math.PI / 2);
       ctxCCW.drawImage(img, 0, 0);
 
-      // NEW: grayscale + small contrast boost on each orientation canvas
+      // grayscale + small contrast boost on each orientation canvas
       applyGrayscaleAndContrast(baseCanvas, 20);
       applyGrayscaleAndContrast(cwCanvas, 20);
       applyGrayscaleAndContrast(ccwCanvas, 20);
@@ -976,7 +982,7 @@
     runSearch(value);
   });
 
-  // NEW: normalize term function so list + matching use the same logic
+  // normalize term function so list + matching use the same logic
   function normalizeToken(t) {
     return (t || "")
       .toLowerCase()
@@ -984,7 +990,7 @@
       .trim();
   }
 
-  // FIXED: now matches normalized OCR tokens, so "why," matches "why" etc.
+  // matches normalized OCR tokens, so "why," matches "why" etc.
   function getMatchesForTerm(term) {
     if (!term || !ocrWords.length) return [];
     const q = normalizeToken(term);
@@ -1258,6 +1264,27 @@
     autosuggestEl.classList.remove("visible");
     setTimeout(() => searchInput.focus(), 200);
   });
+
+  // Prevent pinch-zoom / rotate gestures as much as possible
+  // iOS Safari gesture events
+  document.addEventListener("gesturestart", function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener("gesturechange", function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener("gestureend", function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  // Block ctrl+wheel zoom (desktop / some mobile browsers)
+  window.addEventListener("wheel", function (e) {
+    if (e.ctrlKey) {
+      e.preventDefault();
+    }
+  }, { passive: false });
 </script>
 </body>
 </html>
