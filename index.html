@@ -2,28 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Spineless</title>
+  <title>Bookshelf Search</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- iOS web app meta -->
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="spineless">
-
-  <!-- Favicons -->
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
-  <link rel="icon" href="favicon.ico">
-
-  <!-- iOS home screen icons -->
-  <link rel="apple-touch-icon" sizes="120x120" href="apple-touch-icon-120x120.png">
-  <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon-152x152.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180x180.png">
-  <link rel="apple-touch-icon" href="apple-touch-icon-v2.png">
-
   <!-- Tesseract.js for OCR -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
-
   <style>
     :root {
       --bg-dark: #111;
@@ -32,64 +14,91 @@
       --input-bg: #fff;
       --input-text: #111;
       --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.35);
-      --transition-fast: 0.4s ease;
-      --transition-med: 0.6s ease;
-      --scan-yellow: #e8ff29;
+      --transition-fast: 150ms ease-out;
+      --transition-med: 250ms ease-out;
     }
 
     * {
       box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html,
+    body {
       margin: 0;
       padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Helvetica Neue", Arial, sans-serif;
+      background: #000;
+      color: var(--white);
     }
 
     body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
-        sans-serif;
-      background: var(--bg-dark);
-      color: var(--white);
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+      background: #000;
     }
 
     #app {
       position: relative;
-      width: 100vw;
-      height: 100vh;
-      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      max-width: 480px;
+      margin: 0 auto;
       background: #000;
+      overflow: hidden;
     }
 
     .screen {
       position: absolute;
       inset: 0;
       display: none;
+      flex-direction: column;
+      background: #000;
     }
 
     .screen.active {
-      display: block;
-    }
-
-    .hidden {
-      display: none !important;
+      display: flex;
     }
 
     /* ADD IMAGE SCREEN */
-    #screen-add {
-      background: #111;
-    }
 
-    #screen-add.active {
-      display: flex;
+    #screen-add {
       align-items: center;
       justify-content: center;
+      padding: 24px;
     }
 
-    #screen-add .label {
-      font-size: 3rem;
-      font-weight: 700;
-      pointer-events: none;
+    #screen-add-inner {
+      text-align: center;
     }
 
+    #screen-add h1 {
+      font-size: 2.4rem;
+      margin-bottom: 1.5rem;
+    }
+
+    #btn-add-image {
+      background: var(--accent);
+      border: none;
+      color: #fff;
+      padding: 16px 32px;
+      border-radius: 999px;
+      font-size: 1.3rem;
+      font-weight: 600;
+      box-shadow: var(--shadow-soft);
+      cursor: pointer;
+    }
+
+    #btn-add-image:active {
+      transform: scale(0.97);
+    }
+
+    /* file input overlay that covers entire screen */
     #imageInput {
       position: absolute;
       inset: 0;
@@ -105,60 +114,20 @@
       background: #000;
     }
 
-    #ocr-bg {
+    #ocr-image-wrapper {
       position: absolute;
       inset: 0;
-      background-position: center;
-      background-size: cover;
-      filter: brightness(0.45);
-      transform: scale(1.02);
-    }
-
-    /* scan overlay container */
-    #scan-gradient {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.25s ease;
+      display: flex;
+      justify-content: center;
+      align-items: center;
       overflow: hidden;
-      mix-blend-mode: screen;
+      background: #000;
     }
 
-    #scan-band {
-      position: absolute;
-      box-shadow: 0 0 32px rgba(232, 255, 41, 0.9);
-    }
-
-    /* 0°: horizontal band */
-    #scan-gradient.mode-0 #scan-band {
-      width: 100%;
-      height: 60%;
-      left: 0;
-      background: linear-gradient(
-        to bottom,
-        rgba(232, 255, 41, 0) 0%,
-        rgba(232, 255, 41, 0.12) 20%,
-        rgba(232, 255, 41, 0.98) 50%,
-        rgba(232, 255, 41, 0.12) 80%,
-        rgba(232, 255, 41, 0) 100%
-      );
-    }
-
-    /* 90° / -90°: vertical band */
-    #scan-gradient.mode-90 #scan-band,
-    #scan-gradient.mode-neg90 #scan-band {
-      height: 100%;
-      width: 60%;
-      top: 0;
-      background: linear-gradient(
-        to right,
-        rgba(232, 255, 41, 0) 0%,
-        rgba(232, 255, 41, 0.12) 20%,
-        rgba(232, 255, 41, 0.98) 50%,
-        rgba(232, 255, 41, 0.12) 80%,
-        rgba(232, 255, 41, 0) 100%
-      );
+    #ocr-image-wrapper img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
     }
 
     #ocr-overlay {
@@ -180,23 +149,10 @@
     }
 
     .scanning-label {
-      bottom: 18vh;
-      opacity: 1;
-      text-align: center;
-      color: var(--scan-yellow);
-      text-shadow: 0 0 16px rgba(0, 0, 0, 0.9);
-    }
-
-    #scan-word {
       font-size: 3rem;
-      font-weight: 800;
-      line-height: 1;
-    }
-
-    #scan-angle {
-      margin-top: 0.2em;
-      font-size: 2.8rem;
       font-weight: 700;
+      bottom: 20vh;
+      opacity: 1;
     }
 
     .search-container {
@@ -205,19 +161,40 @@
       max-width: 480px;
       opacity: 0;
       pointer-events: none;
-      transform: translate(-50%, 20px);
+    }
+
+    #screen-ocr.mode-search .scanning-label {
+      opacity: 0;
+      transform: translate(-50%, 8px);
+    }
+
+    #screen-ocr.mode-search .search-container {
+      opacity: 1;
+      transform: translate(-50%, 0);
+      pointer-events: auto;
+    }
+
+    .search-input-wrapper {
+      background: #111;
+      border-radius: 999px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      box-shadow: var(--shadow-soft);
     }
 
     .search-input {
-      width: 100%;
-      padding: 16px 20px;
-      border-radius: 999px;
+      flex: 1;
       border: none;
-      font-size: 1.4rem;
+      background: transparent;
+      color: #fff;
+      font-size: 1.1rem;
       outline: none;
-      background: var(--input-bg);
-      color: var(--input-text);
-      box-shadow: var(--shadow-soft);
+      padding: 4px 8px;
+    }
+
+    .search-input::placeholder {
+      color: rgba(255, 255, 255, 0.45);
     }
 
     .autosuggest {
@@ -231,7 +208,7 @@
       opacity: 0;
       transform: translateY(-8px);
       pointer-events: none;
-      transition: opacity var(--transition-fast), transform var(--transition-fast);
+      transition: opacity var(--transition-med), transform var(--transition-med);
     }
 
     .autosuggest.visible {
@@ -241,8 +218,8 @@
     }
 
     .autosuggest-item {
-      padding: 12px 18px;
-      font-size: 1.4rem;
+      padding: 10px 16px;
+      font-size: 1.0rem;
       border-bottom: 1px solid rgba(0, 0, 0, 0.08);
       cursor: pointer;
     }
@@ -255,277 +232,177 @@
       background: rgba(0, 0, 0, 0.04);
     }
 
-    /* scanning → search transition */
-    #screen-ocr.mode-search .scanning-label {
-      opacity: 0;
-      transform: translate(-50%, -30px);
-      pointer-events: none;
-    }
-
-    #screen-ocr.mode-search #scan-gradient {
-      opacity: 0;
-    }
-
-    #screen-ocr.mode-search .search-container {
-      opacity: 1;
-      pointer-events: auto;
-      transform: translate(-50%, 0);
-    }
-
+    /* OCR progress label */
     #ocr-progress {
       position: absolute;
-      top: 24px;
+      top: 16px;
       left: 50%;
       transform: translateX(-50%);
-      font-size: 0.9rem;
-      background: rgba(0, 0, 0, 0.55);
       padding: 6px 12px;
       border-radius: 999px;
-      pointer-events: none;
-    }
-
-    /* RESULTS SCREEN */
-    #screen-results {
-      inset: 0;
-      background: #000;
-      color: #fff;
-    }
-
-    #results-top-row {
-      position: absolute;
-      top: 32px;
-      left: 20px;
-      z-index: 10;
-    }
-
-    #btn-new-image {
-      padding: 8px 18px;
-      border-radius: 999px;
-      border: none;
-      background: var(--accent);
-      color: #fff;
-      font-weight: 600;
-      font-size: 1rem;
-      cursor: pointer;
+      background: rgba(0, 0, 0, 0.75);
+      font-size: 0.9rem;
       box-shadow: var(--shadow-soft);
     }
 
+    #ocr-progress.hidden {
+      display: none;
+    }
+
+    /* RESULTS SCREEN */
+
+    #screen-results {
+      display: flex;
+      flex-direction: column;
+      background: #000;
+    }
+
+    #results-top-row {
+      padding: 16px;
+      display: flex;
+      justify-content: flex-start;
+    }
+
+    #btn-new-image {
+      background: var(--accent);
+      border: none;
+      border-radius: 999px;
+      padding: 12px 24px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fff;
+      box-shadow: var(--shadow-soft);
+      cursor: pointer;
+    }
+
     #results-image-wrapper {
-      position: absolute;
-      inset: 0;
-      padding: 56px 0 140px;
+      flex: 1;
+      overflow: hidden;
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 0 0 8px 0;
     }
 
     #results-image-inner {
       position: relative;
       width: 100%;
-      max-width: 560px;
       height: 100%;
       display: flex;
-      align-items: center;
       justify-content: center;
+      align-items: center;
       overflow: hidden;
     }
 
     #results-image {
       max-width: 100%;
       max-height: 100%;
-      width: auto;
-      height: auto;
+      object-fit: contain;
       display: block;
     }
 
-    #highlightsLayer {
+    .highlight-rect {
       position: absolute;
-      inset: 0;
+      border: 3px solid #c6ff00;
+      border-radius: 8px;
+      box-shadow: 0 0 18px rgba(198, 255, 0, 0.9);
       pointer-events: none;
     }
 
-    /* diagonal fading crosshair */
-    .crosshair-line {
+    .highlight-circle {
       position: absolute;
-      background: linear-gradient(
-        to right,
-        rgba(213, 255, 57, 1) 0%,
-        rgba(213, 255, 57, 0) 100%
-      );
-      box-shadow: 0 0 8px rgba(213, 255, 57, 0.7);
+      border-radius: 50%;
+      border: 4px solid rgba(198, 255, 0, 0.9);
+      box-shadow: 0 0 45px rgba(198, 255, 0, 0.9);
       pointer-events: none;
-      transform-origin: 0 50%;
-    }
-
-    #results-bottom {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 32px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 14px;
-      padding: 0 16px;
-      z-index: 10;
-    }
-
-    #results-pills {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      width: 100%;
-    }
-
-    .pill {
-      flex: 1;
-      padding: 10px 16px;
-      border-radius: 999px;
-      text-align: center;
-      font-size: 1.3rem;
-      font-weight: 700;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      cursor: pointer;
-    }
-
-	.pill-side {
-	    background: rgba(0, 0, 0, 0.4);
-	    color: #fff;
-	    border: 2px solid rgba(255, 255, 255, 0.25);
-	    font-size: .8rem;
-	    max-width: min-content;
-	}
-	
-	
-    .pill-side.disabled {
-      opacity: 0.3;
-      border-style: dashed;
-      pointer-events: none;
-    }
-
-    .pill-main-wrapper {
-      flex: 1;
-      max-width: 38%;
-      position: relative;
-      display: flex;
-      justify-content: center;
-    }
-
-    .pill-main {
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      box-shadow: var(--shadow-soft);
-      pointer-events: none;
-      width: 100%;
-    }
-
-    #pill-badge {
-      position: absolute;
-      top: -8px;
-      right: -4px;
-      min-width: 24px;
-      height: 24px;
-      padding: 0 6px;
-      border-radius: 999px;
-      background: #fff;
-      color: #111;
-      font-size: 0.9rem;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
     }
 
     #results-bottom-row {
-      width: 100%;
+      padding: 6px 16px 18px 16px;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: center;
       gap: 12px;
     }
 
-	#new-search-btn {
-	    padding: 10px 18px;
-	    border-radius: 999px;
-	    border: none;
-	    background: #583922;
-	    color: #fff;
-	    font-size: 1.1rem;
-	    font-weight: 200;
-	    box-shadow: var(--shadow-soft);
-	    cursor: pointer;
-	    width: auto;
-	    min-width: 44%;
-	    text-align: center;
-	}
-
-    #instance-nav {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 10px;
-    }
-
-    .hit-nav-btn {
+    #btn-prev,
+    #btn-next {
       width: 44px;
       height: 44px;
-      border-radius: 50%;
+      border-radius: 999px;
       border: none;
       background: var(--accent);
       color: #fff;
-      font-size: 1.6rem;
       font-weight: 700;
+      font-size: 1.4rem;
       display: flex;
       align-items: center;
       justify-content: center;
       box-shadow: var(--shadow-soft);
       cursor: pointer;
+      flex-shrink: 0;
     }
 
-    #hit-counter {
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
+    #btn-prev:active,
+    #btn-next:active {
+      transform: scale(0.96);
+    }
+
+    #results-term-pill {
+      flex: 1;
+      max-width: 240px;
+      text-align: center;
+      padding: 10px 16px;
+      border-radius: 999px;
       border: none;
       background: #fff;
-      color: #111;
-      font-size: 1.4rem;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      color: #000;
+      font-size: 1.1rem;
+      font-weight: 600;
       box-shadow: var(--shadow-soft);
+    }
+
+    /* NEW SEARCH BUTTON */
+    #btn-new-search {
+      position: absolute;
+      bottom: 12px;
+      left: 16px;
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: none;
+      font-size: 1.0rem;
+      background: #5a3a20;
+      color: #fff;
+      box-shadow: var(--shadow-soft);
+      cursor: pointer;
+    }
+
+    #btn-new-search:active {
+      transform: scale(0.97);
     }
   </style>
 </head>
 <body>
-  <div id="app">
-    <!-- ADD IMAGE -->
-    <div id="screen-add" class="screen active">
-      <input type="file" id="imageInput" accept="image/*" />
-      <div class="label">add image</div>
+<div id="app">
+  <!-- ADD IMAGE -->
+  <div id="screen-add" class="screen active">
+    <div id="screen-add-inner">
+      <h1>spineless</h1>
+      <button id="btn-add-image">new image</button>
     </div>
+    <input id="imageInput" type="file" accept="image/*" />
+  </div>
 
-    <!-- OCR / SCANNING -->
-    <div id="screen-ocr" class="screen">
-      <div id="ocr-bg"></div>
-      <div id="scan-gradient">
-        <div id="scan-band"></div>
-      </div>
-      <div id="ocr-overlay">
-        <div id="ocr-progress" class="hidden">scanning…</div>
-
-        <div class="scanning-label">
-          <div id="scan-word">reading</div>
-          <div id="scan-angle">0°</div>
-        </div>
-
-        <div class="search-container">
+  <!-- OCR SCANNING + SEARCH -->
+  <div id="screen-ocr" class="screen">
+    <div id="ocr-image-wrapper">
+      <img id="ocr-image" src="" alt="Bookshelf being scanned" />
+    </div>
+    <div id="ocr-overlay">
+      <div id="ocr-progress" class="hidden">reading…</div>
+      <div class="scanning-label">reading</div>
+      <div class="search-container">
+        <div class="search-input-wrapper">
           <input
             id="searchInput"
             class="search-input"
@@ -533,86 +410,72 @@
             placeholder="search"
             autocomplete="off"
           />
-          <div id="autosuggest" class="autosuggest"></div>
         </div>
-      </div>
-    </div>
-
-    <!-- RESULTS -->
-    <div id="screen-results" class="screen">
-      <div id="results-top-row">
-        <button id="btn-new-image">new image</button>
-      </div>
-
-      <div id="results-image-wrapper">
-        <div id="results-image-inner">
-          <img id="results-image" src="" alt="Bookshelf" />
-          <div id="highlightsLayer"></div>
-        </div>
-      </div>
-
-      <div id="results-bottom">
-        <div id="results-pills">
-          <button id="pill-left" class="pill pill-side"></button>
-          <div class="pill-main-wrapper">
-            <div id="pill-main" class="pill pill-main"></div>
-            <div id="pill-badge" class="pill-badge hidden"></div>
-          </div>
-          <button id="pill-right" class="pill pill-side"></button>
-        </div>
-
-        <div id="results-bottom-row">
-          <button id="new-search-btn">new search</button>
-          <div id="instance-nav" class="hidden">
-            <button id="hit-prev" class="hit-nav-btn">&#9664;</button>
-            <div id="hit-counter">1</div>
-            <button id="hit-next" class="hit-nav-btn">&#9654;</button>
-          </div>
-        </div>
+        <div id="autosuggest" class="autosuggest"></div>
       </div>
     </div>
   </div>
+
+  <!-- RESULTS -->
+  <div id="screen-results" class="screen">
+    <div id="results-top-row">
+      <button id="btn-new-image">new image</button>
+    </div>
+
+    <div id="results-image-wrapper">
+      <div id="results-image-inner">
+        <img id="results-image" src="" alt="Bookshelf" />
+        <div id="highlightRect" class="highlight-rect"></div>
+        <div id="highlightCircle" class="highlight-circle"></div>
+      </div>
+    </div>
+
+    <div id="results-bottom-row">
+      <button id="btn-prev">&#8249;</button>
+      <div id="results-term-pill"></div>
+      <button id="btn-next">&#8250;</button>
+      <button id="btn-new-search">new search</button>
+    </div>
+  </div>
+</div>
 
 <script>
   const screenAdd = document.getElementById("screen-add");
   const screenOCR = document.getElementById("screen-ocr");
   const screenResults = document.getElementById("screen-results");
+
+  const btnAddImage = document.getElementById("btn-add-image");
   const imageInput = document.getElementById("imageInput");
-  const ocrBg = document.getElementById("ocr-bg");
+
+  const ocrImage = document.getElementById("ocr-image");
   const ocrProgress = document.getElementById("ocr-progress");
   const searchInput = document.getElementById("searchInput");
   const autosuggestEl = document.getElementById("autosuggest");
 
   const resultsImage = document.getElementById("results-image");
+  const highlightRect = document.getElementById("highlightRect");
+  const highlightCircle = document.getElementById("highlightCircle");
+  const btnPrev = document.getElementById("btn-prev");
+  const btnNext = document.getElementById("btn-next");
   const btnNewImage = document.getElementById("btn-new-image");
-  const btnNewSearch = document.getElementById("new-search-btn");
-  const pillLeft = document.getElementById("pill-left");
-  const pillRight = document.getElementById("pill-right");
-  const pillMain = document.getElementById("pill-main");
-  const pillBadge = document.getElementById("pill-badge");
+  const btnNewSearch = document.getElementById("btn-new-search");
+
+  const resultsTermPill = document.getElementById("results-term-pill");
   const resultsImageInner = document.getElementById("results-image-inner");
-  const highlightsLayer = document.getElementById("highlightsLayer");
 
-  const scanWordEl = document.getElementById("scan-word");
-  const scanAngleEl = document.getElementById("scan-angle");
-  const scanGradient = document.getElementById("scan-gradient");
-  const scanBand = document.getElementById("scan-band");
-
-  const instanceNav = document.getElementById("instance-nav");
-  const hitPrevBtn = document.getElementById("hit-prev");
-  const hitNextBtn = document.getElementById("hit-next");
-  const hitCounter = document.getElementById("hit-counter");
-
-  let ocrWords = [];
+  let ocrWords = [];       // [{ text, bbox: {x0,y0,x1,y1} }] in ORIGINAL orientation
   let imageDataUrl = "";
-
-  let termList = [];
-  let currentTermIndex = -1;
+  let matches = [];
+  let matchIndex = 0;
   let currentTerm = "";
 
-  // per-term instance tracking
-  let currentMatches = [];
-  let currentMatchIndex = 0;
+  function normalizeWord(text) {
+    return (text || "")
+      .trim()
+      .toLowerCase()
+      .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "")
+      .trim();
+  }
 
   function showScreen(el) {
     [screenAdd, screenOCR, screenResults].forEach((s) =>
@@ -621,44 +484,14 @@
     el.classList.add("active");
   }
 
-  const SHORT_COMMON_WORDS = new Set([
-    "a","an","as","at","be","by","do","go","he","if","in","is","it","me","my",
-    "no","of","on","or","so","to","up","us","we"
-  ]);
+  // --- bbox mapping helpers ---------------------------------------- //
 
-  function isDictionaryWord(word) {
-    if (!word) return false;
-    const w = word.toLowerCase();
-    if (SHORT_COMMON_WORDS.has(w)) return true;
-    if (!/^[a-z]+$/.test(w)) return false;
-    if (w.length < 3) return false;
-    if (!/[aeiouy]/.test(w)) return false;
-    return true;
-  }
-
-  function findPrevDictIndex(startIndex) {
-    if (!termList.length) return -1;
-    let idx = startIndex;
-    for (let steps = 0; steps < termList.length; steps++) {
-      idx = (idx - 1 + termList.length) % termList.length;
-      if (isDictionaryWord(termList[idx])) return idx;
-    }
-    return -1;
-  }
-
-  function findNextDictIndex(startIndex) {
-    if (!termList.length) return -1;
-    let idx = startIndex;
-    for (let steps = 0; steps < termList.length; steps++) {
-      idx = (idx + 1) % termList.length;
-      if (isDictionaryWord(termList[idx])) return idx;
-    }
-    return -1;
-  }
-
+  // Take a bbox from a rotated canvas (kind: 'base' | 'cw' | 'ccw')
+  // and map it back into the original image coordinate system.
   function mapBboxToOriginal(bbox, kind, W, H) {
     let { x0, y0, x1, y1 } = bbox;
 
+    // corners in rotated space
     const corners = [
       [x0, y0],
       [x1, y1],
@@ -668,15 +501,20 @@
       return { x: u, y: v };
     }
 
-    // ✅ Correct 90° clockwise mapping
+    // cw canvas width=H, height=W, created via:
+    // ctx.translate(H,0); ctx.rotate(Math.PI/2); ctx.drawImage(img,0,0);
+    // orig (x,y) -> cw (u,v) = (H - y, x)
+    // inverse: (u,v) -> orig (x = v, y = H - u)
     function fromCW(u, v) {
-      // canvas (u, v) -> original (x, y)
       const x = v;
       const y = H - u;
       return { x, y };
     }
 
-    // ✅ Correct -90° (counter-clockwise) mapping
+    // ccw canvas width=H, height=W, created via:
+    // ctx.translate(0,W); ctx.rotate(-Math.PI/2); ctx.drawImage(img,0,0);
+    // orig (x,y) -> ccw (u,v) = (y, W - x)
+    // inverse: (u,v) -> orig (x = W - v, y = u)
     function fromCCW(u, v) {
       const x = W - v;
       const y = u;
@@ -685,8 +523,8 @@
 
     const mapped = corners.map(([u, v]) => {
       if (kind === "base") return fromBase(u, v);
-      if (kind === "cw")   return fromCW(u, v);
-      return fromCCW(u, v); // kind === "ccw"
+      if (kind === "cw") return fromCW(u, v);
+      return fromCCW(u, v); // 'ccw'
     });
 
     const xs = mapped.map((p) => p.x);
@@ -697,6 +535,7 @@
     let nx1 = Math.max(xs[0], xs[1]);
     let ny1 = Math.max(ys[0], ys[1]);
 
+    // clamp to original image bounds
     nx0 = Math.max(0, Math.min(W, nx0));
     nx1 = Math.max(0, Math.min(W, nx1));
     ny0 = Math.max(0, Math.min(H, ny0));
@@ -705,193 +544,104 @@
     return { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
   }
 
+  // --- OCR + text extraction --------------------------------------- //
 
-  imageInput.addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      imageDataUrl = ev.target.result;
-      startOCR(imageDataUrl);
-    };
-    reader.readAsDataURL(file);
-  });
-
-  function buildTermList() {
-    if (!ocrWords.length) {
-      termList = [];
-      return;
-    }
-
-    const cleaned = ocrWords
-      .map((w) => (w.text || "").trim())
-      .filter(Boolean)
-      .map((t) =>
-        t
-          .toLowerCase()
-          .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "")
-          .trim()
-      )
-      .filter((t) => t.length > 1);
-
-    termList = Array.from(new Set(cleaned)).sort((a, b) =>
-      a.localeCompare(b)
-    );
-  }
-
-  function setScanMode(angleLabel, modeClass) {
-    screenOCR.classList.add("scanning");
-    scanGradient.style.opacity = "1";
-    scanGradient.classList.remove("mode-0", "mode-90", "mode-neg90");
-    if (modeClass) scanGradient.classList.add(modeClass);
-    scanWordEl.textContent = "reading";
-    scanAngleEl.textContent = angleLabel;
-    updateScanProgress(0);
-  }
-
-  function updateScanProgress(progress) {
-    const p = Math.max(0, Math.min(1, progress || 0));
-    const h = screenOCR.clientHeight || window.innerHeight;
-    const w = screenOCR.clientWidth || window.innerWidth;
-
-    if (scanGradient.classList.contains("mode-0")) {
-      const bandHeight = h * 0.6;
-      const start = -bandHeight;
-      const end = h;
-      const y = start + (end - start) * p;
-      scanBand.style.top = y + "px";
-      scanBand.style.left = "0px";
-    } else if (scanGradient.classList.contains("mode-90")) {
-      const bandWidth = w * 0.6;
-      const start = -bandWidth;
-      const end = w;
-      const x = start + (end - start) * p;
-      scanBand.style.left = x + "px";
-      scanBand.style.top = "0px";
-    } else if (scanGradient.classList.contains("mode-neg90")) {
-      const bandWidth = w * 0.6;
-      const start = w;
-      const end = -bandWidth;
-      const x = start + (end - start) * p;
-      scanBand.style.left = x + "px";
-      scanBand.style.top = "0px";
-    }
-  }
-
-  async function startOCR(dataUrl) {
-    showScreen(screenOCR);
-    screenOCR.classList.remove("mode-search");
-    ocrBg.style.backgroundImage = `url(${dataUrl})`;
-    ocrProgress.classList.remove("hidden");
-    ocrProgress.textContent = "scanning…";
-
+  async function runOCR(file) {
     ocrWords = [];
-    termList = [];
-    currentTermIndex = -1;
-    currentTerm = "";
-    currentMatches = [];
-    currentMatchIndex = 0;
-    clearHighlights();
-    pillMain.textContent = "";
-    pillLeft.textContent = "";
-    pillRight.textContent = "";
-    pillLeft.classList.add("disabled");
-    pillRight.classList.add("disabled");
-    pillBadge.classList.add("hidden");
-    instanceNav.classList.add("hidden");
+    ocrProgress.classList.remove("hidden");
+    ocrProgress.textContent = "reading…";
 
-    try {
-      const img = new Image();
-      img.src = dataUrl;
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (e) => reject(e);
+      reader.readAsDataURL(file);
+    });
 
-      await new Promise((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = (err) =>
-          reject(new Error("Could not load image for OCR"));
+    imageDataUrl = dataUrl;
+    ocrImage.src = dataUrl;
+
+    // wait for image to load to get dims
+    const img = await new Promise((resolve, reject) => {
+      ocrImage.onload = () => resolve(ocrImage);
+      ocrImage.onerror = (e) => reject(e);
+    });
+
+    const W = img.naturalWidth;
+    const H = img.naturalHeight;
+
+    // canvases for 0°, +90°, -90°
+    const baseCanvas = document.createElement("canvas");
+    baseCanvas.width = W;
+    baseCanvas.height = H;
+    const ctxBase = baseCanvas.getContext("2d");
+    ctxBase.drawImage(img, 0, 0);
+
+    const cwCanvas = document.createElement("canvas");
+    cwCanvas.width = H;
+    cwCanvas.height = W;
+    const ctxCW = cwCanvas.getContext("2d");
+    ctxCW.translate(H, 0);
+    ctxCW.rotate(Math.PI / 2);
+    ctxCW.drawImage(img, 0, 0);
+
+    const ccwCanvas = document.createElement("canvas");
+    ccwCanvas.width = H;
+    ccwCanvas.height = W;
+    const ctxCCW = ccwCanvas.getContext("2d");
+    ctxCCW.translate(0, W);
+    ctxCCW.rotate(-Math.PI / 2);
+    ctxCCW.drawImage(img, 0, 0);
+
+    const passes = [
+      { kind: "base", canvas: baseCanvas },
+      { kind: "cw", canvas: cwCanvas },
+      { kind: "ccw", canvas: ccwCanvas },
+    ];
+
+    let allWords = [];
+
+    for (let i = 0; i < passes.length; i++) {
+      const { kind, canvas } = passes[i];
+      const passIndex = i + 1;
+
+      ocrProgress.textContent = `reading (${passIndex}/3)…`;
+
+      const { data } = await Tesseract.recognize(canvas, "eng", {
+        tessedit_pageseg_mode: 3,
+        logger: (m) => {
+          if (m.status === "recognizing text") {
+            const pct = Math.round(m.progress * 100);
+            ocrProgress.textContent = `reading (${passIndex}/3)… ${pct}%`;
+          }
+        },
       });
 
-      const W = img.naturalWidth;
-      const H = img.naturalHeight;
+      const wordsRaw = data.words || [];
+      const mapped = wordsRaw
+        .map((w) => {
+          if (!w.text || !w.bbox) return null;
+          const { x0, y0, x1, y1 } = w.bbox;
+          const mappedBox = mapBboxToOriginal({ x0, y0, x1, y1 }, kind, W, H);
+          return {
+            text: w.text,
+            bbox: mappedBox,
+          };
+        })
+        .filter(Boolean);
 
-      const baseCanvas = document.createElement("canvas");
-      baseCanvas.width = W;
-      baseCanvas.height = H;
-      baseCanvas.getContext("2d").drawImage(img, 0, 0);
-
-      const cwCanvas = document.createElement("canvas");
-      cwCanvas.width = H;
-      cwCanvas.height = W;
-      const ctxCW = cwCanvas.getContext("2d");
-      ctxCW.translate(H, 0);
-      ctxCW.rotate(Math.PI / 2);
-      ctxCW.drawImage(img, 0, 0);
-
-      const ccwCanvas = document.createElement("canvas");
-      ccwCanvas.width = H;
-      ccwCanvas.height = W;
-      const ctxCCW = ccwCanvas.getContext("2d");
-      ctxCCW.translate(0, W);
-      ctxCCW.rotate(-Math.PI / 2);
-      ctxCCW.drawImage(img, 0, 0);
-
-      const passes = [
-        { kind: "base", canvas: baseCanvas, label: "0°",  modeClass: "mode-0" },
-        { kind: "cw",   canvas: cwCanvas,   label: "90°", modeClass: "mode-90" },
-        { kind: "ccw",  canvas: ccwCanvas,  label: "-90°", modeClass: "mode-neg90" },
-      ];
-
-      let allWords = [];
-
-      for (let i = 0; i < passes.length; i++) {
-        const { kind, canvas, label, modeClass } = passes[i];
-        const passIndex = i + 1;
-        const passTotal = passes.length;
-
-        setScanMode(label, modeClass);
-
-        const result = await Tesseract.recognize(canvas, "eng", {
-          logger: (m) => {
-            if (m.status === "recognizing text") {
-              const pct = Math.round((m.progress || 0) * 100);
-              ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}… ${pct}%`;
-              updateScanProgress(m.progress || 0);
-            } else {
-              ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}…`;
-            }
-          },
-        });
-
-        updateScanProgress(1);
-
-        const words = result.data.words || [];
-        const mapped = words
-          .filter((w) => w.text && w.text.trim().length)
-          .map((w) => ({
-            text: w.text.trim(),
-            bbox: mapBboxToOriginal(w.bbox, kind, W, H),
-          }));
-
-        allWords = allWords.concat(mapped);
-      }
-
-      scanGradient.style.opacity = "0";
-
-      ocrWords = allWords;
-      buildTermList();
-      ocrProgress.classList.add("hidden");
-
-      screenOCR.classList.add("mode-search");
-      setTimeout(() => searchInput.focus(), 450);
-    } catch (err) {
-      console.error(err);
-      alert(
-        "There was a problem reading the image.\n\n" +
-          (err && err.message ? err.message : String(err))
-      );
-      scanGradient.style.opacity = "0";
-      showScreen(screenAdd);
+      allWords = allWords.concat(mapped);
     }
+
+    ocrWords = allWords;
+    ocrProgress.classList.add("hidden");
+
+    // scanning → search transition
+    screenOCR.classList.add("mode-search");
+    setTimeout(() => searchInput.focus(), 450);
   }
+
+  // --- search + autosuggest ---------------------------------------- //
 
   function updateAutosuggest(query) {
     if (!query) {
@@ -899,12 +649,19 @@
       autosuggestEl.innerHTML = "";
       return;
     }
-
-    const q = query.toLowerCase();
-
-    const suggestions = termList
-      .filter((t) => t.startsWith(q))
-      .slice(0, 20);
+    const q = normalizeWord(query);
+    if (!q) {
+      autosuggestEl.classList.remove("visible");
+      autosuggestEl.innerHTML = "";
+      return;
+    }
+    const suggestions = Array.from(
+      new Set(
+        ocrWords
+          .map((w) => normalizeWord(w.text))
+          .filter((t) => t && t.startsWith(q))
+      )
+    ).slice(0, 20);
 
     if (!suggestions.length) {
       autosuggestEl.classList.remove("visible");
@@ -927,7 +684,7 @@
 
   searchInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
-      const term = e.target.value.trim();
+      const term = searchInput.value.trim();
       if (term) runSearch(term);
     }
   });
@@ -938,244 +695,99 @@
     const value = item.dataset.value;
     searchInput.value = value;
     autosuggestEl.classList.remove("visible");
+    autosuggestEl.innerHTML = "";
     runSearch(value);
   });
 
-  function getMatchesForTerm(term) {
-    if (!term || !ocrWords.length) return [];
-    const q = term.toLowerCase();
-    return ocrWords.filter(
-      (w) => w.text && w.text.toLowerCase() === q
-    );
-  }
-
   function runSearch(term) {
-    if (!ocrWords.length || !termList.length) return;
-    const raw = term.trim();
-    if (!raw) return;
+    if (!ocrWords.length) return;
+    currentTerm = term;
+    const q = normalizeWord(term);
 
-    const lowerTerm = raw.toLowerCase();
+    matches = ocrWords.filter(
+      (w) => normalizeWord(w.text) === q
+    );
 
-    let idx = termList.findIndex((t) => t === lowerTerm);
-    if (idx === -1) {
-      idx = termList.findIndex((t) => t.startsWith(lowerTerm));
-    }
-
-    if (idx === -1) {
-      alert(`No matches found for “${raw}”`);
+    if (!matches.length) {
+      alert(`No matches found for “${term}”`);
       return;
     }
 
-    currentTermIndex = idx;
-    currentTerm = termList[currentTermIndex];
-
-    currentMatches = getMatchesForTerm(currentTerm);
-    currentMatchIndex = 0;
-
+    matchIndex = 0;
     setupResultsScreen();
     showScreen(screenResults);
-    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+    drawMatch();
   }
 
-  function updateInstanceNav() {
-    if (!currentMatches || currentMatches.length <= 1) {
-      instanceNav.classList.add("hidden");
-      return;
-    }
-    instanceNav.classList.remove("hidden");
-    hitCounter.textContent = String(currentMatchIndex + 1);
-  }
+  // --- results view + highlight drawing ----------------------------- //
 
   function setupResultsScreen() {
     resultsImage.src = imageDataUrl;
-
-    if (currentTermIndex < 0 || !termList.length) {
-      pillMain.textContent = "";
-      pillLeft.textContent = "";
-      pillRight.textContent = "";
-      pillLeft.classList.add("disabled");
-      pillRight.classList.add("disabled");
-      pillBadge.classList.add("hidden");
-      instanceNav.classList.add("hidden");
-      return;
-    }
-
-    pillMain.textContent = termList[currentTermIndex];
-
-    // badge shows only when there are multiple hits
-    if (currentMatches && currentMatches.length > 1) {
-      pillBadge.textContent = currentMatches.length;
-      pillBadge.classList.remove("hidden");
-    } else {
-      pillBadge.classList.add("hidden");
-    }
-
-    const prevIndex = findPrevDictIndex(currentTermIndex);
-    const nextIndex = findNextDictIndex(currentTermIndex);
-
-    if (prevIndex === -1 && nextIndex === -1) {
-      pillLeft.textContent = "";
-      pillRight.textContent = "";
-      pillLeft.classList.add("disabled");
-      pillRight.classList.add("disabled");
-    } else if (prevIndex === nextIndex || (prevIndex === -1 || nextIndex === -1)) {
-      const idx = prevIndex !== -1 ? prevIndex : nextIndex;
-      pillLeft.textContent = termList[idx];
-      pillRight.textContent = termList[idx];
-      pillLeft.classList.add("disabled");
-      pillRight.classList.add("disabled");
-    } else {
-      pillLeft.textContent = termList[prevIndex];
-      pillRight.textContent = termList[nextIndex];
-      pillLeft.classList.remove("disabled");
-      pillRight.classList.remove("disabled");
-    }
-
-    updateInstanceNav();
+    resultsTermPill.textContent = currentTerm || "";
   }
 
-  function clearHighlights() {
-    while (highlightsLayer.firstChild) {
-      highlightsLayer.removeChild(highlightsLayer.firstChild);
-    }
-  }
-
-  // Diagonal crosshair with fade from center outward
-  function drawHighlightsForTerm(term, matchIndex = 0) {
-    if (!term || !ocrWords.length || !resultsImage.src) return;
-
-    const matches = (currentMatches && currentMatches.length)
-      ? currentMatches
-      : getMatchesForTerm(term);
-
-    clearHighlights();
-    if (!matches.length) {
-      instanceNav.classList.add("hidden");
-      pillBadge.classList.add("hidden");
-      return;
-    }
-
-    if (matchIndex < 0) matchIndex = 0;
-    if (matchIndex >= matches.length) matchIndex = matches.length - 1;
-
+  function drawMatch() {
+    if (!matches.length) return;
+    const m = matches[matchIndex];
+    const bbox = m.bbox;
     const img = resultsImage;
 
     if (!img.naturalWidth || !img.naturalHeight) {
-      img.onload = () => drawHighlightsForTerm(term, matchIndex);
+      img.onload = () => drawMatch();
       return;
     }
 
     const displayWidth = img.clientWidth;
     const displayHeight = img.clientHeight;
-    if (!displayWidth || !displayHeight) return;
 
     const scaleX = displayWidth / img.naturalWidth;
     const scaleY = displayHeight / img.naturalHeight;
-
-    const imgRect = img.getBoundingClientRect();
-    const wrapRect = resultsImageInner.getBoundingClientRect();
-    const offsetLeft = imgRect.left - wrapRect.left;
-    const offsetTop = imgRect.top - wrapRect.top;
-
-    const imgLeft = offsetLeft;
-    const imgTop = offsetTop;
-    const imgRight = offsetLeft + displayWidth;
-    const imgBottom = offsetTop + displayHeight;
-
-    const target = matches[matchIndex];
-    const bbox = target.bbox;
 
     const x = bbox.x0 * scaleX;
     const y = bbox.y0 * scaleY;
     const w = (bbox.x1 - bbox.x0) * scaleX;
     const h = (bbox.y1 - bbox.y0) * scaleY;
 
+    const imgRect = img.getBoundingClientRect();
+    const wrapRect = resultsImageInner.getBoundingClientRect();
+    const offsetLeft = imgRect.left - wrapRect.left;
+    const offsetTop = imgRect.top - wrapRect.top;
+
+    // yellow rectangle
+    highlightRect.style.left = offsetLeft + x + "px";
+    highlightRect.style.top = offsetTop + y + "px";
+    highlightRect.style.width = Math.max(w, 16) + "px";
+    highlightRect.style.height = Math.max(h, 16) + "px";
+
+    // circle around it
+    const radius = Math.max(w, h) * 1.6;
     const centerX = offsetLeft + x + w / 2;
     const centerY = offsetTop + y + h / 2;
 
-    const gapPadding = 10;
-    const lineThickness = 4;
-
-    const gapX = w / 2 + gapPadding;
-    const gapY = h / 2 + gapPadding;
-
-    function addDiagonal(startX, startY, endX, endY) {
-      const line = document.createElement("div");
-      line.className = "crosshair-line";
-
-      const dx = endX - startX;
-      const dy = endY - startY;
-      const length = Math.sqrt(dx * dx + dy * dy);
-      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-
-      line.style.width = length + "px";
-      line.style.height = lineThickness + "px";
-      line.style.left = startX + "px";
-      line.style.top = startY + "px";
-      line.style.transform = `rotate(${angle}deg)`;
-      line.style.transformOrigin = "0 50%";
-
-      highlightsLayer.appendChild(line);
-    }
-
-    // top-left arm (↖ from center)
-    addDiagonal(centerX - gapX, centerY - gapY, imgLeft, imgTop);
-
-    // bottom-right arm (↘ from center)
-    addDiagonal(centerX + gapX, centerY + gapY, imgRight, imgBottom);
-
-    // top-right arm (↗ from center)
-    addDiagonal(centerX + gapX, centerY - gapY, imgRight, imgTop);
-
-    // bottom-left arm (↙ from center)
-    addDiagonal(centerX - gapX, centerY + gapY, imgLeft, imgBottom);
-
-    updateInstanceNav();
+    highlightCircle.style.width = radius + "px";
+    highlightCircle.style.height = radius + "px";
+    highlightCircle.style.left = centerX - radius / 2 + "px";
+    highlightCircle.style.top = centerY - radius / 2 + "px";
   }
 
-  function goPrevTerm() {
-    if (!termList.length) return;
-    const newIndex = findPrevDictIndex(currentTermIndex);
-    if (newIndex === -1) return;
-    currentTermIndex = newIndex;
-    currentTerm = termList[currentTermIndex];
-    currentMatches = getMatchesForTerm(currentTerm);
-    currentMatchIndex = 0;
-    setupResultsScreen();
-    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  function goNext() {
+    if (!matches.length) return;
+    matchIndex = (matchIndex + 1) % matches.length;
+    drawMatch();
   }
 
-  function goNextTerm() {
-    if (!termList.length) return;
-    const newIndex = findNextDictIndex(currentTermIndex);
-    if (newIndex === -1) return;
-    currentTermIndex = newIndex;
-    currentTerm = termList[currentTermIndex];
-    currentMatches = getMatchesForTerm(currentTerm);
-    currentMatchIndex = 0;
-    setupResultsScreen();
-    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  function goPrev() {
+    if (!matches.length) return;
+    matchIndex = (matchIndex - 1 + matches.length) % matches.length;
+    drawMatch();
   }
 
-  pillLeft.addEventListener("click", goPrevTerm);
-  pillRight.addEventListener("click", goNextTerm);
+  btnNext.addEventListener("click", goNext);
+  btnPrev.addEventListener("click", goPrev);
 
-  // per-term instance nav
-  hitPrevBtn.addEventListener("click", () => {
-    if (!currentMatches.length) return;
-    currentMatchIndex =
-      (currentMatchIndex - 1 + currentMatches.length) % currentMatches.length;
-    drawHighlightsForTerm(currentTerm, currentMatchIndex);
-  });
-
-  hitNextBtn.addEventListener("click", () => {
-    if (!currentMatches.length) return;
-    currentMatchIndex =
-      (currentMatchIndex + 1) % currentMatches.length;
-    drawHighlightsForTerm(currentTerm, currentMatchIndex);
-  });
-
+  // swipe left/right on the image to move between matches
   let touchStartX = null;
+
   resultsImageInner.addEventListener("touchstart", (e) => {
     touchStartX = e.touches[0].clientX;
   });
@@ -1184,27 +796,16 @@
     if (touchStartX == null) return;
     const dx = e.changedTouches[0].clientX - touchStartX;
     if (Math.abs(dx) > 40) {
-      if (dx < 0) goNextTerm();
-      else goPrevTerm();
+      if (dx < 0) goNext();
+      else goPrev();
     }
     touchStartX = null;
   });
 
-  window.addEventListener("resize", () => {
-    if (screenResults.classList.contains("active") && currentTerm) {
-      drawHighlightsForTerm(currentTerm, currentMatchIndex);
-    }
-  });
+  // --- new image / new search -------------------------------------- //
 
   btnNewImage.addEventListener("click", () => {
     imageInput.value = "";
-    ocrWords = [];
-    termList = [];
-    currentTermIndex = -1;
-    currentTerm = "";
-    currentMatches = [];
-    currentMatchIndex = 0;
-    clearHighlights();
     showScreen(screenAdd);
   });
 
@@ -1214,6 +815,20 @@
     searchInput.value = "";
     autosuggestEl.classList.remove("visible");
     setTimeout(() => searchInput.focus(), 200);
+  });
+
+  // --- initial image selection ------------------------------------- //
+
+  btnAddImage.addEventListener("click", () => {
+    imageInput.click();
+  });
+
+  imageInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    showScreen(screenOCR);
+    screenOCR.classList.remove("mode-search");
+    runOCR(file);
   });
 </script>
 </body>
