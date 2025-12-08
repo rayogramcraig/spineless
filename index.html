@@ -224,7 +224,7 @@
       margin-top: 0.2em;
       font-size: 2.8rem;
       font-weight: 700;
-	  opacity:0.0;
+      opacity: 0.0;
     }
 
     .search-container {
@@ -745,6 +745,18 @@
   let currentMatches = [];
   let currentMatchIndex = 0;
 
+  // Dictionary + whitelist sets
+  let DICT = null;
+  let WHITELIST = null;
+  let dictLoaded = false;
+  let whitelistLoaded = false;
+
+  // Fallback basic heuristic for early runs (before wordlists load)
+  const SHORT_COMMON_WORDS = new Set([
+    "a","an","as","at","be","by","do","go","he","if","in","is","it","me","my",
+    "no","of","on","or","so","to","up","us","we"
+  ]);
+
   function showScreen(el) {
     [screenAdd, screenOCR, screenResults].forEach((s) =>
       s.classList.remove("active")
@@ -752,19 +764,51 @@
     el.classList.add("active");
   }
 
-  const SHORT_COMMON_WORDS = new Set([
-    "a","an","as","at","be","by","do","go","he","if","in","is","it","me","my",
-    "no","of","on","or","so","to","up","us","we"
-  ]);
+  async function loadWordLists() {
+    try {
+      const dictResp = await fetch("dictionary.json");
+      if (dictResp.ok) {
+        const dictData = await dictResp.json();
+        DICT = new Set((dictData || []).map(w => String(w).toLowerCase()));
+        dictLoaded = true;
+      }
+    } catch (e) {
+      console.warn("dictionary.json could not be loaded:", e);
+    }
 
-  function isDictionaryWord(word) {
+    try {
+      const wlResp = await fetch("whitelist.json");
+      if (wlResp.ok) {
+        const wlData = await wlResp.json();
+        WHITELIST = new Set((wlData || []).map(w => String(w).toLowerCase()));
+        whitelistLoaded = true;
+      }
+    } catch (e) {
+      console.warn("whitelist.json could not be loaded:", e);
+    }
+  }
+
+  // Unified check for whether a term is allowed in the carousel
+  function isCarouselWord(word) {
     if (!word) return false;
     const w = word.toLowerCase();
-    if (SHORT_COMMON_WORDS.has(w)) return true;
-    if (!/^[a-z]+$/.test(w)) return false;
-    if (w.length < 3) return false;
-    if (!/[aeiouy]/.test(w)) return false;
-    return true;
+
+    // Prefer explicit wordlists when available
+    if ((dictLoaded && DICT && DICT.has(w)) ||
+        (whitelistLoaded && WHITELIST && WHITELIST.has(w))) {
+      return true;
+    }
+
+    // Fallback heuristic if we don't have the lists yet
+    if (!dictLoaded && !whitelistLoaded) {
+      if (SHORT_COMMON_WORDS.has(w)) return true;
+      if (!/^[a-z]+$/.test(w)) return false;
+      if (w.length < 3) return false;
+      if (!/[aeiouy]/.test(w)) return false;
+      return true;
+    }
+
+    return false;
   }
 
   function findPrevDictIndex(startIndex) {
@@ -772,7 +816,7 @@
     let idx = startIndex;
     for (let steps = 0; steps < termList.length; steps++) {
       idx = (idx - 1 + termList.length) % termList.length;
-      if (isDictionaryWord(termList[idx])) return idx;
+      if (isCarouselWord(termList[idx])) return idx;
     }
     return -1;
   }
@@ -782,7 +826,7 @@
     let idx = startIndex;
     for (let steps = 0; steps < termList.length; steps++) {
       idx = (idx + 1) % termList.length;
-      if (isDictionaryWord(termList[idx])) return idx;
+      if (isCarouselWord(termList[idx])) return idx;
     }
     return -1;
   }
@@ -1495,6 +1539,9 @@
       e.preventDefault();
     }
   }, { passive: false });
+
+  // Kick off loading the dictionary + whitelist as soon as possible
+  loadWordLists();
 </script>
 </body>
 </html>
