@@ -15,136 +15,79 @@
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="icon" href="favicon.ico">
 
-  <!-- PWA manifest -->
-  <link rel="manifest" href="site.webmanifest">
-
-  <!-- Apple touch icons -->
-  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <!-- iOS home screen icons -->
+  <link rel="apple-touch-icon" sizes="120x120" href="apple-touch-icon-120x120.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon-152x152.png">
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180x180.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-v2.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon-v2.png">
 
-  <!-- Tesseract.js (v4) -->
+  <!-- Tesseract.js for OCR -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 
   <style>
     :root {
-      --bg-dark: #000;
-      --pane-dark: #111;
-      --pane-darker: #0a0a0a;
+      --bg-dark: #111;
       --white: #fff;
       --accent: #ff7a1a;
-      --accent-soft: rgba(255, 122, 26, 0.18);
-      --search-chrome: #222;
-      --search-pill: #1c1c1c;
-      --pill-border-subtle: rgba(255, 255, 255, 0.08);
-      --pill-text-muted: rgba(255, 255, 255, 0.75);
-      --badge-bg: #fff;
-      --badge-text: #111;
       --input-bg: #fff;
       --input-text: #111;
-      --shadow-soft: 0 18px 38px rgba(0, 0, 0, 0.7);
-      --transition-fast: 150ms ease-out;
-      --transition-med: 260ms ease-out;
-      --crosshair-color: rgba(198, 255, 0, 0.95);
-      --crosshair-soft: rgba(198, 255, 0, 0.65);
-      --crosshair-fade: rgba(198, 255, 0, 0);
+      --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.35);
+      --transition-fast: 0.4s ease;
+      --transition-med: 0.6s ease;
+      --scan-yellow: #e8ff29;
     }
 
     * {
       box-sizing: border-box;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    html,
-    body {
       margin: 0;
       padding: 0;
-      width: 100%;
-      height: 100%;
-      background: var(--bg-dark);
-      color: var(--white);
-      overflow: hidden;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
-        "Helvetica Neue", Arial, sans-serif;
     }
 
     body {
-      display: flex;
-      justify-content: center;
-      align-items: stretch;
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
+        sans-serif;
+      background: var(--bg-dark);
+      color: var(--white);
     }
 
     #app {
       position: relative;
-      width: 100%;
-      height: 100%;
-      max-width: 480px;
-      margin: 0 auto;
-      background: #000;
+      width: 100vw;
+      height: 100vh;
       overflow: hidden;
+      background: #000;
     }
 
     .screen {
       position: absolute;
       inset: 0;
       display: none;
-      flex-direction: column;
-      background: #000;
     }
 
     .screen.active {
-      display: flex;
+      display: block;
+    }
+
+    .hidden {
+      display: none !important;
     }
 
     /* ADD IMAGE SCREEN */
-
     #screen-add {
+      background: #111;
+    }
+
+    #screen-add.active {
+      display: flex;
       align-items: center;
       justify-content: center;
-      padding: 24px;
-      background: #000;
     }
 
-    #screen-add-inner {
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-      align-items: center;
-    }
-
-    #screen-add-inner .app-title {
-      font-size: 2.4rem;
+    #screen-add .label {
+      font-size: 3rem;
       font-weight: 700;
-      letter-spacing: 0.04em;
-      color: #fff;
-    }
-
-    #screen-add-inner .app-subtitle {
-      font-size: 1.0rem;
-      color: rgba(255, 255, 255, 0.7);
-      max-width: 260px;
-    }
-
-    #screen-add-inner .add-button-wrapper {
-      margin-top: 12px;
-    }
-
-    #btn-add-image {
-      background: var(--accent);
-      border: none;
-      color: #fff;
-      padding: 16px 32px;
-      border-radius: 999px;
-      font-size: 1.3rem;
-      font-weight: 600;
-      box-shadow: var(--shadow-soft);
-      cursor: pointer;
-      min-width: 220px;
-    }
-
-    #btn-add-image:active {
-      transform: scale(0.97);
+      pointer-events: none;
     }
 
     #imageInput {
@@ -154,8 +97,7 @@
       cursor: pointer;
     }
 
-    /* OCR / SCANNING SCREEN */
-
+    /* OCR (SCANNING + SEARCH) SCREEN */
     #screen-ocr {
       position: absolute;
       inset: 0;
@@ -166,66 +108,49 @@
     #ocr-bg {
       position: absolute;
       inset: 0;
-      background-position: center center;
-      background-size: contain;
-      background-repeat: no-repeat;
-      filter: brightness(0.4);
-      transform-origin: center center;
-      transition: transform 260ms ease-out;
+      background-position: center;
+      background-size: cover;
+      filter: brightness(0.45);
+      transform: scale(1.02);
     }
 
-    #screen-ocr.scanning-x0 #ocr-bg {
-      transform: translateY(0);
-    }
-
-    #screen-ocr.scanning-x0 .scan-strip-horizontal {
-      animation: scanAcross 1.2s linear forwards;
-    }
-
-    #screen-ocr.scanning-x90 #ocr-bg {
-      transform: translateX(0);
-    }
-
-    #screen-ocr.scanning-x90 .scan-strip-vertical-left {
-      animation: scanDown 1.0s linear forwards;
-    }
-
-    #screen-ocr.scanning-x-90 #ocr-bg {
-      transform: translateX(0);
-    }
-
-    #screen-ocr.scanning-x-90 .scan-strip-vertical-right {
-      animation: scanDown 1.0s linear forwards;
-    }
-
-    .scan-strip {
+    /* scan overlay container */
+    #scan-gradient {
       position: absolute;
+      inset: 0;
       pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      overflow: hidden;
       mix-blend-mode: screen;
     }
 
-    .scan-strip-horizontal {
+    #scan-band {
+      position: absolute;
+      box-shadow: 0 0 32px rgba(232, 255, 41, 0.9);
+    }
+
+    /* 0°: horizontal band */
+    #scan-gradient.mode-0 #scan-band {
+      width: 100%;
+      height: 60%;
       left: 0;
-      right: 0;
-      height: 40vh;
-      top: 50%;
-      transform: translateY(-50%);
       background: linear-gradient(
         to bottom,
         rgba(232, 255, 41, 0) 0%,
-        rgba(232, 255, 41, 0.12) 15%,
+        rgba(232, 255, 41, 0.12) 20%,
         rgba(232, 255, 41, 0.98) 50%,
-        rgba(232, 255, 41, 0.2) 80%,
+        rgba(232, 255, 41, 0.12) 80%,
         rgba(232, 255, 41, 0) 100%
       );
-      opacity: 0;
     }
 
-    .scan-strip-vertical-left,
-    .scan-strip-vertical-right {
+    /* 90° / -90°: vertical band */
+    #scan-gradient.mode-90 #scan-band,
+    #scan-gradient.mode-neg90 #scan-band {
+      height: 100%;
+      width: 60%;
       top: 0;
-      bottom: 0;
-      width: 42vw;
       background: linear-gradient(
         to right,
         rgba(232, 255, 41, 0) 0%,
@@ -234,37 +159,6 @@
         rgba(232, 255, 41, 0.12) 80%,
         rgba(232, 255, 41, 0) 100%
       );
-      opacity: 0;
-    }
-
-    .scan-strip-vertical-left {
-      left: 0;
-    }
-
-    .scan-strip-vertical-right {
-      right: 0;
-    }
-
-    @keyframes scanAcross {
-      0% {
-        transform: translateY(-55%);
-        opacity: 1;
-      }
-      100% {
-        transform: translateY(55%);
-        opacity: 0;
-      }
-    }
-
-    @keyframes scanDown {
-      0% {
-        transform: translateY(-55%);
-        opacity: 1;
-      }
-      100% {
-        transform: translateY(55%);
-        opacity: 0;
-      }
     }
 
     #ocr-overlay {
@@ -273,86 +167,57 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      pointer-events: none;
+      padding: 0 10vw;
     }
 
-    .scanning-label {
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      bottom: 22vh;
-      font-size: 3.0rem;
-      font-weight: 800;
-      letter-spacing: 0.04em;
-      color: rgba(232, 255, 41, 0.96);
-      text-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
-      opacity: 1;
-      transition: opacity var(--transition-med),
-        transform var(--transition-med);
-    }
-
-    .orientation-label {
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      bottom: 15vh;
-      font-size: 2.2rem;
-      font-weight: 600;
-      color: rgba(232, 255, 41, 0.96);
-      text-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
-    }
-
+    .scanning-label,
     .search-container {
       position: absolute;
       left: 50%;
       transform: translateX(-50%);
+      transition: opacity var(--transition-med), transform var(--transition-med);
+      will-change: opacity, transform;
+    }
+
+    .scanning-label {
       bottom: 18vh;
-      width: 86vw;
-      max-width: 460px;
+      opacity: 1;
+      text-align: center;
+      color: var(--scan-yellow);
+      text-shadow: 0 0 16px rgba(0, 0, 0, 0.9);
+    }
+
+    #scan-word {
+      font-size: 3rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    #scan-angle {
+      margin-top: 0.2em;
+      font-size: 2.8rem;
+      font-weight: 700;
+    }
+
+    .search-container {
+      bottom: 20vh;
+      width: 80vw;
+      max-width: 480px;
       opacity: 0;
       pointer-events: none;
-      transition: opacity var(--transition-med),
-        transform var(--transition-med);
-    }
-
-    #screen-ocr.mode-search .scanning-label {
-      opacity: 0;
-      transform: translate(-50%, 12px);
-    }
-
-    #screen-ocr.mode-search .orientation-label {
-      opacity: 0;
-      transform: translate(-50%, 8px);
-    }
-
-    #screen-ocr.mode-search .search-container {
-      opacity: 1;
-      transform: translate(-50%, 0);
-      pointer-events: auto;
-    }
-
-    .search-input-wrapper {
-      background: rgba(0, 0, 0, 0.92);
-      border-radius: 999px;
-      padding: 10px 16px 10px 16px;
-      display: flex;
-      align-items: center;
-      box-shadow: var(--shadow-soft);
-      border: 1px solid #333;
+      transform: translate(-50%, 20px);
     }
 
     .search-input {
-      flex: 1;
+      width: 100%;
+      padding: 16px 20px;
+      border-radius: 999px;
       border: none;
-      background: transparent;
-      color: #fff;
-      font-size: 1.2rem;
+      font-size: 1.4rem;
       outline: none;
-      padding: 4px 8px;
-    }
-
-    .search-input::placeholder {
-      color: rgba(255, 255, 255, 0.45);
+      background: var(--input-bg);
+      color: var(--input-text);
+      box-shadow: var(--shadow-soft);
     }
 
     .autosuggest {
@@ -390,397 +255,275 @@
       background: rgba(0, 0, 0, 0.04);
     }
 
-    #ocr-progress {
-      position: absolute;
-      top: 18px;
-      left: 50%;
-      transform: translateX(-50%);
-      padding: 8px 13px;
-      border-radius: 999px;
-      background: rgba(0, 0, 0, 0.8);
-      font-size: 0.9rem;
-      box-shadow: var(--shadow-soft);
-      white-space: nowrap;
+    /* scanning → search transition */
+    #screen-ocr.mode-search .scanning-label {
+      opacity: 0;
+      transform: translate(-50%, -30px);
+      pointer-events: none;
     }
 
-    #ocr-progress.hidden {
-      display: none;
+    #screen-ocr.mode-search #scan-gradient {
+      opacity: 0;
+    }
+
+    #screen-ocr.mode-search .search-container {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, 0);
+    }
+
+    #ocr-progress {
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.9rem;
+      background: rgba(0, 0, 0, 0.55);
+      padding: 6px 12px;
+      border-radius: 999px;
+      pointer-events: none;
     }
 
     /* RESULTS SCREEN */
-
     #screen-results {
-      display: flex;
-      flex-direction: column;
+      inset: 0;
       background: #000;
+      color: #fff;
     }
 
     #results-top-row {
-      padding: 16px 16px 8px 16px;
-      display: flex;
-      justify-content: flex-start;
-      align-items: center;
-      gap: 10px;
+      position: absolute;
+      top: 32px;
+      left: 20px;
+      z-index: 10;
     }
 
     #btn-new-image {
-      background: var(--accent);
-      border: none;
+      padding: 8px 18px;
       border-radius: 999px;
-      padding: 12px 24px;
-      font-size: 1.1rem;
-      font-weight: 600;
+      border: none;
+      background: var(--accent);
       color: #fff;
-      box-shadow: var(--shadow-soft);
+      font-weight: 600;
+      font-size: 1rem;
       cursor: pointer;
-    }
-
-    #btn-new-image:active {
-      transform: scale(0.97);
+      box-shadow: var(--shadow-soft);
     }
 
     #results-image-wrapper {
-      flex: 1;
-      overflow: hidden;
+      position: absolute;
+      inset: 0;
+      padding: 56px 0 140px;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 0 0 10px 0;
     }
 
     #results-image-inner {
       position: relative;
       width: 100%;
+      max-width: 560px;
       height: 100%;
       display: flex;
-      justify-content: center;
       align-items: center;
+      justify-content: center;
       overflow: hidden;
     }
 
     #results-image {
       max-width: 100%;
       max-height: 100%;
-      object-fit: contain;
+      width: auto;
+      height: auto;
       display: block;
     }
 
-    #highlights-layer {
+    #highlightsLayer {
       position: absolute;
       inset: 0;
       pointer-events: none;
     }
 
-    .crosshair-arm {
+    /* diagonal fading crosshair */
+    .crosshair-line {
       position: absolute;
-      width: 120%;
-      height: 3px;
       background: linear-gradient(
         to right,
-        var(--crosshair-fade),
-        var(--crosshair-soft),
-        var(--crosshair-color),
-        var(--crosshair-soft),
-        var(--crosshair-fade)
+        rgba(213, 255, 57, 1) 0%,
+        rgba(213, 255, 57, 0) 100%
       );
-      transform-origin: center;
-      filter: drop-shadow(0 0 18px rgba(198, 255, 0, 0.95));
-      opacity: 0.96;
+      box-shadow: 0 0 8px rgba(213, 255, 57, 0.7);
+      pointer-events: none;
+      transform-origin: 0 50%;
     }
 
-    .crosshair-arm.diag1 {
-      transform: rotate(45deg);
-    }
-
-    .crosshair-arm.diag2 {
-      transform: rotate(-45deg);
-    }
-
-    .crosshair-arm-inner {
+    #results-bottom {
       position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 40%;
-      height: 6px;
-      background: #000;
-      transform: translate(-50%, -50%);
-      border-radius: 999px;
+      left: 0;
+      right: 0;
+      bottom: 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding: 0 16px;
+      z-index: 10;
     }
 
-    .crosshair-center-dot {
-      position: absolute;
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      border: 3px solid rgba(198, 255, 0, 0.9);
-      box-shadow: 0 0 30px rgba(198, 255, 0, 0.9);
-      background: rgba(0, 0, 0, 0.7);
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
-    }
-
-    #results-bottom-row {
-      position: relative;
-      padding: 0 16px 18px 16px;
+    #results-pills {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 12px;
+      gap: 8px;
+      width: 100%;
     }
 
-    #btn-prev,
-    #btn-next {
-      width: 44px;
-      height: 44px;
-      border-radius: 999px;
-      border: none;
-      background: var(--accent);
-      color: #fff;
-      font-weight: 700;
-      font-size: 1.4rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: var(--shadow-soft);
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-
-    #btn-prev:active,
-    #btn-next:active {
-      transform: scale(0.96);
-    }
-
-    #results-term-pill {
-      position: relative;
+    .pill {
       flex: 1;
-      max-width: 240px;
-      text-align: center;
       padding: 10px 16px;
       border-radius: 999px;
-      background: #fff;
-      color: #000;
-      font-size: 1.15rem;
-      font-weight: 600;
-      box-shadow: var(--shadow-soft);
+      text-align: center;
+      font-size: 1.3rem;
+      font-weight: 700;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      cursor: pointer;
     }
 
-    #results-badge {
+	.pill-side {
+	    background: rgba(0, 0, 0, 0.4);
+	    color: #fff;
+	    border: 2px solid rgba(255, 255, 255, 0.25);
+	    font-size: .8rem;
+	    max-width: min-content;
+	}
+	
+	
+    .pill-side.disabled {
+      opacity: 0.3;
+      border-style: dashed;
+      pointer-events: none;
+    }
+
+    .pill-main-wrapper {
+      flex: 1;
+      max-width: 38%;
+      position: relative;
+      display: flex;
+      justify-content: center;
+    }
+
+    .pill-main {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      box-shadow: var(--shadow-soft);
+      pointer-events: none;
+      width: 100%;
+    }
+
+    #pill-badge {
       position: absolute;
       top: -8px;
-      right: -6px;
-      min-width: 26px;
-      height: 26px;
+      right: -4px;
+      min-width: 24px;
+      height: 24px;
       padding: 0 6px;
       border-radius: 999px;
       background: #fff;
       color: #111;
-      font-size: 0.85rem;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: var(--shadow-soft);
-      transform: scale(0);
-      transform-origin: center;
-      transition: transform 160ms ease-out;
-    }
-
-    #results-badge.visible {
-      transform: scale(1);
-    }
-
-    #instance-counter {
-      position: absolute;
-      bottom: 5px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.8);
-      border-radius: 999px;
-      padding: 4px 10px;
       font-size: 0.9rem;
-    }
-
-    #btn-new-search {
-      position: absolute;
-      bottom: 10px;
-      left: 16px;
-      padding: 10px 18px;
-      border-radius: 999px;
-      border: none;
-      font-size: 1.0rem;
-      background: #5a3a20;
-      color: #fff;
-      box-shadow: var(--shadow-soft);
-      cursor: pointer;
-      width: 180px;
-      max-width: 220px;
-      text-align: center;
-    }
-
-    #btn-new-search:active {
-      transform: scale(0.97);
-    }
-
-    #term-carousel {
-      position: absolute;
-      bottom: 60px;
-      left: 50%;
-      transform: translateX(-50%);
+      font-weight: 700;
       display: flex;
       align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    #results-bottom-row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+	#new-search-btn {
+	    padding: 10px 18px;
+	    border-radius: 999px;
+	    border: none;
+	    background: #583922;
+	    color: #fff;
+	    font-size: 1.1rem;
+	    font-weight: 200;
+	    box-shadow: var(--shadow-soft);
+	    cursor: pointer;
+	    width: auto;
+	    min-width: 44%;
+	    text-align: center;
+	}
+
+    #instance-nav {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
       gap: 10px;
-      padding: 0 6px;
-      max-width: 100%;
     }
 
-    .term-pill {
-      min-width: 80px;
-      max-width: 160px;
-      padding: 10px 16px;
-      border-radius: 999px;
-      background: rgba(0, 0, 0, 0.9);
-      border: 1px solid var(--pill-border-subtle);
-      color: var(--pill-text-muted);
-      font-size: 1.0rem;
-      font-weight: 500;
-      text-align: center;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .term-pill.active {
-      background: var(--accent);
-      color: #fff;
-      border-color: transparent;
-      box-shadow: var(--shadow-soft);
-    }
-
-    .term-pill.side-pill {
-      font-size: 0.85rem;
-      max-width: min-content;
-      padding-inline: 12px;
-      opacity: 0.78;
-    }
-
-    #prev-term-pill,
-    #next-term-pill {
-      cursor: pointer;
-    }
-
-    .term-pill.empty {
-      opacity: 0.28;
-    }
-
-    #bottom-hit-nav {
-      position: absolute;
-      right: 16px;
-      bottom: 10px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    #hit-prev,
-    #hit-next {
+    .hit-nav-btn {
       width: 44px;
       height: 44px;
-      border-radius: 999px;
+      border-radius: 50%;
       border: none;
       background: var(--accent);
       color: #fff;
+      font-size: 1.6rem;
       font-weight: 700;
-      font-size: 1.4rem;
       display: flex;
       align-items: center;
       justify-content: center;
       box-shadow: var(--shadow-soft);
       cursor: pointer;
-      flex-shrink: 0;
     }
 
-    #hit-prev:active,
-    #hit-next:active {
-      transform: scale(0.96);
-    }
-
-    #hit-index-pill {
+    #hit-counter {
       width: 44px;
       height: 44px;
-      border-radius: 999px;
+      border-radius: 50%;
+      border: none;
       background: #fff;
-      color: #000;
+      color: #111;
+      font-size: 1.4rem;
+      font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 700;
       box-shadow: var(--shadow-soft);
-      font-size: 1.2rem;
-      flex-shrink: 0;
-    }
-
-    #bottom-hit-nav.hidden {
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    @media (max-height: 700px) {
-      .scanning-label {
-        bottom: 20vh;
-        font-size: 2.6rem;
-      }
-      .search-container {
-        bottom: 16vh;
-      }
-      #term-carousel {
-        bottom: 54px;
-      }
-    }
-
-    #screen-ocr.scanning-x0 .scanning-label,
-    #screen-ocr.scanning-x90 .scanning-label,
-    #screen-ocr.scanning-x-90 .scanning-label {
-      opacity: 1;
     }
   </style>
 </head>
 <body>
   <div id="app">
+    <!-- ADD IMAGE -->
     <div id="screen-add" class="screen active">
-      <div id="screen-add-inner">
-        <div class="app-title">spineless</div>
-        <div class="app-subtitle">
-          Find titles on a shelf by searching the photo.
-        </div>
-        <div class="add-button-wrapper">
-          <button id="btn-add-image">new image</button>
-        </div>
-      </div>
-
-      <input
-        type="file"
-        id="imageInput"
-        accept="image/*"
-        capture="environment"
-      />
+      <input type="file" id="imageInput" accept="image/*" />
+      <div class="label">add image</div>
     </div>
 
+    <!-- OCR / SCANNING -->
     <div id="screen-ocr" class="screen">
       <div id="ocr-bg"></div>
-
-      <div class="scan-strip scan-strip-horizontal"></div>
-      <div class="scan-strip scan-strip-vertical-left"></div>
-      <div class="scan-strip scan-strip-vertical-right"></div>
-
+      <div id="scan-gradient">
+        <div id="scan-band"></div>
+      </div>
       <div id="ocr-overlay">
         <div id="ocr-progress" class="hidden">scanning…</div>
-        <div class="scanning-label">reading</div>
-        <div class="orientation-label" id="orientation-label">0°</div>
+
+        <div class="scanning-label">
+          <div id="scan-word">reading</div>
+          <div id="scan-angle">0°</div>
+        </div>
 
         <div class="search-container">
           <input
@@ -795,6 +538,7 @@
       </div>
     </div>
 
+    <!-- RESULTS -->
     <div id="screen-results" class="screen">
       <div id="results-top-row">
         <button id="btn-new-image">new image</button>
@@ -803,776 +547,674 @@
       <div id="results-image-wrapper">
         <div id="results-image-inner">
           <img id="results-image" src="" alt="Bookshelf" />
-          <div id="highlights-layer"></div>
+          <div id="highlightsLayer"></div>
         </div>
       </div>
 
-      <div id="results-bottom-row">
-        <button id="btn-prev">&#8249;</button>
-
-        <div id="results-term-pill">
-          <span id="results-term-text"></span>
-          <div id="results-badge">1</div>
+      <div id="results-bottom">
+        <div id="results-pills">
+          <button id="pill-left" class="pill pill-side"></button>
+          <div class="pill-main-wrapper">
+            <div id="pill-main" class="pill pill-main"></div>
+            <div id="pill-badge" class="pill-badge hidden"></div>
+          </div>
+          <button id="pill-right" class="pill pill-side"></button>
         </div>
 
-        <button id="btn-next">&#8250;</button>
-
-        <button id="btn-new-search">new search</button>
-
-        <div id="term-carousel">
-          <div id="prev-term-pill" class="term-pill side-pill empty"></div>
-          <div id="current-term-pill" class="term-pill active"></div>
-          <div id="next-term-pill" class="term-pill side-pill empty"></div>
-        </div>
-
-        <div id="bottom-hit-nav" class="hidden">
-          <button id="hit-prev">&#8249;</button>
-          <div id="hit-index-pill">1</div>
-          <button id="hit-next">&#8250;</button>
+        <div id="results-bottom-row">
+          <button id="new-search-btn">new search</button>
+          <div id="instance-nav" class="hidden">
+            <button id="hit-prev" class="hit-nav-btn">&#9664;</button>
+            <div id="hit-counter">1</div>
+            <button id="hit-next" class="hit-nav-btn">&#9654;</button>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
-  <script>
-    const screenAdd = document.getElementById("screen-add");
-    const screenOCR = document.getElementById("screen-ocr");
-    const screenResults = document.getElementById("screen-results");
+<script>
+  const screenAdd = document.getElementById("screen-add");
+  const screenOCR = document.getElementById("screen-ocr");
+  const screenResults = document.getElementById("screen-results");
+  const imageInput = document.getElementById("imageInput");
+  const ocrBg = document.getElementById("ocr-bg");
+  const ocrProgress = document.getElementById("ocr-progress");
+  const searchInput = document.getElementById("searchInput");
+  const autosuggestEl = document.getElementById("autosuggest");
 
-    const imageInput = document.getElementById("imageInput");
-    const btnAddImage = document.getElementById("btn-add-image");
-    const btnNewImage = document.getElementById("btn-new-image");
-    const btnNewSearch = document.getElementById("btn-new-search");
+  const resultsImage = document.getElementById("results-image");
+  const btnNewImage = document.getElementById("btn-new-image");
+  const btnNewSearch = document.getElementById("new-search-btn");
+  const pillLeft = document.getElementById("pill-left");
+  const pillRight = document.getElementById("pill-right");
+  const pillMain = document.getElementById("pill-main");
+  const pillBadge = document.getElementById("pill-badge");
+  const resultsImageInner = document.getElementById("results-image-inner");
+  const highlightsLayer = document.getElementById("highlightsLayer");
 
-    const ocrBg = document.getElementById("ocr-bg");
-    const ocrProgress = document.getElementById("ocr-progress");
-    const searchInput = document.getElementById("searchInput");
-    const autosuggestEl = document.getElementById("autosuggest");
-    const orientationLabel = document.getElementById("orientation-label");
+  const scanWordEl = document.getElementById("scan-word");
+  const scanAngleEl = document.getElementById("scan-angle");
+  const scanGradient = document.getElementById("scan-gradient");
+  const scanBand = document.getElementById("scan-band");
 
-    const scanStripHorizontal = document.querySelector(
-      ".scan-strip-horizontal"
+  const instanceNav = document.getElementById("instance-nav");
+  const hitPrevBtn = document.getElementById("hit-prev");
+  const hitNextBtn = document.getElementById("hit-next");
+  const hitCounter = document.getElementById("hit-counter");
+
+  let ocrWords = [];
+  let imageDataUrl = "";
+
+  let termList = [];
+  let currentTermIndex = -1;
+  let currentTerm = "";
+
+  // per-term instance tracking
+  let currentMatches = [];
+  let currentMatchIndex = 0;
+
+  function showScreen(el) {
+    [screenAdd, screenOCR, screenResults].forEach((s) =>
+      s.classList.remove("active")
     );
-    const scanStripVerticalLeft = document.querySelector(
-      ".scan-strip-vertical-left"
+    el.classList.add("active");
+  }
+
+  const SHORT_COMMON_WORDS = new Set([
+    "a","an","as","at","be","by","do","go","he","if","in","is","it","me","my",
+    "no","of","on","or","so","to","up","us","we"
+  ]);
+
+  function isDictionaryWord(word) {
+    if (!word) return false;
+    const w = word.toLowerCase();
+    if (SHORT_COMMON_WORDS.has(w)) return true;
+    if (!/^[a-z]+$/.test(w)) return false;
+    if (w.length < 3) return false;
+    if (!/[aeiouy]/.test(w)) return false;
+    return true;
+  }
+
+  function findPrevDictIndex(startIndex) {
+    if (!termList.length) return -1;
+    let idx = startIndex;
+    for (let steps = 0; steps < termList.length; steps++) {
+      idx = (idx - 1 + termList.length) % termList.length;
+      if (isDictionaryWord(termList[idx])) return idx;
+    }
+    return -1;
+  }
+
+  function findNextDictIndex(startIndex) {
+    if (!termList.length) return -1;
+    let idx = startIndex;
+    for (let steps = 0; steps < termList.length; steps++) {
+      idx = (idx + 1) % termList.length;
+      if (isDictionaryWord(termList[idx])) return idx;
+    }
+    return -1;
+  }
+
+  function mapBboxToOriginal(bbox, kind, W, H) {
+    let { x0, y0, x1, y1 } = bbox;
+
+    const corners = [
+      [x0, y0],
+      [x1, y1],
+    ];
+
+    function fromBase(u, v) {
+      return { x: u, y: v };
+    }
+
+    // ✅ Correct 90° clockwise mapping
+    function fromCW(u, v) {
+      // canvas (u, v) -> original (x, y)
+      const x = v;
+      const y = H - u;
+      return { x, y };
+    }
+
+    // ✅ Correct -90° (counter-clockwise) mapping
+    function fromCCW(u, v) {
+      const x = W - v;
+      const y = u;
+      return { x, y };
+    }
+
+    const mapped = corners.map(([u, v]) => {
+      if (kind === "base") return fromBase(u, v);
+      if (kind === "cw")   return fromCW(u, v);
+      return fromCCW(u, v); // kind === "ccw"
+    });
+
+    const xs = mapped.map((p) => p.x);
+    const ys = mapped.map((p) => p.y);
+
+    let nx0 = Math.min(xs[0], xs[1]);
+    let ny0 = Math.min(ys[0], ys[1]);
+    let nx1 = Math.max(xs[0], xs[1]);
+    let ny1 = Math.max(ys[0], ys[1]);
+
+    nx0 = Math.max(0, Math.min(W, nx0));
+    nx1 = Math.max(0, Math.min(W, nx1));
+    ny0 = Math.max(0, Math.min(H, ny0));
+    ny1 = Math.max(0, Math.min(H, ny1));
+
+    return { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
+  }
+
+
+  imageInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      imageDataUrl = ev.target.result;
+      startOCR(imageDataUrl);
+    };
+    reader.readAsDataURL(file);
+  });
+
+  function buildTermList() {
+    if (!ocrWords.length) {
+      termList = [];
+      return;
+    }
+
+    const cleaned = ocrWords
+      .map((w) => (w.text || "").trim())
+      .filter(Boolean)
+      .map((t) =>
+        t
+          .toLowerCase()
+          .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "")
+          .trim()
+      )
+      .filter((t) => t.length > 1);
+
+    termList = Array.from(new Set(cleaned)).sort((a, b) =>
+      a.localeCompare(b)
     );
-    const scanStripVerticalRight = document.querySelector(
-      ".scan-strip-vertical-right"
-    );
+  }
 
-    const resultsImage = document.getElementById("results-image");
-    const resultsImageInner = document.getElementById("results-image-inner");
-    const highlightsLayer = document.getElementById("highlights-layer");
+  function setScanMode(angleLabel, modeClass) {
+    screenOCR.classList.add("scanning");
+    scanGradient.style.opacity = "1";
+    scanGradient.classList.remove("mode-0", "mode-90", "mode-neg90");
+    if (modeClass) scanGradient.classList.add(modeClass);
+    scanWordEl.textContent = "reading";
+    scanAngleEl.textContent = angleLabel;
+    updateScanProgress(0);
+  }
 
-    const btnPrev = document.getElementById("btn-prev");
-    const btnNext = document.getElementById("btn-next");
+  function updateScanProgress(progress) {
+    const p = Math.max(0, Math.min(1, progress || 0));
+    const h = screenOCR.clientHeight || window.innerHeight;
+    const w = screenOCR.clientWidth || window.innerWidth;
 
-    const resultsTermPill = document.getElementById("results-term-pill");
-    const resultsTermText = document.getElementById("results-term-text");
-    const resultsBadge = document.getElementById("results-badge");
-
-    const prevTermPill = document.getElementById("prev-term-pill");
-    const currentTermPill = document.getElementById("current-term-pill");
-    const nextTermPill = document.getElementById("next-term-pill");
-
-    const bottomHitNav = document.getElementById("bottom-hit-nav");
-    const hitPrev = document.getElementById("hit-prev");
-    const hitNext = document.getElementById("hit-next");
-    const hitIndexPill = document.getElementById("hit-index-pill");
-
-    let ocrWords = [];
-    let imageDataUrl = "";
-
-    let termList = [];
-    let currentTermIndex = -1;
-    let currentTerm = "";
-
-    function normalizeWord(text) {
-      return (text || "")
-        .trim()
-        .toLowerCase()
-        .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "")
-        .trim();
+    if (scanGradient.classList.contains("mode-0")) {
+      const bandHeight = h * 0.6;
+      const start = -bandHeight;
+      const end = h;
+      const y = start + (end - start) * p;
+      scanBand.style.top = y + "px";
+      scanBand.style.left = "0px";
+    } else if (scanGradient.classList.contains("mode-90")) {
+      const bandWidth = w * 0.6;
+      const start = -bandWidth;
+      const end = w;
+      const x = start + (end - start) * p;
+      scanBand.style.left = x + "px";
+      scanBand.style.top = "0px";
+    } else if (scanGradient.classList.contains("mode-neg90")) {
+      const bandWidth = w * 0.6;
+      const start = w;
+      const end = -bandWidth;
+      const x = start + (end - start) * p;
+      scanBand.style.left = x + "px";
+      scanBand.style.top = "0px";
     }
+  }
 
-    function showScreen(el) {
-      [screenAdd, screenOCR, screenResults].forEach((s) =>
-        s.classList.remove("active")
-      );
-      el.classList.add("active");
-    }
+  async function startOCR(dataUrl) {
+    showScreen(screenOCR);
+    screenOCR.classList.remove("mode-search");
+    ocrBg.style.backgroundImage = `url(${dataUrl})`;
+    ocrProgress.classList.remove("hidden");
+    ocrProgress.textContent = "scanning…";
 
-    function resetScanStrips() {
-      scanStripHorizontal.style.animation = "none";
-      scanStripVerticalLeft.style.animation = "none";
-      scanStripVerticalRight.style.animation = "none";
-      void scanStripHorizontal.offsetWidth;
-      scanStripHorizontal.style.animation = "";
-      scanStripVerticalLeft.style.animation = "";
-      scanStripVerticalRight.style.animation = "";
-    }
+    ocrWords = [];
+    termList = [];
+    currentTermIndex = -1;
+    currentTerm = "";
+    currentMatches = [];
+    currentMatchIndex = 0;
+    clearHighlights();
+    pillMain.textContent = "";
+    pillLeft.textContent = "";
+    pillRight.textContent = "";
+    pillLeft.classList.add("disabled");
+    pillRight.classList.add("disabled");
+    pillBadge.classList.add("hidden");
+    instanceNav.classList.add("hidden");
 
-    function startScanAnimation() {
-      screenOCR.classList.remove("scanning-x0", "scanning-x90", "scanning-x-90");
-      resetScanStrips();
+    try {
+      const img = new Image();
+      img.src = dataUrl;
 
-      setTimeout(() => {
-        screenOCR.classList.add("scanning-x0");
-        orientationLabel.textContent = "0°";
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = (err) =>
+          reject(new Error("Could not load image for OCR"));
+      });
 
-        setTimeout(() => {
-          screenOCR.classList.remove("scanning-x0");
-          screenOCR.classList.add("scanning-x90");
-          orientationLabel.textContent = "90°";
+      const W = img.naturalWidth;
+      const H = img.naturalHeight;
 
-          setTimeout(() => {
-            screenOCR.classList.remove("scanning-x90");
-            screenOCR.classList.add("scanning-x-90");
-            orientationLabel.textContent = "-90°";
+      const baseCanvas = document.createElement("canvas");
+      baseCanvas.width = W;
+      baseCanvas.height = H;
+      baseCanvas.getContext("2d").drawImage(img, 0, 0);
 
-            setTimeout(() => {
-              screenOCR.classList.remove("scanning-x-90");
-            }, 1100);
-          }, 1100);
-        }, 1300);
-      }, 200);
-    }
+      const cwCanvas = document.createElement("canvas");
+      cwCanvas.width = H;
+      cwCanvas.height = W;
+      const ctxCW = cwCanvas.getContext("2d");
+      ctxCW.translate(H, 0);
+      ctxCW.rotate(Math.PI / 2);
+      ctxCW.drawImage(img, 0, 0);
 
-    function mapBboxToOriginal(bbox, kind, W, H) {
-      const { x0, y0, x1, y1 } = bbox;
+      const ccwCanvas = document.createElement("canvas");
+      ccwCanvas.width = H;
+      ccwCanvas.height = W;
+      const ctxCCW = ccwCanvas.getContext("2d");
+      ctxCCW.translate(0, W);
+      ctxCCW.rotate(-Math.PI / 2);
+      ctxCCW.drawImage(img, 0, 0);
 
-      const corners = [
-        [x0, y0],
-        [x1, y1],
+      const passes = [
+        { kind: "base", canvas: baseCanvas, label: "0°",  modeClass: "mode-0" },
+        { kind: "cw",   canvas: cwCanvas,   label: "90°", modeClass: "mode-90" },
+        { kind: "ccw",  canvas: ccwCanvas,  label: "-90°", modeClass: "mode-neg90" },
       ];
 
-      function fromBase(u, v) {
-        return { x: u, y: v };
-      }
+      let allWords = [];
 
-      function fromCW(u, v) {
-        const x = v;
-        const y = H - u;
-        return { x, y };
-      }
+      for (let i = 0; i < passes.length; i++) {
+        const { kind, canvas, label, modeClass } = passes[i];
+        const passIndex = i + 1;
+        const passTotal = passes.length;
 
-      function fromCCW(u, v) {
-        const x = W - v;
-        const y = u;
-        return { x, y };
-      }
+        setScanMode(label, modeClass);
 
-      const mapped = corners.map(([u, v]) => {
-        if (kind === "base") return fromBase(u, v);
-        if (kind === "cw") return fromCW(u, v);
-        return fromCCW(u, v);
-      });
-
-      const xs = mapped.map((p) => p.x);
-      const ys = mapped.map((p) => p.y);
-
-      let nx0 = Math.min(xs[0], xs[1]);
-      let ny0 = Math.min(ys[0], ys[1]);
-      let nx1 = Math.max(xs[0], xs[1]);
-      let ny1 = Math.max(ys[0], ys[1]);
-
-      nx0 = Math.max(0, Math.min(W, nx0));
-      nx1 = Math.max(0, Math.min(W, nx1));
-      ny0 = Math.max(0, Math.min(H, ny0));
-      ny1 = Math.max(0, Math.min(H, ny1));
-
-      return { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
-    }
-
-    function buildTermList() {
-      if (!ocrWords.length) {
-        termList = [];
-        return;
-      }
-
-      const cleaned = ocrWords
-        .map((w) => normalizeWord(w.text))
-        .filter((t) => t && t.length > 1);
-
-      const uniq = Array.from(new Set(cleaned));
-      uniq.sort((a, b) => a.localeCompare(b));
-      termList = uniq;
-    }
-
-    const SHORT_COMMON_WORDS = new Set([
-      "and",
-      "the",
-      "for",
-      "from",
-      "with",
-      "that",
-      "this",
-      "into",
-      "over",
-      "under",
-      "your",
-      "their",
-      "book",
-      "books",
-      "new",
-      "old",
-      "how",
-      "why",
-      "what",
-      "when",
-      "where",
-      "who",
-      "which",
-      "our",
-      "out",
-      "all",
-      "one",
-      "two",
-      "three",
-      "four",
-      "five",
-      "six",
-      "seven",
-      "eight",
-      "nine",
-      "ten",
-    ]);
-
-    function isDictionaryWord(word) {
-      if (!word) return false;
-      const w = word.toLowerCase();
-      if (SHORT_COMMON_WORDS.has(w)) return true;
-      if (!/^[a-z]+$/.test(w)) return false;
-      if (w.length < 3) return false;
-      if (!/[aeiouy]/.test(w)) return false;
-      return true;
-    }
-
-    function findPrevDictIndex(startIndex) {
-      if (!termList.length) return -1;
-      let idx = startIndex;
-      for (let steps = 0; steps < termList.length; steps++) {
-        idx = (idx - 1 + termList.length) % termList.length;
-        if (isDictionaryWord(termList[idx])) return idx;
-      }
-      return -1;
-    }
-
-    function findNextDictIndex(startIndex) {
-      if (!termList.length) return -1;
-      let idx = startIndex;
-      for (let steps = 0; steps < termList.length; steps++) {
-        idx = (idx + 1) % termList.length;
-        if (isDictionaryWord(termList[idx])) return idx;
-      }
-      return -1;
-    }
-
-    function updateTermCarousel() {
-      if (!termList.length || currentTermIndex < 0) {
-        prevTermPill.textContent = "";
-        currentTermPill.textContent = "";
-        nextTermPill.textContent = "";
-        prevTermPill.classList.add("empty");
-        currentTermPill.classList.add("empty");
-        nextTermPill.classList.add("empty");
-        return;
-      }
-
-      const current = termList[currentTermIndex];
-      currentTermPill.textContent = current;
-      currentTermPill.classList.remove("empty");
-
-      const prevIdx = findPrevDictIndex(currentTermIndex);
-      const nextIdx = findNextDictIndex(currentTermIndex);
-
-      if (prevIdx !== -1) {
-        prevTermPill.textContent = termList[prevIdx];
-        prevTermPill.classList.remove("empty");
-      } else {
-        prevTermPill.textContent = "";
-        prevTermPill.classList.add("empty");
-      }
-
-      if (nextIdx !== -1) {
-        nextTermPill.textContent = termList[nextIdx];
-        nextTermPill.classList.remove("empty");
-      } else {
-        nextTermPill.textContent = "";
-        nextTermPill.classList.add("empty");
-      }
-    }
-
-    function updateAutosuggest(query) {
-      if (!query) {
-        autosuggestEl.classList.remove("visible");
-        autosuggestEl.innerHTML = "";
-        return;
-      }
-
-      const q = query.toLowerCase();
-
-      const suggestions = termList
-        .filter((t) => t.startsWith(q))
-        .slice(0, 20);
-
-      if (!suggestions.length) {
-        autosuggestEl.classList.remove("visible");
-        autosuggestEl.innerHTML = "";
-        return;
-      }
-
-      autosuggestEl.innerHTML = suggestions
-        .map(
-          (s) =>
-            `<div class="autosuggest-item" data-value="${s}">${s}</div>`
-        )
-        .join("");
-      autosuggestEl.classList.add("visible");
-    }
-
-    searchInput.addEventListener("input", (e) => {
-      const query = e.target.value.trim();
-      updateAutosuggest(query);
-    });
-
-    searchInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        const term = searchInput.value.trim();
-        if (term) {
-          autosuggestEl.classList.remove("visible");
-          autosuggestEl.innerHTML = "";
-          runSearch(term);
-        }
-      }
-    });
-
-    autosuggestEl.addEventListener("click", (e) => {
-      const item = e.target.closest(".autosuggest-item");
-      if (!item) return;
-      const value = item.dataset.value;
-      searchInput.value = value;
-      autosuggestEl.classList.remove("visible");
-      autosuggestEl.innerHTML = "";
-      runSearch(value);
-    });
-
-    async function startOCR(dataUrl) {
-      showScreen(screenOCR);
-      screenOCR.classList.remove("mode-search");
-      ocrBg.style.backgroundImage = `url(${dataUrl})`;
-      ocrProgress.classList.remove("hidden");
-      ocrProgress.textContent = "scanning…";
-
-      ocrWords = [];
-      termList = [];
-      currentTermIndex = -1;
-      currentTerm = "";
-      clearHighlights();
-
-      startScanAnimation();
-
-      imageDataUrl = dataUrl;
-
-      try {
-        const img = new Image();
-        img.src = dataUrl;
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
+        const result = await Tesseract.recognize(canvas, "eng", {
+          logger: (m) => {
+            if (m.status === "recognizing text") {
+              const pct = Math.round((m.progress || 0) * 100);
+              ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}… ${pct}%`;
+              updateScanProgress(m.progress || 0);
+            } else {
+              ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}…`;
+            }
+          },
         });
 
-        const W = img.naturalWidth;
-        const H = img.naturalHeight;
+        updateScanProgress(1);
 
-        const baseCanvas = document.createElement("canvas");
-        baseCanvas.width = W;
-        baseCanvas.height = H;
-        const baseCtx = baseCanvas.getContext("2d");
-        baseCtx.drawImage(img, 0, 0);
+        const words = result.data.words || [];
+        const mapped = words
+          .filter((w) => w.text && w.text.trim().length)
+          .map((w) => ({
+            text: w.text.trim(),
+            bbox: mapBboxToOriginal(w.bbox, kind, W, H),
+          }));
 
-        const cwCanvas = document.createElement("canvas");
-        cwCanvas.width = H;
-        cwCanvas.height = W;
-        const cwCtx = cwCanvas.getContext("2d");
-        cwCtx.translate(H, 0);
-        cwCtx.rotate(Math.PI / 2);
-        cwCtx.drawImage(img, 0, 0);
-
-        const ccwCanvas = document.createElement("canvas");
-        ccwCanvas.width = H;
-        ccwCanvas.height = W;
-        const ccwCtx = ccwCanvas.getContext("2d");
-        ccwCtx.translate(0, W);
-        ccwCtx.rotate(-Math.PI / 2);
-        ccwCtx.drawImage(img, 0, 0);
-
-        const passes = [
-          { kind: "base", canvas: baseCanvas, label: "0°" },
-          { kind: "cw", canvas: cwCanvas, label: "90°" },
-          { kind: "ccw", canvas: ccwCanvas, label: "-90°" },
-        ];
-
-        let allWords = [];
-
-        for (let i = 0; i < passes.length; i++) {
-          const { kind, canvas, label } = passes[i];
-          const passIndex = i + 1;
-          const passTotal = passes.length;
-
-          orientationLabel.textContent = label;
-          ocrProgress.textContent = `scanning ${passIndex}/${passTotal}…`;
-
-          const result = await Tesseract.recognize(canvas, "eng", {
-            tessedit_pageseg_mode: 3,
-            logger: (m) => {
-              if (m.status === "recognizing text") {
-                const pct = Math.round((m.progress || 0) * 100);
-                ocrProgress.textContent = `scanning ${passIndex}/${passTotal}… ${pct}%`;
-              } else {
-                ocrProgress.textContent = `scanning ${passIndex}/${passTotal}…`;
-              }
-            },
-          });
-
-          const words = result.data.words || [];
-          const mapped = words
-            .filter((w) => w.text && w.text.trim().length)
-            .map((w) => ({
-              text: w.text.trim(),
-              bbox: mapBboxToOriginal(w.bbox, kind, W, H),
-            }));
-
-          allWords = allWords.concat(mapped);
-        }
-
-        ocrWords = allWords;
-        buildTermList();
-        ocrProgress.classList.add("hidden");
-
-        screenOCR.classList.add("mode-search");
-        setTimeout(() => searchInput.focus(), 450);
-      } catch (err) {
-        console.error(err);
-        alert(
-          "There was a problem reading the image. Please try another photo."
-        );
-        ocrProgress.classList.add("hidden");
-        showScreen(screenAdd);
-      }
-    }
-
-    function runSearch(term) {
-      if (!ocrWords.length || !termList.length) return;
-      const raw = term.trim();
-      if (!raw) return;
-
-      const lowerTerm = raw.toLowerCase();
-
-      let idx = termList.findIndex((t) => t === lowerTerm);
-      if (idx === -1) {
-        idx = termList.findIndex((t) => t.startsWith(lowerTerm));
+        allWords = allWords.concat(mapped);
       }
 
-      if (idx === -1) {
-        alert(`No matches found for “${raw}”`);
-        return;
-      }
+      scanGradient.style.opacity = "0";
 
-      currentTermIndex = idx;
-      currentTerm = termList[currentTermIndex];
+      ocrWords = allWords;
+      buildTermList();
+      ocrProgress.classList.add("hidden");
 
-      setupResultsScreen();
-      showScreen(screenResults);
-      drawHighlightsForTerm(currentTerm);
-    }
-
-    function setupResultsScreen() {
-      resultsImage.src = imageDataUrl;
-
-      if (currentTermIndex < 0 || !termList.length) {
-        resultsTermText.textContent = "";
-        currentTermPill.textContent = "";
-        prevTermPill.textContent = "";
-        nextTermPill.textContent = "";
-        resultsBadge.classList.remove("visible");
-        bottomHitNav.classList.add("hidden");
-        return;
-      }
-
-      const term = termList[currentTermIndex];
-      resultsTermText.textContent = term;
-      currentTermPill.textContent = term;
-
-      updateTermCarousel();
-    }
-
-    function clearHighlights() {
-      while (highlightsLayer.firstChild) {
-        highlightsLayer.removeChild(highlightsLayer.firstChild);
-      }
-    }
-
-    function drawHighlightsForTerm(term) {
-      if (!term || !ocrWords.length || !resultsImage.src) return;
-
-      const q = normalizeWord(term);
-
-      const matches = ocrWords.filter(
-        (w) => normalizeWord(w.text) === q
-      );
-
-      clearHighlights();
-      if (!matches.length) {
-        resultsBadge.classList.remove("visible");
-        bottomHitNav.classList.add("hidden");
-        return;
-      }
-
-      const image = resultsImage;
-
-      if (!image.naturalWidth || !image.naturalHeight) {
-        image.onload = () => drawHighlightsForTerm(term);
-        return;
-      }
-
-      const displayWidth = image.clientWidth;
-      const displayHeight = image.clientHeight;
-      if (!displayWidth || !displayHeight) return;
-
-      const imgRect = image.getBoundingClientRect();
-      const wrapRect = resultsImageInner.getBoundingClientRect();
-      const offsetLeft = imgRect.left - wrapRect.left;
-      const offsetTop = imgRect.top - wrapRect.top;
-
-      const scaleX = displayWidth / image.naturalWidth;
-      const scaleY = displayHeight / image.naturalHeight;
-
-      const positions = matches.map((m) => {
-        const { x0, y0, x1, y1 } = m.bbox;
-        const cx = (x0 + x1) / 2;
-        const cy = (y0 + y1) / 2;
-
-        const px = offsetLeft + cx * scaleX;
-        const py = offsetTop + cy * scaleY;
-
-        return { cx, cy, px, py };
-      });
-
-      const centerX = offsetLeft + displayWidth / 2;
-      const centerY = offsetTop + displayHeight / 2;
-
-      positions.sort((a, b) => {
-        const da =
-          (a.px - centerX) * (a.px - centerX) +
-          (a.py - centerY) * (a.py - centerY);
-        const db =
-          (b.px - centerX) * (b.px - centerX) +
-          (b.py - centerY) * (b.py - centerY);
-        return da - db;
-      });
-
-      matches.sort((a, b) => {
-        const pa = positions[matches.indexOf(a)];
-        const pb = positions[matches.indexOf(b)];
-        const da =
-          (pa.px - centerX) * (pa.px - centerX) +
-          (pa.py - centerY) * (pa.py - centerY);
-        const db =
-          (pb.px - centerX) * (pb.px - centerX) +
-          (pb.py - centerY) * (pb.py - centerY);
-        return da - db;
-      });
-
-      const targetPos = positions[0];
-      const crosshairCenterX = targetPos.px;
-      const crosshairCenterY = targetPos.py;
-
-      const arm1 = document.createElement("div");
-      arm1.className = "crosshair-arm diag1";
-      const arm1Inner = document.createElement("div");
-      arm1Inner.className = "crosshair-arm-inner";
-      arm1.appendChild(arm1Inner);
-
-      const arm2 = document.createElement("div");
-      arm2.className = "crosshair-arm diag2";
-      const arm2Inner = document.createElement("div");
-      arm2Inner.className = "crosshair-arm-inner";
-      arm2.appendChild(arm2Inner);
-
-      const centerDot = document.createElement("div");
-      centerDot.className = "crosshair-center-dot";
-
-      [arm1, arm2, centerDot].forEach((el) => {
-        el.style.left = `${crosshairCenterX}px`;
-        el.style.top = `${crosshairCenterY}px`;
-      });
-
-      highlightsLayer.appendChild(arm1);
-      highlightsLayer.appendChild(arm2);
-      highlightsLayer.appendChild(centerDot);
-
-      const hitCount = matches.length;
-      if (hitCount > 1) {
-        resultsBadge.textContent = `${hitCount}`;
-        resultsBadge.classList.add("visible");
-        bottomHitNav.classList.remove("hidden");
-        hitIndexPill.textContent = "1";
-      } else {
-        resultsBadge.classList.remove("visible");
-        bottomHitNav.classList.add("hidden");
-      }
-
-      bottomHitNav.dataset.hitIndex = "0";
-      bottomHitNav.dataset.hitCount = String(hitCount);
-      bottomHitNav.dataset.term = term;
-    }
-
-    function stepHit(delta) {
-      const hitCount = Number(bottomHitNav.dataset.hitCount || "0");
-      if (!hitCount) return;
-
-      let index = Number(bottomHitNav.dataset.hitIndex || "0");
-      index = (index + delta + hitCount) % hitCount;
-      bottomHitNav.dataset.hitIndex = String(index);
-      hitIndexPill.textContent = String(index + 1);
-
-      const term = bottomHitNav.dataset.term;
-      if (!term) return;
-
-      const q = normalizeWord(term);
-      const matches = ocrWords.filter(
-        (w) => normalizeWord(w.text) === q
-      );
-      if (!matches.length) return;
-
-      const image = resultsImage;
-      const displayWidth = image.clientWidth;
-      const displayHeight = image.clientHeight;
-      if (!displayWidth || !displayHeight) return;
-
-      const imgRect = image.getBoundingClientRect();
-      const wrapRect = resultsImageInner.getBoundingClientRect();
-      const offsetLeft = imgRect.left - wrapRect.left;
-      const offsetTop = imgRect.top - wrapRect.top;
-
-      const scaleX = displayWidth / image.naturalWidth;
-      const scaleY = displayHeight / image.naturalHeight;
-
-      const target = matches[index];
-      const { x0, y0, x1, y1 } = target.bbox;
-      const cx = (x0 + x1) / 2;
-      const cy = (y0 + y1) / 2;
-
-      const px = offsetLeft + cx * scaleX;
-      const py = offsetTop + cy * scaleY;
-
-      const arm1 = highlightsLayer.querySelector(".crosshair-arm.diag1");
-      const arm2 = highlightsLayer.querySelector(".crosshair-arm.diag2");
-      const centerDot = highlightsLayer.querySelector(
-        ".crosshair-center-dot"
-      );
-      if (!arm1 || !arm2 || !centerDot) return;
-
-      [arm1, arm2, centerDot].forEach((el) => {
-        el.style.left = `${px}px`;
-        el.style.top = `${py}px`;
-      });
-    }
-
-    hitPrev.addEventListener("click", () => stepHit(-1));
-    hitNext.addEventListener("click", () => stepHit(1));
-
-    function goToPrevTerm() {
-      if (!termList.length || currentTermIndex < 0) return;
-
-      const prevIdx = findPrevDictIndex(currentTermIndex);
-      if (prevIdx === -1) return;
-
-      currentTermIndex = prevIdx;
-      currentTerm = termList[currentTermIndex];
-      setupResultsScreen();
-      drawHighlightsForTerm(currentTerm);
-    }
-
-    function goToNextTerm() {
-      if (!termList.length || currentTermIndex < 0) return;
-
-      const nextIdx = findNextDictIndex(currentTermIndex);
-      if (nextIdx === -1) return;
-
-      currentTermIndex = nextIdx;
-      currentTerm = termList[currentTermIndex];
-      setupResultsScreen();
-      drawHighlightsForTerm(currentTerm);
-    }
-
-    btnPrev.addEventListener("click", goToPrevTerm);
-    btnNext.addEventListener("click", goToNextTerm);
-
-    let touchStartX = null;
-
-    resultsImageInner.addEventListener("touchstart", (e) => {
-      if (e.touches.length === 1) {
-        touchStartX = e.touches[0].clientX;
-      }
-    });
-
-    resultsImageInner.addEventListener("touchend", (e) => {
-      if (touchStartX === null) return;
-      const dx = e.changedTouches[0].clientX - touchStartX;
-      if (Math.abs(dx) > 40) {
-        if (dx < 0) {
-          goToNextTerm();
-        } else {
-          goToPrevTerm();
-        }
-      }
-      touchStartX = null;
-    });
-
-    prevTermPill.addEventListener("click", () => {
-      if (prevTermPill.classList.contains("empty")) return;
-      goToPrevTerm();
-    });
-
-    nextTermPill.addEventListener("click", () => {
-      if (nextTermPill.classList.contains("empty")) return;
-      goToNextTerm();
-    });
-
-    btnAddImage.addEventListener("click", () => {
-      imageInput.click();
-    });
-
-    imageInput.addEventListener("change", (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result;
-        startOCR(dataUrl);
-      };
-      reader.readAsDataURL(file);
-    });
-
-    btnNewImage.addEventListener("click", () => {
-      showScreen(screenAdd);
-      imageInput.value = "";
-      ocrWords = [];
-      termList = [];
-      currentTermIndex = -1;
-      currentTerm = "";
-      clearHighlights();
-    });
-
-    btnNewSearch.addEventListener("click", () => {
-      showScreen(screenOCR);
       screenOCR.classList.add("mode-search");
-      searchInput.value = "";
+      setTimeout(() => searchInput.focus(), 450);
+    } catch (err) {
+      console.error(err);
+      alert(
+        "There was a problem reading the image.\n\n" +
+          (err && err.message ? err.message : String(err))
+      );
+      scanGradient.style.opacity = "0";
+      showScreen(screenAdd);
+    }
+  }
+
+  function updateAutosuggest(query) {
+    if (!query) {
       autosuggestEl.classList.remove("visible");
-      setTimeout(() => searchInput.focus(), 200);
-    });
-  </script>
+      autosuggestEl.innerHTML = "";
+      return;
+    }
+
+    const q = query.toLowerCase();
+
+    const suggestions = termList
+      .filter((t) => t.startsWith(q))
+      .slice(0, 20);
+
+    if (!suggestions.length) {
+      autosuggestEl.classList.remove("visible");
+      autosuggestEl.innerHTML = "";
+      return;
+    }
+
+    autosuggestEl.innerHTML = suggestions
+      .map(
+        (s) =>
+          `<div class="autosuggest-item" data-value="${s}">${s}</div>`
+      )
+      .join("");
+    autosuggestEl.classList.add("visible");
+  }
+
+  searchInput.addEventListener("input", (e) => {
+    updateAutosuggest(e.target.value.trim());
+  });
+
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const term = e.target.value.trim();
+      if (term) runSearch(term);
+    }
+  });
+
+  autosuggestEl.addEventListener("click", (e) => {
+    const item = e.target.closest(".autosuggest-item");
+    if (!item) return;
+    const value = item.dataset.value;
+    searchInput.value = value;
+    autosuggestEl.classList.remove("visible");
+    runSearch(value);
+  });
+
+  function getMatchesForTerm(term) {
+    if (!term || !ocrWords.length) return [];
+    const q = term.toLowerCase();
+    return ocrWords.filter(
+      (w) => w.text && w.text.toLowerCase() === q
+    );
+  }
+
+  function runSearch(term) {
+    if (!ocrWords.length || !termList.length) return;
+    const raw = term.trim();
+    if (!raw) return;
+
+    const lowerTerm = raw.toLowerCase();
+
+    let idx = termList.findIndex((t) => t === lowerTerm);
+    if (idx === -1) {
+      idx = termList.findIndex((t) => t.startsWith(lowerTerm));
+    }
+
+    if (idx === -1) {
+      alert(`No matches found for “${raw}”`);
+      return;
+    }
+
+    currentTermIndex = idx;
+    currentTerm = termList[currentTermIndex];
+
+    currentMatches = getMatchesForTerm(currentTerm);
+    currentMatchIndex = 0;
+
+    setupResultsScreen();
+    showScreen(screenResults);
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  function updateInstanceNav() {
+    if (!currentMatches || currentMatches.length <= 1) {
+      instanceNav.classList.add("hidden");
+      return;
+    }
+    instanceNav.classList.remove("hidden");
+    hitCounter.textContent = String(currentMatchIndex + 1);
+  }
+
+  function setupResultsScreen() {
+    resultsImage.src = imageDataUrl;
+
+    if (currentTermIndex < 0 || !termList.length) {
+      pillMain.textContent = "";
+      pillLeft.textContent = "";
+      pillRight.textContent = "";
+      pillLeft.classList.add("disabled");
+      pillRight.classList.add("disabled");
+      pillBadge.classList.add("hidden");
+      instanceNav.classList.add("hidden");
+      return;
+    }
+
+    pillMain.textContent = termList[currentTermIndex];
+
+    // badge shows only when there are multiple hits
+    if (currentMatches && currentMatches.length > 1) {
+      pillBadge.textContent = currentMatches.length;
+      pillBadge.classList.remove("hidden");
+    } else {
+      pillBadge.classList.add("hidden");
+    }
+
+    const prevIndex = findPrevDictIndex(currentTermIndex);
+    const nextIndex = findNextDictIndex(currentTermIndex);
+
+    if (prevIndex === -1 && nextIndex === -1) {
+      pillLeft.textContent = "";
+      pillRight.textContent = "";
+      pillLeft.classList.add("disabled");
+      pillRight.classList.add("disabled");
+    } else if (prevIndex === nextIndex || (prevIndex === -1 || nextIndex === -1)) {
+      const idx = prevIndex !== -1 ? prevIndex : nextIndex;
+      pillLeft.textContent = termList[idx];
+      pillRight.textContent = termList[idx];
+      pillLeft.classList.add("disabled");
+      pillRight.classList.add("disabled");
+    } else {
+      pillLeft.textContent = termList[prevIndex];
+      pillRight.textContent = termList[nextIndex];
+      pillLeft.classList.remove("disabled");
+      pillRight.classList.remove("disabled");
+    }
+
+    updateInstanceNav();
+  }
+
+  function clearHighlights() {
+    while (highlightsLayer.firstChild) {
+      highlightsLayer.removeChild(highlightsLayer.firstChild);
+    }
+  }
+
+  // Diagonal crosshair with fade from center outward
+  function drawHighlightsForTerm(term, matchIndex = 0) {
+    if (!term || !ocrWords.length || !resultsImage.src) return;
+
+    const matches = (currentMatches && currentMatches.length)
+      ? currentMatches
+      : getMatchesForTerm(term);
+
+    clearHighlights();
+    if (!matches.length) {
+      instanceNav.classList.add("hidden");
+      pillBadge.classList.add("hidden");
+      return;
+    }
+
+    if (matchIndex < 0) matchIndex = 0;
+    if (matchIndex >= matches.length) matchIndex = matches.length - 1;
+
+    const img = resultsImage;
+
+    if (!img.naturalWidth || !img.naturalHeight) {
+      img.onload = () => drawHighlightsForTerm(term, matchIndex);
+      return;
+    }
+
+    const displayWidth = img.clientWidth;
+    const displayHeight = img.clientHeight;
+    if (!displayWidth || !displayHeight) return;
+
+    const scaleX = displayWidth / img.naturalWidth;
+    const scaleY = displayHeight / img.naturalHeight;
+
+    const imgRect = img.getBoundingClientRect();
+    const wrapRect = resultsImageInner.getBoundingClientRect();
+    const offsetLeft = imgRect.left - wrapRect.left;
+    const offsetTop = imgRect.top - wrapRect.top;
+
+    const imgLeft = offsetLeft;
+    const imgTop = offsetTop;
+    const imgRight = offsetLeft + displayWidth;
+    const imgBottom = offsetTop + displayHeight;
+
+    const target = matches[matchIndex];
+    const bbox = target.bbox;
+
+    const x = bbox.x0 * scaleX;
+    const y = bbox.y0 * scaleY;
+    const w = (bbox.x1 - bbox.x0) * scaleX;
+    const h = (bbox.y1 - bbox.y0) * scaleY;
+
+    const centerX = offsetLeft + x + w / 2;
+    const centerY = offsetTop + y + h / 2;
+
+    const gapPadding = 10;
+    const lineThickness = 4;
+
+    const gapX = w / 2 + gapPadding;
+    const gapY = h / 2 + gapPadding;
+
+    function addDiagonal(startX, startY, endX, endY) {
+      const line = document.createElement("div");
+      line.className = "crosshair-line";
+
+      const dx = endX - startX;
+      const dy = endY - startY;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+      line.style.width = length + "px";
+      line.style.height = lineThickness + "px";
+      line.style.left = startX + "px";
+      line.style.top = startY + "px";
+      line.style.transform = `rotate(${angle}deg)`;
+      line.style.transformOrigin = "0 50%";
+
+      highlightsLayer.appendChild(line);
+    }
+
+    // top-left arm (↖ from center)
+    addDiagonal(centerX - gapX, centerY - gapY, imgLeft, imgTop);
+
+    // bottom-right arm (↘ from center)
+    addDiagonal(centerX + gapX, centerY + gapY, imgRight, imgBottom);
+
+    // top-right arm (↗ from center)
+    addDiagonal(centerX + gapX, centerY - gapY, imgRight, imgTop);
+
+    // bottom-left arm (↙ from center)
+    addDiagonal(centerX - gapX, centerY + gapY, imgLeft, imgBottom);
+
+    updateInstanceNav();
+  }
+
+  function goPrevTerm() {
+    if (!termList.length) return;
+    const newIndex = findPrevDictIndex(currentTermIndex);
+    if (newIndex === -1) return;
+    currentTermIndex = newIndex;
+    currentTerm = termList[currentTermIndex];
+    currentMatches = getMatchesForTerm(currentTerm);
+    currentMatchIndex = 0;
+    setupResultsScreen();
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  function goNextTerm() {
+    if (!termList.length) return;
+    const newIndex = findNextDictIndex(currentTermIndex);
+    if (newIndex === -1) return;
+    currentTermIndex = newIndex;
+    currentTerm = termList[currentTermIndex];
+    currentMatches = getMatchesForTerm(currentTerm);
+    currentMatchIndex = 0;
+    setupResultsScreen();
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  pillLeft.addEventListener("click", goPrevTerm);
+  pillRight.addEventListener("click", goNextTerm);
+
+  // per-term instance nav
+  hitPrevBtn.addEventListener("click", () => {
+    if (!currentMatches.length) return;
+    currentMatchIndex =
+      (currentMatchIndex - 1 + currentMatches.length) % currentMatches.length;
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  });
+
+  hitNextBtn.addEventListener("click", () => {
+    if (!currentMatches.length) return;
+    currentMatchIndex =
+      (currentMatchIndex + 1) % currentMatches.length;
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  });
+
+  let touchStartX = null;
+  resultsImageInner.addEventListener("touchstart", (e) => {
+    touchStartX = e.touches[0].clientX;
+  });
+
+  resultsImageInner.addEventListener("touchend", (e) => {
+    if (touchStartX == null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 40) {
+      if (dx < 0) goNextTerm();
+      else goPrevTerm();
+    }
+    touchStartX = null;
+  });
+
+  window.addEventListener("resize", () => {
+    if (screenResults.classList.contains("active") && currentTerm) {
+      drawHighlightsForTerm(currentTerm, currentMatchIndex);
+    }
+  });
+
+  btnNewImage.addEventListener("click", () => {
+    imageInput.value = "";
+    ocrWords = [];
+    termList = [];
+    currentTermIndex = -1;
+    currentTerm = "";
+    currentMatches = [];
+    currentMatchIndex = 0;
+    clearHighlights();
+    showScreen(screenAdd);
+  });
+
+  btnNewSearch.addEventListener("click", () => {
+    showScreen(screenOCR);
+    screenOCR.classList.add("mode-search");
+    searchInput.value = "";
+    autosuggestEl.classList.remove("visible");
+    setTimeout(() => searchInput.focus(), 200);
+  });
+</script>
 </body>
 </html>
