@@ -668,9 +668,11 @@
       return { x: u, y: v };
     }
 
+   // 🔧 FIXED 90° mapping
     function fromCW(u, v) {
-      const x = v;
-      const y = H - u;
+      // canvas (u,v) -> original (x,y)
+      const x = H - v;
+      const y = u;
       return { x, y };
     }
 
