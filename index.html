@@ -566,7 +566,7 @@
       justify-content: center;
     }
 
-    #term-modal-image-wrapper img {
+    #term-modal-canvas {
       width: 100%;
       height: auto;
       display: block;
@@ -668,7 +668,7 @@
       <div id="term-modal-card">
         <button id="term-modal-close" aria-label="Close term details">&times;</button>
         <div id="term-modal-image-wrapper">
-          <img id="term-modal-image" src="" alt="Term detail" />
+          <canvas id="term-modal-canvas"></canvas>
         </div>
         <div id="term-modal-text">
           Confidence Level: <span id="term-modal-confidence">–%</span>
@@ -709,9 +709,8 @@
 
   const termModal = document.getElementById("term-modal");
   const termModalBackdrop = document.getElementById("term-modal-backdrop");
-  const termModalCard = document.getElementById("term-modal-card");
   const termModalClose = document.getElementById("term-modal-close");
-  const termModalImage = document.getElementById("term-modal-image");
+  const termModalCanvas = document.getElementById("term-modal-canvas");
   const termModalConfidence = document.getElementById("term-modal-confidence");
 
   let ocrWords = [];
@@ -1398,13 +1397,30 @@
     const outW = cropW * scale;
     const outH = cropH * scale;
 
-    const canvas = document.createElement("canvas");
+    const canvas = termModalCanvas;
     canvas.width = outW;
     canvas.height = outH;
     const ctx = canvas.getContext("2d");
+
+    // Draw cropped region
+    ctx.clearRect(0, 0, outW, outH);
     ctx.drawImage(img, x0, y0, cropW, cropH, 0, 0, outW, outH);
 
-    termModalImage.src = canvas.toDataURL("image/png");
+    // Highlight actual text bbox inside the crop
+    const localX0 = (bbox.x0 - x0) * scale;
+    const localY0 = (bbox.y0 - y0) * scale;
+    const localW  = (bbox.x1 - bbox.x0) * scale;
+    const localH  = (bbox.y1 - bbox.y0) * scale;
+
+    ctx.save();
+    ctx.fillStyle = "rgba(255,122,26,0.25)";
+    ctx.strokeStyle = "#ff7a1a";
+    ctx.lineWidth = Math.max(2, outW / 200);
+    ctx.shadowColor = "rgba(0,0,0,0.8)";
+    ctx.shadowBlur = 8;
+    ctx.fillRect(localX0, localY0, localW, localH);
+    ctx.strokeRect(localX0, localY0, localW, localH);
+    ctx.restore();
 
     const conf = match.confidence;
     const confRounded = typeof conf === "number" ? Math.round(conf) : null;
