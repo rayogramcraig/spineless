@@ -380,7 +380,6 @@
 
     .pill {
       flex: 1;
-      max-width: 38%;
       padding: 10px 16px;
       border-radius: 999px;
       text-align: center;
@@ -392,12 +391,15 @@
       cursor: pointer;
     }
 
-    .pill-side {
-      background: rgba(0, 0, 0, 0.4);
-      color: #fff;
-      border: 2px solid rgba(255, 255, 255, 0.25);
-    }
-
+	.pill-side {
+	    background: rgba(0, 0, 0, 0.4);
+	    color: #fff;
+	    border: 2px solid rgba(255, 255, 255, 0.25);
+	    font-size: .8rem;
+	    max-width: min-content;
+	}
+	
+	
     .pill-side.disabled {
       opacity: 0.3;
       border-style: dashed;
@@ -447,20 +449,20 @@
       gap: 12px;
     }
 
-    #new-search-btn {
-      padding: 10px 18px;
-      border-radius: 999px;
-      border: none;
-      background: var(--accent);
-      color: #fff;
-      font-size: 1.1rem;
-      font-weight: 600;
-      box-shadow: var(--shadow-soft);
-      cursor: pointer;
-      width: auto;
-      min-width: 44%;
-      text-align: center;
-    }
+	#new-search-btn {
+	    padding: 10px 18px;
+	    border-radius: 999px;
+	    border: none;
+	    background: #583922;
+	    color: #fff;
+	    font-size: 1.1rem;
+	    font-weight: 200;
+	    box-shadow: var(--shadow-soft);
+	    cursor: pointer;
+	    width: auto;
+	    min-width: 44%;
+	    text-align: center;
+	}
 
     #instance-nav {
       display: flex;
