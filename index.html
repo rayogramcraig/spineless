@@ -424,7 +424,7 @@
       color: #fff;
       border: none;
       box-shadow: var(--shadow-soft);
-      pointer-events: none;
+      pointer-events: auto; /* clickable for modal */
       width: 100%;
     }
 
@@ -506,6 +506,91 @@
       justify-content: center;
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
     }
+
+    /* TERM DETAIL MODAL */
+    #term-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+
+    #term-modal.visible {
+      display: flex;
+    }
+
+    #term-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+    }
+
+    #term-modal-card {
+      position: relative;
+      width: 86vw;
+      max-width: 520px;
+      max-height: 80vh;
+      border-radius: 24px;
+      border: 3px solid var(--accent);
+      background: rgba(0, 0, 0, 0.9);
+      box-shadow: var(--shadow-soft);
+      padding: 16px 16px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #term-modal-close {
+      position: absolute;
+      top: 8px;
+      right: 12px;
+      border: none;
+      background: transparent;
+      color: var(--accent);
+      font-size: 1.8rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    #term-modal-image-wrapper {
+      width: 100%;
+      max-height: 60vh;
+      border-radius: 18px;
+      overflow: hidden;
+      background: #000;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #term-modal-image-wrapper img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    #term-modal-text {
+      font-size: 1.4rem;
+      font-weight: 500;
+      color: var(--accent);
+      text-align: center;
+    }
+
+    #term-modal-text span {
+      font-weight: 700;
+    }
+
+    @media (min-width: 768px) {
+      #term-modal-card {
+        padding: 24px 24px 28px;
+      }
+      #term-modal-text {
+        font-size: 1.5rem;
+      }
+    }
   </style>
 </head>
 <body>
@@ -576,6 +661,20 @@
         </div>
       </div>
     </div>
+
+    <!-- TERM DETAIL MODAL -->
+    <div id="term-modal">
+      <div id="term-modal-backdrop"></div>
+      <div id="term-modal-card">
+        <button id="term-modal-close" aria-label="Close term details">&times;</button>
+        <div id="term-modal-image-wrapper">
+          <img id="term-modal-image" src="" alt="Term detail" />
+        </div>
+        <div id="term-modal-text">
+          Confidence Level: <span id="term-modal-confidence">–%</span>
+        </div>
+      </div>
+    </div>
   </div>
 
 <script>
@@ -607,6 +706,13 @@
   const hitPrevBtn = document.getElementById("hit-prev");
   const hitNextBtn = document.getElementById("hit-next");
   const hitCounter = document.getElementById("hit-counter");
+
+  const termModal = document.getElementById("term-modal");
+  const termModalBackdrop = document.getElementById("term-modal-backdrop");
+  const termModalCard = document.getElementById("term-modal-card");
+  const termModalClose = document.getElementById("term-modal-close");
+  const termModalImage = document.getElementById("term-modal-image");
+  const termModalConfidence = document.getElementById("term-modal-confidence");
 
   let ocrWords = [];
   let imageDataUrl = "";
@@ -910,6 +1016,9 @@
           .map((w) => ({
             text: w.text.trim(),
             bbox: mapBboxToOriginal(w.bbox, kind, W, H),
+            confidence: typeof w.confidence === "number"
+              ? w.confidence
+              : (typeof w.conf === "number" ? w.conf : null)
           }));
 
         allWords = allWords.concat(mapped);
@@ -1263,6 +1372,64 @@
     searchInput.value = "";
     autosuggestEl.classList.remove("visible");
     setTimeout(() => searchInput.focus(), 200);
+  });
+
+  // TERM DETAIL MODAL LOGIC
+  function openTermModal() {
+    if (!currentMatches.length || !resultsImage.naturalWidth || !resultsImage.naturalHeight) {
+      return;
+    }
+
+    const img = resultsImage;
+    const match = currentMatches[currentMatchIndex] || currentMatches[0];
+    const bbox = match.bbox;
+
+    const padding = 40; // pixels in original image space
+    let x0 = Math.max(0, bbox.x0 - padding);
+    let y0 = Math.max(0, bbox.y0 - padding);
+    let x1 = Math.min(img.naturalWidth,  bbox.x1 + padding);
+    let y1 = Math.min(img.naturalHeight, bbox.y1 + padding);
+
+    const cropW = Math.max(1, x1 - x0);
+    const cropH = Math.max(1, y1 - y0);
+
+    const maxDim = 800;
+    const scale = Math.min(maxDim / cropW, maxDim / cropH, 1);
+    const outW = cropW * scale;
+    const outH = cropH * scale;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, x0, y0, cropW, cropH, 0, 0, outW, outH);
+
+    termModalImage.src = canvas.toDataURL("image/png");
+
+    const conf = match.confidence;
+    const confRounded = typeof conf === "number" ? Math.round(conf) : null;
+    termModalConfidence.textContent = confRounded != null ? confRounded + "%" : "–%";
+
+    termModal.classList.add("visible");
+  }
+
+  function closeTermModal() {
+    termModal.classList.remove("visible");
+  }
+
+  pillMain.addEventListener("click", () => {
+    if (!currentTerm || !currentMatches.length) return;
+    openTermModal();
+  });
+
+  termModalBackdrop.addEventListener("click", closeTermModal);
+  termModalClose.addEventListener("click", closeTermModal);
+  termModal.addEventListener("click", (e) => {
+    if (e.target === termModal) closeTermModal();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeTermModal();
   });
 
   // Prevent pinch-zoom / rotate gestures as much as possible
