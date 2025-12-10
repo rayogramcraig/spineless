@@ -448,24 +448,66 @@
       box-shadow: var(--shadow-soft);
       pointer-events: auto;
       width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 16px;
     }
 
-    #pill-badge {
-      position: absolute;
-      top: -8px;
-      right: -4px;
-      min-width: 24px;
-      height: 24px;
-      padding: 0 6px;
-      border-radius: 999px;
-      background: #fff;
-      color: #111;
-      font-size: 0.9rem;
+    .pill-main-label {
+      flex: 1;
+      text-align: center;
+    }
+
+    .hit-nav-inline {
+      border: none;
+      background: transparent;
+      color: #fff;
+      font-size: 1.4rem;
       font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 0 6px;
+      cursor: pointer;
+    }
+
+    .hit-nav-inline:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+
+    #pill-badge {
+      position: absolute;
+      top: -10px;
+      right: -6px;
+      height: 26px;
+      min-width: 38px;
+      border-radius: 999px;
+      display: flex;
+      overflow: hidden;
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    .pill-badge-current,
+    .pill-badge-total {
+      padding: 0 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pill-badge-current {
+      background: #c62828;
+      color: #fff;
+    }
+
+    .pill-badge-total {
+      background: #fff;
+      color: #111;
     }
 
     #results-bottom-row {
@@ -492,10 +534,7 @@
     }
 
     #instance-nav {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 10px;
+      display: none !important; /* old separate hit-nav is now visually removed */
     }
 
     .hit-nav-btn {
@@ -667,7 +706,23 @@
         <div id="results-pills">
           <button id="pill-left" class="pill pill-side"></button>
           <div class="pill-main-wrapper">
-            <div id="pill-main" class="pill pill-main"></div>
+            <div id="pill-main" class="pill pill-main">
+              <button
+                id="hit-prev-inline"
+                class="hit-nav-inline"
+                aria-label="Previous result"
+              >
+                &#9664;
+              </button>
+              <span id="pill-main-label" class="pill-main-label"></span>
+              <button
+                id="hit-next-inline"
+                class="hit-nav-inline"
+                aria-label="Next result"
+              >
+                &#9654;
+              </button>
+            </div>
             <div id="pill-badge" class="pill-badge hidden"></div>
           </div>
           <button id="pill-right" class="pill pill-side"></button>
@@ -715,6 +770,7 @@
   const pillLeft = document.getElementById("pill-left");
   const pillRight = document.getElementById("pill-right");
   const pillMain = document.getElementById("pill-main");
+  const pillMainLabel = document.getElementById("pill-main-label");
   const pillBadge = document.getElementById("pill-badge");
   const resultsImageInner = document.getElementById("results-image-inner");
   const highlightsLayer = document.getElementById("highlightsLayer");
@@ -728,6 +784,9 @@
   const hitPrevBtn = document.getElementById("hit-prev");
   const hitNextBtn = document.getElementById("hit-next");
   const hitCounter = document.getElementById("hit-counter");
+
+  const hitPrevInline = document.getElementById("hit-prev-inline");
+  const hitNextInline = document.getElementById("hit-next-inline");
 
   const termModal = document.getElementById("term-modal");
   const termModalBackdrop = document.getElementById("term-modal-backdrop");
@@ -996,13 +1055,15 @@
     currentMatches = [];
     currentMatchIndex = 0;
     clearHighlights();
-    pillMain.textContent = "";
+    pillMainLabel.textContent = "";
     pillLeft.textContent = "";
     pillRight.textContent = "";
     pillLeft.classList.add("disabled");
     pillRight.classList.add("disabled");
     pillBadge.classList.add("hidden");
-    instanceNav.classList.add("hidden");
+    pillBadge.innerHTML = "";
+    hitPrevInline.disabled = true;
+    hitNextInline.disabled = true;
 
     try {
       const img = new Image();
@@ -1223,35 +1284,39 @@
 
   function updateInstanceNav() {
     if (!currentMatches || currentMatches.length <= 1) {
-      instanceNav.classList.add("hidden");
+      pillBadge.classList.add("hidden");
+      pillBadge.innerHTML = "";
+      hitPrevInline.disabled = true;
+      hitNextInline.disabled = true;
       return;
     }
-    instanceNav.classList.remove("hidden");
-    hitCounter.textContent = String(currentMatchIndex + 1);
+    const current = currentMatchIndex + 1;
+    const total = currentMatches.length;
+    pillBadge.classList.remove("hidden");
+    pillBadge.innerHTML =
+      `<span class="pill-badge-current">${current}</span>` +
+      `<span class="pill-badge-total">${total}</span>`;
+    hitPrevInline.disabled = false;
+    hitNextInline.disabled = false;
   }
 
   function setupResultsScreen() {
     resultsImage.src = imageDataUrl;
 
     if (currentTermIndex < 0 || !termList.length) {
-      pillMain.textContent = "";
+      pillMainLabel.textContent = "";
       pillLeft.textContent = "";
       pillRight.textContent = "";
       pillLeft.classList.add("disabled");
       pillRight.classList.add("disabled");
       pillBadge.classList.add("hidden");
-      instanceNav.classList.add("hidden");
+      pillBadge.innerHTML = "";
+      hitPrevInline.disabled = true;
+      hitNextInline.disabled = true;
       return;
     }
 
-    pillMain.textContent = termList[currentTermIndex];
-
-    if (currentMatches && currentMatches.length > 1) {
-      pillBadge.textContent = currentMatches.length;
-      pillBadge.classList.remove("hidden");
-    } else {
-      pillBadge.classList.add("hidden");
-    }
+    pillMainLabel.textContent = termList[currentTermIndex];
 
     const prevIndex = findPrevDictIndex(currentTermIndex);
     const nextIndex = findNextDictIndex(currentTermIndex);
@@ -1292,8 +1357,10 @@
 
     clearHighlights();
     if (!matches.length) {
-      instanceNav.classList.add("hidden");
       pillBadge.classList.add("hidden");
+      pillBadge.innerHTML = "";
+      hitPrevInline.disabled = true;
+      hitNextInline.disabled = true;
       return;
     }
 
@@ -1365,6 +1432,8 @@
     addDiagonal(centerX + gapX, centerY - gapY, imgRight, imgTop);
     addDiagonal(centerX - gapX, centerY + gapY, imgLeft, imgBottom);
 
+    currentMatches = matches;
+    currentMatchIndex = matchIndex;
     updateInstanceNav();
   }
 
@@ -1392,21 +1461,33 @@
     drawHighlightsForTerm(currentTerm, currentMatchIndex);
   }
 
-  pillLeft.addEventListener("click", goPrevTerm);
-  pillRight.addEventListener("click", goNextTerm);
-
-  hitPrevBtn.addEventListener("click", () => {
+  function goPrevInstance() {
     if (!currentMatches.length) return;
     currentMatchIndex =
       (currentMatchIndex - 1 + currentMatches.length) % currentMatches.length;
     drawHighlightsForTerm(currentTerm, currentMatchIndex);
-  });
+  }
 
-  hitNextBtn.addEventListener("click", () => {
+  function goNextInstance() {
     if (!currentMatches.length) return;
     currentMatchIndex =
       (currentMatchIndex + 1) % currentMatches.length;
     drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  pillLeft.addEventListener("click", goPrevTerm);
+  pillRight.addEventListener("click", goNextTerm);
+
+  hitPrevBtn.addEventListener("click", goPrevInstance);
+  hitNextBtn.addEventListener("click", goNextInstance);
+
+  hitPrevInline.addEventListener("click", (e) => {
+    e.stopPropagation();
+    goPrevInstance();
+  });
+  hitNextInline.addEventListener("click", (e) => {
+    e.stopPropagation();
+    goNextInstance();
   });
 
   let touchStartX = null;
@@ -1507,7 +1588,7 @@
     termModal.classList.remove("visible");
   }
 
-  pillMain.addEventListener("click", () => {
+  pillMainLabel.addEventListener("click", () => {
     if (!currentTerm || !currentMatches.length) return;
     openTermModal();
   });
