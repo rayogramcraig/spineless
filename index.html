@@ -1274,6 +1274,13 @@
     drawHighlightsForTerm(currentTerm, currentMatchIndex);
   }
 
+  // NEW: helper for truncating labels
+  function truncateLabel(text, maxLen) {
+    if (!text) return "";
+    if (text.length <= maxLen) return text;
+    return text.slice(0, maxLen - 1) + "…";
+  }
+
   function updateInstanceNav() {
     if (!currentMatches || currentMatches.length <= 1) {
       pillBadge.classList.add("hidden");
@@ -1314,7 +1321,9 @@
       return;
     }
 
-    pillMainLabel.textContent = termList[currentTermIndex];
+    // Truncate found term label to ~15 chars
+    const foundTerm = termList[currentTermIndex];
+    pillMainLabel.textContent = truncateLabel(foundTerm, 15);
 
     const prevIndex = findPrevDictIndex(currentTermIndex);
     const nextIndex = findNextDictIndex(currentTermIndex);
@@ -1326,13 +1335,16 @@
       pillRight.classList.add("disabled");
     } else if (prevIndex === nextIndex || (prevIndex === -1 || nextIndex === -1)) {
       const idx = prevIndex !== -1 ? prevIndex : nextIndex;
-      pillLeft.textContent = termList[idx];
-      pillRight.textContent = termList[idx];
+      // Truncate suggested term(s) to ~10 chars
+      const label = truncateLabel(termList[idx], 10);
+      pillLeft.textContent = label;
+      pillRight.textContent = label;
       pillLeft.classList.add("disabled");
       pillRight.classList.add("disabled");
     } else {
-      pillLeft.textContent = termList[prevIndex];
-      pillRight.textContent = termList[nextIndex];
+      // Truncate suggested prev/next terms to ~10 chars
+      pillLeft.textContent = truncateLabel(termList[prevIndex], 10);
+      pillRight.textContent = truncateLabel(termList[nextIndex], 10);
       pillLeft.classList.remove("disabled");
       pillRight.classList.remove("disabled");
     }
