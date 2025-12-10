@@ -46,7 +46,7 @@
     html, body {
       height: 100%;
       width: 100%;
-      touch-action: pan-x pan-y; /* allow scrolling, block pinch-zoom where supported */
+      touch-action: pan-x pan-y;
     }
 
     body {
@@ -194,14 +194,13 @@
     }
 
     .scanning-label {
-      bottom: 24vh; /* moved a bit higher */
+      bottom: 24vh;
       opacity: 1;
       text-align: center;
       color: var(--scan-yellow);
       text-shadow: 0 0 16px rgba(0, 0, 0, 0.9);
     }
 
-    /* rotate reading label to match scan orientation */
     #screen-ocr.angle-0 .scanning-label {
       transform: translateX(-50%) rotate(0deg);
     }
@@ -299,7 +298,6 @@
       transform: translate(-50%, 0);
     }
 
-    /* HIDE status pill completely, even if JS removes .hidden */
     #ocr-progress {
       display: none !important;
       position: absolute;
@@ -480,7 +478,7 @@
 
     #pill-badge {
       position: absolute;
-      top: -10px;
+      top: -30px; /* moved up */
       right: -6px;
       height: 26px;
       min-width: 38px;
@@ -534,7 +532,7 @@
     }
 
     #instance-nav {
-      display: none !important; /* old separate hit-nav is now visually removed */
+      display: none !important;
     }
 
     .hit-nav-btn {
@@ -810,7 +808,6 @@
   let dictLoaded = false;
   let whitelistLoaded = false;
 
-  // Fallback basic heuristic for early runs (before wordlists load)
   const SHORT_COMMON_WORDS = new Set([
     "a","an","as","at","be","by","do","go","he","if","in","is","it","me","my",
     "no","of","on","or","so","to","up","us","we"
@@ -847,18 +844,15 @@
     }
   }
 
-  // Unified check for whether a term is allowed in the carousel
   function isCarouselWord(word) {
     if (!word) return false;
     const w = word.toLowerCase();
 
-    // Prefer explicit wordlists when available
     if ((dictLoaded && DICT && DICT.has(w)) ||
         (whitelistLoaded && WHITELIST && WHITELIST.has(w))) {
       return true;
     }
 
-    // Fallback heuristic if we don't have the lists yet
     if (!dictLoaded && !whitelistLoaded) {
       if (SHORT_COMMON_WORDS.has(w)) return true;
       if (!/^[a-z]+$/.test(w)) return false;
@@ -975,7 +969,6 @@
     scanGradient.classList.remove("mode-0", "mode-90", "mode-neg90");
     if (modeClass) scanGradient.classList.add(modeClass);
 
-    // rotate reading label to match orientation
     screenOCR.classList.remove("angle-0", "angle-90", "angle-neg90");
     if (modeClass === "mode-0") {
       screenOCR.classList.add("angle-0");
@@ -990,7 +983,6 @@
     updateScanProgress(0);
   }
 
-  // simple fill-based scan progress (no moving band)
   function updateScanProgress(progress) {
     const p = Math.max(0, Math.min(1, progress || 0));
 
@@ -1064,6 +1056,8 @@
     pillBadge.innerHTML = "";
     hitPrevInline.disabled = true;
     hitNextInline.disabled = true;
+    hitPrevInline.classList.add("hidden");
+    hitNextInline.classList.add("hidden");
 
     try {
       const img = new Image();
@@ -1177,7 +1171,6 @@
     }
   }
 
-  // AUTOSUGGEST: only for queries length >= 3, prefix-only
   function updateAutosuggest(query) {
     const trimmed = query.trim();
     if (!trimmed || trimmed.length < 3) {
@@ -1234,7 +1227,6 @@
       .trim();
   }
 
-  // SEARCH: substring matches when query length >= 3; exact-only for < 3
   function getMatchesForTerm(term) {
     if (!term || !ocrWords.length) return [];
     const q = normalizeToken(term);
@@ -1288,6 +1280,8 @@
       pillBadge.innerHTML = "";
       hitPrevInline.disabled = true;
       hitNextInline.disabled = true;
+      hitPrevInline.classList.add("hidden");
+      hitNextInline.classList.add("hidden");
       return;
     }
     const current = currentMatchIndex + 1;
@@ -1298,6 +1292,8 @@
       `<span class="pill-badge-total">${total}</span>`;
     hitPrevInline.disabled = false;
     hitNextInline.disabled = false;
+    hitPrevInline.classList.remove("hidden");
+    hitNextInline.classList.remove("hidden");
   }
 
   function setupResultsScreen() {
@@ -1313,6 +1309,8 @@
       pillBadge.innerHTML = "";
       hitPrevInline.disabled = true;
       hitNextInline.disabled = true;
+      hitPrevInline.classList.add("hidden");
+      hitNextInline.classList.add("hidden");
       return;
     }
 
@@ -1361,6 +1359,8 @@
       pillBadge.innerHTML = "";
       hitPrevInline.disabled = true;
       hitNextInline.disabled = true;
+      hitPrevInline.classList.add("hidden");
+      hitNextInline.classList.add("hidden");
       return;
     }
 
@@ -1621,7 +1621,6 @@
     }
   }, { passive: false });
 
-  // Kick off loading the dictionary + whitelist as soon as possible
   loadWordLists();
 </script>
 </body>
