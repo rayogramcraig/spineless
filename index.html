@@ -478,7 +478,7 @@
 
     #pill-badge {
       position: absolute;
-      top: -30px; /* moved up */
+      top: -30px;
       right: -6px;
       height: 26px;
       min-width: 38px;
@@ -884,6 +884,7 @@
     return -1;
   }
 
+  // *** FIXED MAPPING FUNCTION ***
   function mapBboxToOriginal(bbox, kind, W, H) {
     let { x0, y0, x1, y1 } = bbox;
 
@@ -892,16 +893,23 @@
       [x1, y1],
     ];
 
+    // 0°: identity
     function fromBase(u, v) {
       return { x: u, y: v };
     }
 
+    // 90° CW pass:
+    // original -> rotated:  x' = H - y,  y' = x
+    // rotated -> original:  x = y',      y = H - x'
     function fromCW(u, v) {
       const x = v;
       const y = H - u;
       return { x, y };
     }
 
+    // -90° (90° CCW) pass:
+    // original -> rotated:  x' = y,      y' = W - x
+    // rotated -> original:  x = W - y',  y = x'
     function fromCCW(u, v) {
       const x = W - v;
       const y = u;
@@ -1274,7 +1282,6 @@
     drawHighlightsForTerm(currentTerm, currentMatchIndex);
   }
 
-  // NEW: helper for truncating labels
   function truncateLabel(text, maxLen) {
     if (!text) return "";
     if (text.length <= maxLen) return text;
@@ -1321,7 +1328,6 @@
       return;
     }
 
-    // Truncate found term label to ~15 chars
     const foundTerm = termList[currentTermIndex];
     pillMainLabel.textContent = truncateLabel(foundTerm, 15);
 
@@ -1335,14 +1341,12 @@
       pillRight.classList.add("disabled");
     } else if (prevIndex === nextIndex || (prevIndex === -1 || nextIndex === -1)) {
       const idx = prevIndex !== -1 ? prevIndex : nextIndex;
-      // Truncate suggested term(s) to ~10 chars
       const label = truncateLabel(termList[idx], 10);
       pillLeft.textContent = label;
       pillRight.textContent = label;
       pillLeft.classList.add("disabled");
       pillRight.classList.add("disabled");
     } else {
-      // Truncate suggested prev/next terms to ~10 chars
       pillLeft.textContent = truncateLabel(termList[prevIndex], 10);
       pillRight.textContent = truncateLabel(termList[nextIndex], 10);
       pillLeft.classList.remove("disabled");
