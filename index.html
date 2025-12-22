@@ -37,11 +37,7 @@
       --scan-yellow: #e8ff29;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
       height: 100%;
@@ -51,8 +47,7 @@
 
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
-        sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
       background: var(--bg-dark);
       color: var(--white);
     }
@@ -70,33 +65,22 @@
       inset: 0;
       display: none;
     }
-
-    .screen.active {
-      display: block;
-    }
-
-    .hidden {
-      display: none !important;
-    }
+    .screen.active { display: block; }
+    .hidden { display: none !important; }
 
     /* ADD IMAGE SCREEN */
-    #screen-add {
-      background: #111;
-    }
-
+    #screen-add { background: #111; }
     #screen-add.active {
       display: flex;
       align-items: center;
       justify-content: center;
     }
-
     #screen-add .label {
       font-size: 3rem;
       font-weight: 700;
       pointer-events: none;
       text-align: center;
     }
-
     #imageInput {
       position: absolute;
       inset: 0;
@@ -119,6 +103,47 @@
       background-size: cover;
       filter: brightness(0.45);
       transform: scale(1.02);
+      z-index: 0;
+    }
+
+    /* NEW: floating found-words overlay (during scanning) */
+    #scan-word-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 2; /* above gradient, below UI text */
+    }
+
+    .scan-float-word {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      transform-origin: center;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      color: var(--scan-yellow);
+      opacity: 0;
+      white-space: nowrap;
+      filter: drop-shadow(0 0 16px rgba(0,0,0,0.85));
+      text-shadow: 0 0 18px rgba(0,0,0,0.85);
+      will-change: transform, opacity;
+      animation: floatWord 1.05s ease-out forwards;
+    }
+
+    @keyframes floatWord {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.72);
+      }
+      18% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0;
+        transform: translate(-50%, -55%) scale(2.15);
+      }
     }
 
     #scan-gradient {
@@ -129,6 +154,7 @@
       transition: opacity 0.25s ease;
       overflow: hidden;
       mix-blend-mode: screen;
+      z-index: 1;
     }
 
     #scan-band {
@@ -142,11 +168,7 @@
       left: 0;
       width: 100%;
       height: 0;
-      background: linear-gradient(
-        to bottom,
-        rgba(232, 255, 41, 0) 0%,
-        rgba(232, 255, 41, 1) 100%
-      );
+      background: linear-gradient(to bottom, rgba(232, 255, 41, 0) 0%, rgba(232, 255, 41, 1) 100%);
     }
 
     /* 90°: horizontal fill from left (transparent) to right (opaque) */
@@ -155,11 +177,7 @@
       left: 0;
       height: 100%;
       width: 0;
-      background: linear-gradient(
-        to right,
-        rgba(232, 255, 41, 0) 0%,
-        rgba(232, 255, 41, 1) 100%
-      );
+      background: linear-gradient(to right, rgba(232, 255, 41, 0) 0%, rgba(232, 255, 41, 1) 100%);
     }
 
     /* -90°: horizontal fill from right (transparent) to left (opaque) */
@@ -168,11 +186,7 @@
       right: 0;
       height: 100%;
       width: 0;
-      background: linear-gradient(
-        to left,
-        rgba(232, 255, 41, 0) 0%,
-        rgba(232, 255, 41, 1) 100%
-      );
+      background: linear-gradient(to left, rgba(232, 255, 41, 0) 0%, rgba(232, 255, 41, 1) 100%);
     }
 
     #ocr-overlay {
@@ -182,6 +196,7 @@
       align-items: center;
       justify-content: center;
       padding: 0 10vw;
+      z-index: 3;
     }
 
     .scanning-label,
@@ -201,17 +216,9 @@
       text-shadow: 0 0 16px rgba(0, 0, 0, 0.9);
     }
 
-    #screen-ocr.angle-0 .scanning-label {
-      transform: translateX(-50%) rotate(0deg);
-    }
-
-    #screen-ocr.angle-90 .scanning-label {
-      transform: translateX(-50%) rotate(-90deg);
-    }
-
-    #screen-ocr.angle-neg90 .scanning-label {
-      transform: translateX(-50%) rotate(90deg);
-    }
+    #screen-ocr.angle-0 .scanning-label { transform: translateX(-50%) rotate(0deg); }
+    #screen-ocr.angle-90 .scanning-label { transform: translateX(-50%) rotate(-90deg); }
+    #screen-ocr.angle-neg90 .scanning-label { transform: translateX(-50%) rotate(90deg); }
 
     #scan-word {
       font-size: 3rem;
@@ -274,13 +281,8 @@
       cursor: pointer;
     }
 
-    .autosuggest-item:last-child {
-      border-bottom: none;
-    }
-
-    .autosuggest-item:hover {
-      background: rgba(0, 0, 0, 0.04);
-    }
+    .autosuggest-item:last-child { border-bottom: none; }
+    .autosuggest-item:hover { background: rgba(0, 0, 0, 0.04); }
 
     #screen-ocr.mode-search .scanning-label {
       opacity: 0;
@@ -288,15 +290,16 @@
       pointer-events: none;
     }
 
-    #screen-ocr.mode-search #scan-gradient {
-      opacity: 0;
-    }
+    #screen-ocr.mode-search #scan-gradient { opacity: 0; }
 
     #screen-ocr.mode-search .search-container {
       opacity: 1;
       pointer-events: auto;
       transform: translate(-50%, 0);
     }
+
+    /* optional: also hide scanning word pulses once in search mode */
+    #screen-ocr.mode-search #scan-word-overlay { display: none; }
 
     #ocr-progress {
       display: none !important;
@@ -373,11 +376,7 @@
 
     .crosshair-line {
       position: absolute;
-      background: linear-gradient(
-        to right,
-        rgba(213, 255, 57, 1) 0%,
-        rgba(213, 255, 57, 0) 100%
-      );
+      background: linear-gradient(to right, rgba(213, 255, 57, 1) 0%, rgba(213, 255, 57, 0) 100%);
       box-shadow: 0 0 8px rgba(213, 255, 57, 0.7);
       pointer-events: none;
       transform-origin: 0 50%;
@@ -451,7 +450,6 @@
       justify-content: space-between;
       gap: 8px;
       padding: 10px 16px;
-   
       overflow: visible;
       text-overflow: clip;
       white-space: normal;
@@ -479,10 +477,7 @@
       cursor: pointer;
     }
 
-    .hit-nav-inline:disabled {
-      opacity: 0.3;
-      cursor: default;
-    }
+    .hit-nav-inline:disabled { opacity: 0.3; cursor: default; }
 
     #pill-badge {
       position: absolute;
@@ -506,15 +501,8 @@
       justify-content: center;
     }
 
-    .pill-badge-current {
-      background: #c62828;
-      color: #fff;
-    }
-
-    .pill-badge-total {
-      background: #fff;
-      color: #111;
-    }
+    .pill-badge-current { background: #c62828; color: #fff; }
+    .pill-badge-total { background: #fff; color: #111; }
 
     #results-bottom-row {
       width: 100%;
@@ -539,9 +527,7 @@
       text-align: center;
     }
 
-    #instance-nav {
-      display: none !important;
-    }
+    #instance-nav { display: none !important; }
 
     .hit-nav-btn {
       width: 44px;
@@ -584,9 +570,7 @@
       z-index: 999;
     }
 
-    #term-modal.visible {
-      display: flex;
-    }
+    #term-modal.visible { display: flex; }
 
     #term-modal-backdrop {
       position: absolute;
@@ -646,17 +630,11 @@
       text-align: center;
     }
 
-    #term-modal-text span {
-      font-weight: 700;
-    }
+    #term-modal-text span { font-weight: 700; }
 
     @media (min-width: 768px) {
-      #term-modal-card {
-        padding: 24px 24px 28px;
-      }
-      #term-modal-text {
-        font-size: 1.5rem;
-      }
+      #term-modal-card { padding: 24px 24px 28px; }
+      #term-modal-text { font-size: 1.5rem; }
     }
   </style>
 </head>
@@ -671,9 +649,14 @@
     <!-- OCR / SCANNING -->
     <div id="screen-ocr" class="screen">
       <div id="ocr-bg"></div>
+
+      <!-- NEW: found words pulse layer -->
+      <div id="scan-word-overlay"></div>
+
       <div id="scan-gradient">
         <div id="scan-band"></div>
       </div>
+
       <div id="ocr-overlay">
         <div id="ocr-progress" class="hidden">scanning…</div>
 
@@ -713,21 +696,9 @@
           <button id="pill-left" class="pill pill-side"></button>
           <div class="pill-main-wrapper">
             <div id="pill-main" class="pill pill-main">
-              <button
-                id="hit-prev-inline"
-                class="hit-nav-inline"
-                aria-label="Previous result"
-              >
-                &#9664;
-              </button>
+              <button id="hit-prev-inline" class="hit-nav-inline" aria-label="Previous result">&#9664;</button>
               <span id="pill-main-label" class="pill-main-label"></span>
-              <button
-                id="hit-next-inline"
-                class="hit-nav-inline"
-                aria-label="Next result"
-              >
-                &#9654;
-              </button>
+              <button id="hit-next-inline" class="hit-nav-inline" aria-label="Next result">&#9654;</button>
             </div>
             <div id="pill-badge" class="pill-badge hidden"></div>
           </div>
@@ -775,7 +746,6 @@
   const btnNewSearch = document.getElementById("new-search-btn");
   const pillLeft = document.getElementById("pill-left");
   const pillRight = document.getElementById("pill-right");
-  const pillMain = document.getElementById("pill-main");
   const pillMainLabel = document.getElementById("pill-main-label");
   const pillBadge = document.getElementById("pill-badge");
   const resultsImageInner = document.getElementById("results-image-inner");
@@ -785,6 +755,7 @@
   const scanAngleEl = document.getElementById("scan-angle");
   const scanGradient = document.getElementById("scan-gradient");
   const scanBand = document.getElementById("scan-band");
+  const scanWordOverlay = document.getElementById("scan-word-overlay");
 
   const instanceNav = document.getElementById("instance-nav");
   const hitPrevBtn = document.getElementById("hit-prev");
@@ -822,9 +793,7 @@
   ]);
 
   function showScreen(el) {
-    [screenAdd, screenOCR, screenResults].forEach((s) =>
-      s.classList.remove("active")
-    );
+    [screenAdd, screenOCR, screenResults].forEach((s) => s.classList.remove("active"));
     el.classList.add("active");
   }
 
@@ -896,8 +865,6 @@
   function mapBboxToOriginal(bbox, kind, W, H) {
     let { x0, y0, x1, y1 } = bbox;
 
-    // Map all four corners (important: after rotation, (x0,y0) and (x1,y1)
-    // are not guaranteed to remain opposite corners in the original space).
     const corners = [
       [x0, y0],
       [x1, y0],
@@ -905,23 +872,16 @@
       [x0, y1],
     ];
 
-    // 0°: identity
-    function fromBase(u, v) {
-      return { x: u, y: v };
-    }
+    function fromBase(u, v) { return { x: u, y: v }; }
 
-    // 90° CW pass:
-    // original -> rotated:  x' = H - y,  y' = x
-    // rotated -> original:  x = y',      y = H - x'
+    // rotated -> original for CW
     function fromCW(u, v) {
       const x = v;
       const y = H - u;
       return { x, y };
     }
 
-    // -90° (90° CCW) pass:
-    // original -> rotated:  x' = y,      y' = W - x
-    // rotated -> original:  x = W - y',  y = x'
+    // rotated -> original for CCW
     function fromCCW(u, v) {
       const x = W - v;
       const y = u;
@@ -949,6 +909,125 @@
 
     return { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
   }
+
+  /* ==========================
+     NEW: scanning word pulses
+     ========================== */
+
+  let scanPulseTimer = null;
+  let scanPulseActive = false;
+  let scanPulsePool = [];
+  let scanPulseDims = { W: 0, H: 0 };
+
+  function clearScanWordOverlay() {
+    if (!scanWordOverlay) return;
+    while (scanWordOverlay.firstChild) scanWordOverlay.removeChild(scanWordOverlay.firstChild);
+  }
+
+  function showFloatingWord(wordObj) {
+    if (!scanWordOverlay) return;
+    if (!wordObj || !wordObj.text || !wordObj.bbox) return;
+    if (!screenOCR.classList.contains("active")) return;
+    if (screenOCR.classList.contains("mode-search")) return;
+
+    const raw = (wordObj.text || "").trim();
+    const clean = raw.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "").trim();
+    if (!clean) return;
+
+    // keep it readable & "bookish"
+    if (clean.length < 3) return;
+    if (!/^[a-z0-9]+$/i.test(clean)) return;
+
+    const { W, H } = scanPulseDims;
+    if (!W || !H) return;
+
+    const bbox = wordObj.bbox;
+    const cx = ((bbox.x0 + bbox.x1) / 2) / W;
+    const cy = ((bbox.y0 + bbox.y1) / 2) / H;
+
+    // clamp a touch inward so big words don't originate off-screen
+    const px = Math.max(0.06, Math.min(0.94, cx)) * 100;
+    const py = Math.max(0.10, Math.min(0.90, cy)) * 100;
+
+    const el = document.createElement("div");
+    el.className = "scan-float-word";
+    el.textContent = clean.toLowerCase();
+
+    // font size scales a bit with word length (shorter words can be a bit bigger)
+    const base = 14; // vh cap is in CSS but this helps on small screens
+    const len = clean.length;
+    const vh = Math.max(9, Math.min(16, base + (10 - Math.min(len, 10)) * 0.6));
+    el.style.fontSize = `min(${vh}vh, 96px)`;
+
+    el.style.left = `${px}%`;
+    el.style.top  = `${py}%`;
+
+    scanWordOverlay.appendChild(el);
+
+    // cleanup
+    setTimeout(() => {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    }, 1200);
+  }
+
+  function pickPulseCandidate() {
+    if (!scanPulsePool.length) return null;
+
+    // try a few random picks to find a good one
+    for (let tries = 0; tries < 12; tries++) {
+      const w = scanPulsePool[(Math.random() * scanPulsePool.length) | 0];
+      if (!w || !w.text) continue;
+
+      const t = String(w.text).trim().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "");
+      if (!t) continue;
+      if (t.length < 3) continue;
+      if (t.length > 18) continue; // avoid overly long strings
+      if (typeof w.confidence === "number" && w.confidence < 35) continue;
+
+      return w;
+    }
+
+    // fallback: just return any
+    return scanPulsePool[(Math.random() * scanPulsePool.length) | 0] || null;
+  }
+
+  function scheduleNextPulse() {
+    if (!scanPulseActive) return;
+
+    // "one word each few seconds" (randomized so it feels alive)
+    const delay = 1600 + Math.random() * 1400;
+
+    scanPulseTimer = setTimeout(() => {
+      if (!scanPulseActive) return;
+      if (screenOCR.classList.contains("mode-search")) return;
+
+      const candidate = pickPulseCandidate();
+      if (candidate) showFloatingWord(candidate);
+
+      scheduleNextPulse();
+    }, delay);
+  }
+
+  function startScanPulses(W, H) {
+    stopScanPulses();
+    scanPulseActive = true;
+    scanPulsePool = [];
+    scanPulseDims = { W, H };
+    clearScanWordOverlay();
+    scheduleNextPulse();
+  }
+
+  function stopScanPulses() {
+    scanPulseActive = false;
+    if (scanPulseTimer) {
+      clearTimeout(scanPulseTimer);
+      scanPulseTimer = null;
+    }
+    clearScanWordOverlay();
+    scanPulsePool = [];
+  }
+
+  /* ========================== */
 
   imageInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
@@ -978,9 +1057,7 @@
       )
       .filter((t) => t.length > 1);
 
-    termList = Array.from(new Set(cleaned)).sort((a, b) =>
-      a.localeCompare(b)
-    );
+    termList = Array.from(new Set(cleaned)).sort((a, b) => a.localeCompare(b));
   }
 
   function setScanMode(angleLabel, modeClass) {
@@ -1079,18 +1156,22 @@
     hitPrevInline.classList.add("hidden");
     hitNextInline.classList.add("hidden");
 
+    stopScanPulses();
+
     try {
       const img = new Image();
       img.src = dataUrl;
 
       await new Promise((resolve, reject) => {
         img.onload = () => resolve();
-        img.onerror = (err) =>
-          reject(new Error("Could not load image for OCR"));
+        img.onerror = () => reject(new Error("Could not load image for OCR"));
       });
 
       const W = img.naturalWidth;
       const H = img.naturalHeight;
+
+      // start pulse loop immediately (will begin showing words once pool fills)
+      startScanPulses(W, H);
 
       const baseCanvas = document.createElement("canvas");
       baseCanvas.width = W;
@@ -1118,8 +1199,8 @@
       applyGrayscaleAndContrast(ccwCanvas, 20);
 
       const passes = [
-        { kind: "base", canvas: baseCanvas, label: "0°",  modeClass: "mode-0" },
-        { kind: "cw",   canvas: cwCanvas,   label: "90°", modeClass: "mode-90" },
+        { kind: "base", canvas: baseCanvas, label: "0°",   modeClass: "mode-0" },
+        { kind: "cw",   canvas: cwCanvas,   label: "90°",  modeClass: "mode-90" },
         { kind: "ccw",  canvas: ccwCanvas,  label: "-90°", modeClass: "mode-neg90" },
       ];
 
@@ -1170,6 +1251,10 @@
           .filter(Boolean);
 
         allWords = allWords.concat(mapped);
+
+        // feed pulse pool as each pass completes (so pulses can use better words over time)
+        // keep pool bounded so it stays snappy
+        scanPulsePool = scanPulsePool.concat(mapped).slice(-1200);
       }
 
       scanGradient.style.opacity = "0";
@@ -1178,10 +1263,14 @@
       buildTermList();
       ocrProgress.classList.add("hidden");
 
+      // stop pulses once search UI appears
+      stopScanPulses();
+
       screenOCR.classList.add("mode-search");
       setTimeout(() => searchInput.focus(), 450);
     } catch (err) {
       console.error(err);
+      stopScanPulses();
       alert(
         "There was a problem reading the image.\n\n" +
           (err && err.message ? err.message : String(err))
@@ -1212,10 +1301,7 @@
     }
 
     autosuggestEl.innerHTML = suggestions
-      .map(
-        (s) =>
-          `<div class="autosuggest-item" data-value="${s}">${s}</div>`
-      )
+      .map((s) => `<div class="autosuggest-item" data-value="${s}">${s}</div>`)
       .join("");
     autosuggestEl.classList.add("visible");
   }
@@ -1271,12 +1357,8 @@
     }
 
     let idx = termList.findIndex((t) => t === q);
-    if (idx === -1) {
-      idx = termList.findIndex((t) => t.startsWith(q));
-    }
-    if (idx === -1 && q.length >= 3) {
-      idx = termList.findIndex((t) => t.includes(q));
-    }
+    if (idx === -1) idx = termList.findIndex((t) => t.startsWith(q));
+    if (idx === -1 && q.length >= 3) idx = termList.findIndex((t) => t.includes(q));
 
     if (idx === -1) {
       alert(`No matches found for “${raw}”`);
@@ -1548,21 +1630,21 @@
     currentMatches = [];
     currentMatchIndex = 0;
     clearHighlights();
+    stopScanPulses();
     showScreen(screenAdd);
   });
 
   btnNewSearch.addEventListener("click", () => {
     showScreen(screenOCR);
     screenOCR.classList.add("mode-search");
+    stopScanPulses();
     searchInput.value = "";
     autosuggestEl.classList.remove("visible");
     setTimeout(() => searchInput.focus(), 200);
   });
 
   function openTermModal() {
-    if (!currentMatches.length || !resultsImage.naturalWidth || !resultsImage.naturalHeight) {
-      return;
-    }
+    if (!currentMatches.length || !resultsImage.naturalWidth || !resultsImage.naturalHeight) return;
 
     const img = resultsImage;
     const match = currentMatches[currentMatchIndex] || currentMatches[0];
@@ -1631,22 +1713,12 @@
     if (e.key === "Escape") closeTermModal();
   });
 
-  document.addEventListener("gesturestart", function (e) {
-    e.preventDefault();
-  }, { passive: false });
-
-  document.addEventListener("gesturechange", function (e) {
-    e.preventDefault();
-  }, { passive: false });
-
-  document.addEventListener("gestureend", function (e) {
-    e.preventDefault();
-  }, { passive: false });
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); }, { passive: false });
+  document.addEventListener("gesturechange", function (e) { e.preventDefault(); }, { passive: false });
+  document.addEventListener("gestureend", function (e) { e.preventDefault(); }, { passive: false });
 
   window.addEventListener("wheel", function (e) {
-    if (e.ctrlKey) {
-      e.preventDefault();
-    }
+    if (e.ctrlKey) e.preventDefault();
   }, { passive: false });
 
   loadWordLists();
