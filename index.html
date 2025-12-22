@@ -723,6 +723,8 @@
 
   let ocrWords = [];
   let imageDataUrl = "";
+  let sourceCanvas = null; // normalized, color-correct source used for display + bbox coord space
+  let sourceDataUrl = "";
 
   let termList = [];
   let currentTermIndex = -1;
@@ -819,8 +821,8 @@
     ];
 
     function fromBase(u, v) { return { x: u, y: v }; }
-    function fromCW(u, v) { return { x: W - v, y: u }; }   // rotated canvas built with rotate(+90): map back (SWAPPED)
-    function fromCCW(u, v) { return { x: v, y: H - u }; }  // rotated canvas built with rotate(-90): map back (SWAPPED)
+    function fromCW(u, v) { return { x: v, y: H - u }; }   // rotated -> original (CW)
+    function fromCCW(u, v) { return { x: W - v, y: u }; }  // rotated -> original (CCW)
 
     const mapped = corners.map(([u, v]) => {
       if (kind === "base") return fromBase(u, v);
@@ -1076,16 +1078,36 @@
         img.onerror = () => reject(new Error("Could not load image for OCR"));
       });
 
-      const W = img.naturalWidth;
-      const H = img.naturalHeight;
+      // Normalize into a single, stable pixel coordinate space.
+      // We use this same normalized canvas for:
+      //  - results display (so what you *see* matches what OCR analyzed)
+      //  - bbox coordinates (so mapping never depends on EXIF/canvas quirks)
+      const W0 = img.naturalWidth;
+      const H0 = img.naturalHeight;
 
-      // start pulse loop immediately (words will start once pool fills)
+      const MAX_DIM = 2200; // keep OCR fast/stable on mobile
+      const scale = Math.min(1, MAX_DIM / Math.max(W0, H0));
+      const W = Math.max(1, Math.round(W0 * scale));
+      const H = Math.max(1, Math.round(H0 * scale));
+
+      // Source canvas (color) used for display + cropping.
+      sourceCanvas = document.createElement("canvas");
+      sourceCanvas.width = W;
+      sourceCanvas.height = H;
+      sourceCanvas.getContext("2d").drawImage(img, 0, 0, W, H);
+
+      // Use the normalized image everywhere in the UI.
+      sourceDataUrl = sourceCanvas.toDataURL("image/jpeg", 0.92);
+      imageDataUrl = sourceDataUrl;
+      ocrBg.style.backgroundImage = `url(${sourceDataUrl})`;
+
+// start pulse loop immediately (words will start once pool fills)
       startScanPulses(W, H);
 
       const baseCanvas = document.createElement("canvas");
       baseCanvas.width = W;
       baseCanvas.height = H;
-      baseCanvas.getContext("2d").drawImage(img, 0, 0);
+      baseCanvas.getContext("2d").drawImage(sourceCanvas, 0, 0);
 
       const cwCanvas = document.createElement("canvas");
       cwCanvas.width = H;
@@ -1093,7 +1115,7 @@
       const ctxCW = cwCanvas.getContext("2d");
       ctxCW.translate(H, 0);
       ctxCW.rotate(Math.PI / 2);
-      ctxCW.drawImage(img, 0, 0);
+      ctxCW.drawImage(sourceCanvas, 0, 0);
 
       const ccwCanvas = document.createElement("canvas");
       ccwCanvas.width = H;
@@ -1101,7 +1123,7 @@
       const ctxCCW = ccwCanvas.getContext("2d");
       ctxCCW.translate(0, W);
       ctxCCW.rotate(-Math.PI / 2);
-      ctxCCW.drawImage(img, 0, 0);
+      ctxCCW.drawImage(sourceCanvas, 0, 0);
 
       applyGrayscaleAndContrast(baseCanvas, 20);
       applyGrayscaleAndContrast(cwCanvas, 20);
@@ -1155,8 +1177,6 @@
               text: w.text.trim(),
               bbox: mapBboxToOriginal(w.bbox, kind, W, H),
               confidence,
-              passKind: kind,
-              passLabel: label,
             };
           })
           .filter(Boolean);
@@ -1519,19 +1539,20 @@
   });
 
   function openTermModal() {
-    if (!currentMatches.length || !resultsImage.naturalWidth || !resultsImage.naturalHeight) return;
+    // Use the normalized source canvas so the crop always matches the OCR coordinate space.
+    if (!currentMatches.length || !sourceCanvas) return;
 
-    const img = resultsImage;
+    const src = sourceCanvas;
     const match = currentMatches[currentMatchIndex] || currentMatches[0];
     const bbox = match.bbox;
 
     const padding = 40;
     let x0 = Math.max(0, bbox.x0 - padding);
     let y0 = Math.max(0, bbox.y0 - padding);
-    let x1 = Math.min(img.naturalWidth,  bbox.x1 + padding);
-    let y1 = Math.min(img.naturalHeight, bbox.y1 + padding);
+    let x1 = Math.min(src.width,  bbox.x1 + padding);
+    let y1 = Math.min(src.height, bbox.y1 + padding);
 
-    const cropW = Math.max(1, x1 - x0);
+const cropW = Math.max(1, x1 - x0);
     const cropH = Math.max(1, y1 - y0);
 
     const maxDim = 800;
@@ -1545,7 +1566,7 @@
     const ctx = canvas.getContext("2d");
 
     ctx.clearRect(0, 0, outW, outH);
-    ctx.drawImage(img, x0, y0, cropW, cropH, 0, 0, outW, outH);
+    ctx.drawImage(src, x0, y0, cropW, cropH, 0, 0, outW, outH);
 
     const localX0 = (bbox.x0 - x0) * scale;
     const localY0 = (bbox.y0 - y0) * scale;
@@ -1564,9 +1585,7 @@
 
     const conf = match.confidence;
     const confRounded = typeof conf === "number" ? Math.round(conf) : null;
-    // Show which OCR pass produced this box (helpful for mapping debug)
-    const passInfo = match.passLabel ? ` (${match.passLabel})` : "";
-    termModalConfidence.textContent = (confRounded != null ? confRounded + "%" : "–%") + passInfo;
+    termModalConfidence.textContent = confRounded != null ? confRounded + "%" : "–%";
     termModal.classList.add("visible");
   }
 
