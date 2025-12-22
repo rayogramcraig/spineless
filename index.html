@@ -433,7 +433,7 @@
 
     .pill-main-wrapper {
       flex: 1;
-      max-width: 38%;
+      max-width: 48%;
       position: relative;
       display: flex;
       justify-content: center;
@@ -451,11 +451,19 @@
       justify-content: space-between;
       gap: 8px;
       padding: 10px 16px;
+   
+      overflow: visible;
+      text-overflow: clip;
+      white-space: normal;
     }
 
     .pill-main-label {
       flex: 1;
       text-align: center;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .hit-nav-inline {
@@ -1333,7 +1341,7 @@
     }
 
     const foundTerm = termList[currentTermIndex];
-    pillMainLabel.textContent = truncateLabel(foundTerm, 15);
+    pillMainLabel.textContent = truncateLabel(foundTerm, 10);
 
     const prevIndex = findPrevDictIndex(currentTermIndex);
     const nextIndex = findNextDictIndex(currentTermIndex);
