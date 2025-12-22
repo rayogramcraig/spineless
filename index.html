@@ -106,7 +106,7 @@
       z-index: 0;
     }
 
-    /* NEW: floating found-words overlay (during scanning) */
+    /* Floating found-words overlay (during scanning) */
     #scan-word-overlay {
       position: absolute;
       inset: 0;
@@ -133,17 +133,9 @@
     }
 
     @keyframes floatWord {
-      0% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(0.72);
-      }
-      18% {
-        opacity: 1;
-      }
-      100% {
-        opacity: 0;
-        transform: translate(-50%, -55%) scale(2.15);
-      }
+      0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.72); }
+      18%  { opacity: 1; }
+      100% { opacity: 0; transform: translate(-50%, -55%) scale(2.15); }
     }
 
     #scan-gradient {
@@ -157,35 +149,23 @@
       z-index: 1;
     }
 
-    #scan-band {
-      position: absolute;
-      inset: 0;
-    }
+    #scan-band { position: absolute; inset: 0; }
 
-    /* 0°: vertical fill from top (transparent) to bottom (opaque) */
+    /* 0°: vertical fill */
     #scan-gradient.mode-0 #scan-band {
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 0;
+      top: 0; left: 0; width: 100%; height: 0;
       background: linear-gradient(to bottom, rgba(232, 255, 41, 0) 0%, rgba(232, 255, 41, 1) 100%);
     }
 
-    /* 90°: horizontal fill from left (transparent) to right (opaque) */
+    /* 90°: horizontal fill left->right */
     #scan-gradient.mode-90 #scan-band {
-      top: 0;
-      left: 0;
-      height: 100%;
-      width: 0;
+      top: 0; left: 0; height: 100%; width: 0;
       background: linear-gradient(to right, rgba(232, 255, 41, 0) 0%, rgba(232, 255, 41, 1) 100%);
     }
 
-    /* -90°: horizontal fill from right (transparent) to left (opaque) */
+    /* -90°: horizontal fill right->left */
     #scan-gradient.mode-neg90 #scan-band {
-      top: 0;
-      right: 0;
-      height: 100%;
-      width: 0;
+      top: 0; right: 0; height: 100%; width: 0;
       background: linear-gradient(to left, rgba(232, 255, 41, 0) 0%, rgba(232, 255, 41, 1) 100%);
     }
 
@@ -280,7 +260,6 @@
       border-bottom: 1px solid rgba(0, 0, 0, 0.08);
       cursor: pointer;
     }
-
     .autosuggest-item:last-child { border-bottom: none; }
     .autosuggest-item:hover { background: rgba(0, 0, 0, 0.04); }
 
@@ -289,16 +268,12 @@
       transform: translate(-50%, -30px);
       pointer-events: none;
     }
-
     #screen-ocr.mode-search #scan-gradient { opacity: 0; }
-
     #screen-ocr.mode-search .search-container {
       opacity: 1;
       pointer-events: auto;
       transform: translate(-50%, 0);
     }
-
-    /* optional: also hide scanning word pulses once in search mode */
     #screen-ocr.mode-search #scan-word-overlay { display: none; }
 
     #ocr-progress {
@@ -315,11 +290,7 @@
     }
 
     /* RESULTS SCREEN */
-    #screen-results {
-      inset: 0;
-      background: #000;
-      color: #fff;
-    }
+    #screen-results { inset: 0; background: #000; color: #fff; }
 
     #results-top-row {
       position: absolute;
@@ -368,11 +339,7 @@
       display: block;
     }
 
-    #highlightsLayer {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-    }
+    #highlightsLayer { position: absolute; inset: 0; pointer-events: none; }
 
     .crosshair-line {
       position: absolute;
@@ -384,9 +351,7 @@
 
     #results-bottom {
       position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 32px;
+      left: 0; right: 0; bottom: 32px;
       display: flex;
       flex-direction: column;
       align-items:center;
@@ -493,8 +458,7 @@
       font-weight: 700;
     }
 
-    .pill-badge-current,
-    .pill-badge-total {
+    .pill-badge-current, .pill-badge-total {
       padding: 0 6px;
       display: flex;
       align-items: center;
@@ -649,13 +613,8 @@
     <!-- OCR / SCANNING -->
     <div id="screen-ocr" class="screen">
       <div id="ocr-bg"></div>
-
-      <!-- NEW: found words pulse layer -->
       <div id="scan-word-overlay"></div>
-
-      <div id="scan-gradient">
-        <div id="scan-band"></div>
-      </div>
+      <div id="scan-gradient"><div id="scan-band"></div></div>
 
       <div id="ocr-overlay">
         <div id="ocr-progress" class="hidden">scanning…</div>
@@ -666,13 +625,7 @@
         </div>
 
         <div class="search-container">
-          <input
-            id="searchInput"
-            class="search-input"
-            type="text"
-            placeholder="search"
-            autocomplete="off"
-          />
+          <input id="searchInput" class="search-input" type="text" placeholder="search" autocomplete="off" />
           <div id="autosuggest" class="autosuggest"></div>
         </div>
       </div>
@@ -757,11 +710,8 @@
   const scanBand = document.getElementById("scan-band");
   const scanWordOverlay = document.getElementById("scan-word-overlay");
 
-  const instanceNav = document.getElementById("instance-nav");
   const hitPrevBtn = document.getElementById("hit-prev");
   const hitNextBtn = document.getElementById("hit-next");
-  const hitCounter = document.getElementById("hit-counter");
-
   const hitPrevInline = document.getElementById("hit-prev-inline");
   const hitNextInline = document.getElementById("hit-next-inline");
 
@@ -837,7 +787,6 @@
       if (!/[aeiouy]/.test(w)) return false;
       return true;
     }
-
     return false;
   }
 
@@ -866,27 +815,12 @@
     let { x0, y0, x1, y1 } = bbox;
 
     const corners = [
-      [x0, y0],
-      [x1, y0],
-      [x1, y1],
-      [x0, y1],
+      [x0, y0], [x1, y0], [x1, y1], [x0, y1],
     ];
 
     function fromBase(u, v) { return { x: u, y: v }; }
-
-    // rotated -> original for CW
-    function fromCW(u, v) {
-      const x = v;
-      const y = H - u;
-      return { x, y };
-    }
-
-    // rotated -> original for CCW
-    function fromCCW(u, v) {
-      const x = W - v;
-      const y = u;
-      return { x, y };
-    }
+    function fromCW(u, v) { return { x: v, y: H - u }; }   // rotated -> original (CW)
+    function fromCCW(u, v) { return { x: W - v, y: u }; }  // rotated -> original (CCW)
 
     const mapped = corners.map(([u, v]) => {
       if (kind === "base") return fromBase(u, v);
@@ -894,13 +828,11 @@
       return fromCCW(u, v);
     });
 
-    const xs = mapped.map((p) => p.x);
-    const ys = mapped.map((p) => p.y);
+    const xs = mapped.map(p => p.x);
+    const ys = mapped.map(p => p.y);
 
-    let nx0 = Math.min(...xs);
-    let ny0 = Math.min(...ys);
-    let nx1 = Math.max(...xs);
-    let ny1 = Math.max(...ys);
+    let nx0 = Math.min(...xs), ny0 = Math.min(...ys);
+    let nx1 = Math.max(...xs), ny1 = Math.max(...ys);
 
     nx0 = Math.max(0, Math.min(W, nx0));
     nx1 = Math.max(0, Math.min(W, nx1));
@@ -911,7 +843,7 @@
   }
 
   /* ==========================
-     NEW: scanning word pulses
+     SCANNING WORD PULSES
      ========================== */
 
   let scanPulseTimer = null;
@@ -924,19 +856,26 @@
     while (scanWordOverlay.firstChild) scanWordOverlay.removeChild(scanWordOverlay.firstChild);
   }
 
+  function sanitizePulseText(raw) {
+    const clean = String(raw || "")
+      .trim()
+      .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "")
+      .trim();
+    if (!clean) return "";
+    if (clean.length < 3) return "";
+    if (clean.length > 18) return "";
+    if (!/^[a-z0-9]+$/i.test(clean)) return "";
+    return clean.toLowerCase();
+  }
+
   function showFloatingWord(wordObj) {
     if (!scanWordOverlay) return;
     if (!wordObj || !wordObj.text || !wordObj.bbox) return;
     if (!screenOCR.classList.contains("active")) return;
     if (screenOCR.classList.contains("mode-search")) return;
 
-    const raw = (wordObj.text || "").trim();
-    const clean = raw.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "").trim();
-    if (!clean) return;
-
-    // keep it readable & "bookish"
-    if (clean.length < 3) return;
-    if (!/^[a-z0-9]+$/i.test(clean)) return;
+    const text = sanitizePulseText(wordObj.text);
+    if (!text) return;
 
     const { W, H } = scanPulseDims;
     if (!W || !H) return;
@@ -945,57 +884,44 @@
     const cx = ((bbox.x0 + bbox.x1) / 2) / W;
     const cy = ((bbox.y0 + bbox.y1) / 2) / H;
 
-    // clamp a touch inward so big words don't originate off-screen
     const px = Math.max(0.06, Math.min(0.94, cx)) * 100;
     const py = Math.max(0.10, Math.min(0.90, cy)) * 100;
 
     const el = document.createElement("div");
     el.className = "scan-float-word";
-    el.textContent = clean.toLowerCase();
+    el.textContent = text;
 
-    // font size scales a bit with word length (shorter words can be a bit bigger)
-    const base = 14; // vh cap is in CSS but this helps on small screens
-    const len = clean.length;
-    const vh = Math.max(9, Math.min(16, base + (10 - Math.min(len, 10)) * 0.6));
+    // font size scales a bit with word length
+    const len = text.length;
+    const vh = Math.max(9, Math.min(16, 14 + (10 - Math.min(len, 10)) * 0.6));
     el.style.fontSize = `min(${vh}vh, 96px)`;
 
     el.style.left = `${px}%`;
     el.style.top  = `${py}%`;
 
     scanWordOverlay.appendChild(el);
-
-    // cleanup
-    setTimeout(() => {
-      if (el && el.parentNode) el.parentNode.removeChild(el);
-    }, 1200);
+    setTimeout(() => { if (el && el.parentNode) el.parentNode.removeChild(el); }, 1200);
   }
 
   function pickPulseCandidate() {
     if (!scanPulsePool.length) return null;
 
-    // try a few random picks to find a good one
-    for (let tries = 0; tries < 12; tries++) {
+    // random tries for a solid candidate
+    for (let tries = 0; tries < 14; tries++) {
       const w = scanPulsePool[(Math.random() * scanPulsePool.length) | 0];
       if (!w || !w.text) continue;
-
-      const t = String(w.text).trim().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "");
-      if (!t) continue;
-      if (t.length < 3) continue;
-      if (t.length > 18) continue; // avoid overly long strings
       if (typeof w.confidence === "number" && w.confidence < 35) continue;
-
+      if (!sanitizePulseText(w.text)) continue;
       return w;
     }
-
-    // fallback: just return any
     return scanPulsePool[(Math.random() * scanPulsePool.length) | 0] || null;
   }
 
   function scheduleNextPulse() {
     if (!scanPulseActive) return;
 
-    // "one word each few seconds" (randomized so it feels alive)
-    const delay = 1600 + Math.random() * 1400;
+    // SHORTER interval so it’s visible even on fast devices
+    const delay = 600 + Math.random() * 800; // 0.6s – 1.4s
 
     scanPulseTimer = setTimeout(() => {
       if (!scanPulseActive) return;
@@ -1014,6 +940,8 @@
     scanPulsePool = [];
     scanPulseDims = { W, H };
     clearScanWordOverlay();
+
+    // kick one early (it’ll no-op until pool has words)
     scheduleNextPulse();
   }
 
@@ -1041,21 +969,13 @@
   });
 
   function buildTermList() {
-    if (!ocrWords.length) {
-      termList = [];
-      return;
-    }
+    if (!ocrWords.length) { termList = []; return; }
 
     const cleaned = ocrWords
-      .map((w) => (w.text || "").trim())
+      .map(w => (w.text || "").trim())
       .filter(Boolean)
-      .map((t) =>
-        t
-          .toLowerCase()
-          .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "")
-          .trim()
-      )
-      .filter((t) => t.length > 1);
+      .map(t => t.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "").trim())
+      .filter(t => t.length > 1);
 
     termList = Array.from(new Set(cleaned)).sort((a, b) => a.localeCompare(b));
   }
@@ -1067,13 +987,9 @@
     if (modeClass) scanGradient.classList.add(modeClass);
 
     screenOCR.classList.remove("angle-0", "angle-90", "angle-neg90");
-    if (modeClass === "mode-0") {
-      screenOCR.classList.add("angle-0");
-    } else if (modeClass === "mode-90") {
-      screenOCR.classList.add("angle-90");
-    } else if (modeClass === "mode-neg90") {
-      screenOCR.classList.add("angle-neg90");
-    }
+    if (modeClass === "mode-0") screenOCR.classList.add("angle-0");
+    else if (modeClass === "mode-90") screenOCR.classList.add("angle-90");
+    else if (modeClass === "mode-neg90") screenOCR.classList.add("angle-neg90");
 
     scanWordEl.textContent = "reading";
     scanAngleEl.textContent = angleLabel;
@@ -1114,19 +1030,12 @@
     const factor = (259 * (c + 255)) / (255 * (259 - c));
 
     for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-
+      const r = data[i], g = data[i + 1], b = data[i + 2];
       let gray = 0.299 * r + 0.587 * g + 0.114 * b;
       gray = factor * (gray - 128) + 128;
       gray = Math.max(0, Math.min(255, gray));
-
-      data[i] = gray;
-      data[i + 1] = gray;
-      data[i + 2] = gray;
+      data[i] = gray; data[i + 1] = gray; data[i + 2] = gray;
     }
-
     ctx.putImageData(imageData, 0, 0);
   }
 
@@ -1170,7 +1079,7 @@
       const W = img.naturalWidth;
       const H = img.naturalHeight;
 
-      // start pulse loop immediately (will begin showing words once pool fills)
+      // start pulse loop immediately (words will start once pool fills)
       startScanPulses(W, H);
 
       const baseCanvas = document.createElement("canvas");
@@ -1252,9 +1161,12 @@
 
         allWords = allWords.concat(mapped);
 
-        // feed pulse pool as each pass completes (so pulses can use better words over time)
-        // keep pool bounded so it stays snappy
+        // feed pulse pool as each pass completes (bounded)
         scanPulsePool = scanPulsePool.concat(mapped).slice(-1200);
+
+        // IMPORTANT: guaranteed visible pulse right now (so you see it even if OCR is fast)
+        const immediate = pickPulseCandidate();
+        if (immediate) showFloatingWord(immediate);
       }
 
       scanGradient.style.opacity = "0";
@@ -1289,10 +1201,7 @@
     }
 
     const q = trimmed.toLowerCase();
-
-    const suggestions = termList
-      .filter((t) => t.startsWith(q))
-      .slice(0, 20);
+    const suggestions = termList.filter(t => t.startsWith(q)).slice(0, 20);
 
     if (!suggestions.length) {
       autosuggestEl.classList.remove("visible");
@@ -1301,15 +1210,12 @@
     }
 
     autosuggestEl.innerHTML = suggestions
-      .map((s) => `<div class="autosuggest-item" data-value="${s}">${s}</div>`)
+      .map(s => `<div class="autosuggest-item" data-value="${s}">${s}</div>`)
       .join("");
     autosuggestEl.classList.add("visible");
   }
 
-  searchInput.addEventListener("input", (e) => {
-    updateAutosuggest(e.target.value);
-  });
-
+  searchInput.addEventListener("input", (e) => updateAutosuggest(e.target.value));
   searchInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       const term = e.target.value.trim();
@@ -1327,10 +1233,7 @@
   });
 
   function normalizeToken(t) {
-    return (t || "")
-      .toLowerCase()
-      .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "")
-      .trim();
+    return (t || "").toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "").trim();
   }
 
   function getMatchesForTerm(term) {
@@ -1338,32 +1241,24 @@
     const q = normalizeToken(term);
     if (!q) return [];
 
-    if (q.length <= 2) {
-      return ocrWords.filter((w) => normalizeToken(w.text) === q);
-    }
-
-    return ocrWords.filter((w) => normalizeToken(w.text).includes(q));
+    if (q.length <= 2) return ocrWords.filter(w => normalizeToken(w.text) === q);
+    return ocrWords.filter(w => normalizeToken(w.text).includes(q));
   }
 
   function runSearch(term) {
     if (!ocrWords.length || !termList.length) return;
+
     const raw = term.trim();
     if (!raw) return;
 
     const q = normalizeToken(raw);
-    if (!q) {
-      alert(`No matches found for “${raw}”`);
-      return;
-    }
+    if (!q) { alert(`No matches found for “${raw}”`); return; }
 
-    let idx = termList.findIndex((t) => t === q);
-    if (idx === -1) idx = termList.findIndex((t) => t.startsWith(q));
-    if (idx === -1 && q.length >= 3) idx = termList.findIndex((t) => t.includes(q));
+    let idx = termList.findIndex(t => t === q);
+    if (idx === -1) idx = termList.findIndex(t => t.startsWith(q));
+    if (idx === -1 && q.length >= 3) idx = termList.findIndex(t => t.includes(q));
 
-    if (idx === -1) {
-      alert(`No matches found for “${raw}”`);
-      return;
-    }
+    if (idx === -1) { alert(`No matches found for “${raw}”`); return; }
 
     currentTermIndex = idx;
     currentTerm = termList[currentTermIndex];
@@ -1446,24 +1341,19 @@
       pillLeft.classList.remove("disabled");
       pillRight.classList.remove("disabled");
     }
-
     updateInstanceNav();
   }
 
   function clearHighlights() {
-    while (highlightsLayer.firstChild) {
-      highlightsLayer.removeChild(highlightsLayer.firstChild);
-    }
+    while (highlightsLayer.firstChild) highlightsLayer.removeChild(highlightsLayer.firstChild);
   }
 
   function drawHighlightsForTerm(term, matchIndex = 0) {
     if (!term || !ocrWords.length || !resultsImage.src) return;
 
-    const matches = (currentMatches && currentMatches.length)
-      ? currentMatches
-      : getMatchesForTerm(term);
-
+    const matches = (currentMatches && currentMatches.length) ? currentMatches : getMatchesForTerm(term);
     clearHighlights();
+
     if (!matches.length) {
       pillBadge.classList.add("hidden");
       pillBadge.innerHTML = "";
@@ -1478,7 +1368,6 @@
     if (matchIndex >= matches.length) matchIndex = matches.length - 1;
 
     const img = resultsImage;
-
     if (!img.naturalWidth || !img.naturalHeight) {
       img.onload = () => drawHighlightsForTerm(term, matchIndex);
       return;
@@ -1514,26 +1403,21 @@
 
     const gapPadding = 10;
     const lineThickness = 4;
-
     const gapX = w / 2 + gapPadding;
     const gapY = h / 2 + gapPadding;
 
     function addDiagonal(startX, startY, endX, endY) {
       const line = document.createElement("div");
       line.className = "crosshair-line";
-
-      const dx = endX - startX;
-      const dy = endY - startY;
+      const dx = endX - startX, dy = endY - startY;
       const length = Math.sqrt(dx * dx + dy * dy);
       const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-
       line.style.width = length + "px";
       line.style.height = lineThickness + "px";
       line.style.left = startX + "px";
       line.style.top = startY + "px";
       line.style.transform = `rotate(${angle}deg)`;
       line.style.transformOrigin = "0 50%";
-
       highlightsLayer.appendChild(line);
     }
 
@@ -1573,38 +1457,27 @@
 
   function goPrevInstance() {
     if (!currentMatches.length) return;
-    currentMatchIndex =
-      (currentMatchIndex - 1 + currentMatches.length) % currentMatches.length;
+    currentMatchIndex = (currentMatchIndex - 1 + currentMatches.length) % currentMatches.length;
     drawHighlightsForTerm(currentTerm, currentMatchIndex);
   }
 
   function goNextInstance() {
     if (!currentMatches.length) return;
-    currentMatchIndex =
-      (currentMatchIndex + 1) % currentMatches.length;
+    currentMatchIndex = (currentMatchIndex + 1) % currentMatches.length;
     drawHighlightsForTerm(currentTerm, currentMatchIndex);
   }
 
   pillLeft.addEventListener("click", goPrevTerm);
   pillRight.addEventListener("click", goNextTerm);
 
-  hitPrevBtn.addEventListener("click", goPrevInstance);
-  hitNextBtn.addEventListener("click", goNextInstance);
+  if (hitPrevBtn) hitPrevBtn.addEventListener("click", goPrevInstance);
+  if (hitNextBtn) hitNextBtn.addEventListener("click", goNextInstance);
 
-  hitPrevInline.addEventListener("click", (e) => {
-    e.stopPropagation();
-    goPrevInstance();
-  });
-  hitNextInline.addEventListener("click", (e) => {
-    e.stopPropagation();
-    goNextInstance();
-  });
+  hitPrevInline.addEventListener("click", (e) => { e.stopPropagation(); goPrevInstance(); });
+  hitNextInline.addEventListener("click", (e) => { e.stopPropagation(); goNextInstance(); });
 
   let touchStartX = null;
-  resultsImageInner.addEventListener("touchstart", (e) => {
-    touchStartX = e.touches[0].clientX;
-  });
-
+  resultsImageInner.addEventListener("touchstart", (e) => { touchStartX = e.touches[0].clientX; });
   resultsImageInner.addEventListener("touchend", (e) => {
     if (touchStartX == null) return;
     const dx = e.changedTouches[0].clientX - touchStartX;
@@ -1690,13 +1563,10 @@
     const conf = match.confidence;
     const confRounded = typeof conf === "number" ? Math.round(conf) : null;
     termModalConfidence.textContent = confRounded != null ? confRounded + "%" : "–%";
-
     termModal.classList.add("visible");
   }
 
-  function closeTermModal() {
-    termModal.classList.remove("visible");
-  }
+  function closeTermModal() { termModal.classList.remove("visible"); }
 
   pillMainLabel.addEventListener("click", () => {
     if (!currentTerm || !currentMatches.length) return;
@@ -1705,21 +1575,15 @@
 
   termModalBackdrop.addEventListener("click", closeTermModal);
   termModalClose.addEventListener("click", closeTermModal);
-  termModal.addEventListener("click", (e) => {
-    if (e.target === termModal) closeTermModal();
-  });
+  termModal.addEventListener("click", (e) => { if (e.target === termModal) closeTermModal(); });
 
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeTermModal();
-  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTermModal(); });
 
-  document.addEventListener("gesturestart", function (e) { e.preventDefault(); }, { passive: false });
-  document.addEventListener("gesturechange", function (e) { e.preventDefault(); }, { passive: false });
-  document.addEventListener("gestureend", function (e) { e.preventDefault(); }, { passive: false });
+  document.addEventListener("gesturestart",  (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("gestureend",    (e) => e.preventDefault(), { passive: false });
 
-  window.addEventListener("wheel", function (e) {
-    if (e.ctrlKey) e.preventDefault();
-  }, { passive: false });
+  window.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
 
   loadWordLists();
 </script>
