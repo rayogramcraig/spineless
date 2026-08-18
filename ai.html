@@ -2052,38 +2052,21 @@
     return canvas.toDataURL("image/jpeg", 0.84);
   }
 
-  function regionBookToCatalogEntry(book, region) {
-    if (!book || !book.title) return null;
+  function regionSpineToGlobal(spine, region) {
+    if (!spine || !spine.bbox) return null;
     const W = sourceCanvas.width;
     const regionH = region.y1 - region.y0;
-    const rb = book.bbox || {};
+    const rb = spine.bbox || {};
     const clamp = n => Math.max(0, Math.min(1, Number(n) || 0));
     const x0 = clamp(rb.x0), y0 = clamp(rb.y0), x1 = clamp(rb.x1), y1 = clamp(rb.y1);
-
-    const bbox = {
-      x0: x0 * W,
-      y0: region.y0 + y0 * regionH,
-      x1: Math.max(x0 * W + 2, x1 * W),
-      y1: Math.max(region.y0 + y0 * regionH + 2, region.y0 + y1 * regionH)
-    };
-
+    if (x1 <= x0 || y1 <= y0) return null;
     return {
-      match: {
-        text: book.title,
-        bbox,
-        confidence: Math.round((Number(book.confidence) || 0) * 100)
-      },
-      term: extractCatalogTokens(book.title)[0] || "",
-      result: {
-        title: String(book.title),
-        author: book.author ? String(book.author) : "",
-        confidence: Number(book.confidence) || 0,
-        candidateIndex: -1,
-        year: book.year || null,
-        publisher: book.publisher ? [String(book.publisher)] : [],
-        isbn: book.isbn ? [String(book.isbn)] : [],
-        cover_i: null,
-        openLibraryKey: null
+      confidence: Number(spine.confidence) || 0,
+      bbox: {
+        x0: x0 * W,
+        y0: region.y0 + y0 * regionH,
+        x1: Math.max(x0 * W + 2, x1 * W),
+        y1: Math.max(region.y0 + y0 * regionH + 2, region.y0 + y1 * regionH)
       }
     };
   }
@@ -2118,6 +2101,82 @@
     return Math.hypot(A.x - B.x, A.y - B.y) < Math.max(35, sourceCanvas.width * 0.035);
   }
 
+  function bboxIoU(a, b) {
+    const ix0 = Math.max(a.x0, b.x0), iy0 = Math.max(a.y0, b.y0);
+    const ix1 = Math.min(a.x1, b.x1), iy1 = Math.min(a.y1, b.y1);
+    const iw = Math.max(0, ix1 - ix0), ih = Math.max(0, iy1 - iy0);
+    const inter = iw * ih;
+    const aa = Math.max(1, (a.x1-a.x0)*(a.y1-a.y0));
+    const ba = Math.max(1, (b.x1-b.x0)*(b.y1-b.y0));
+    return inter / Math.max(1, aa + ba - inter);
+  }
+
+  function sameDetectedSpine(a, b) {
+    if (!a || !b) return false;
+    const A = bboxCenter(a.bbox), B = bboxCenter(b.bbox);
+    const aw = a.bbox.x1-a.bbox.x0, bw = b.bbox.x1-b.bbox.x0;
+    const ah = a.bbox.y1-a.bbox.y0, bh = b.bbox.y1-b.bbox.y0;
+    const centerDist = Math.hypot(A.x-B.x, A.y-B.y);
+    return bboxIoU(a.bbox,b.bbox) > 0.42 ||
+      (centerDist < Math.max(18, Math.min(aw,bw)*0.55) && Math.abs(ah-bh) < Math.max(60, Math.max(ah,bh)*0.45));
+  }
+
+  function renderSpineCrop(spine) {
+    const b = spine.bbox;
+    const W = sourceCanvas.width, H = sourceCanvas.height;
+    const bw = b.x1-b.x0, bh = b.y1-b.y0;
+    const padX = Math.max(8, bw * 0.28);
+    const padY = Math.max(8, bh * 0.05);
+    const x0 = Math.max(0, b.x0-padX), y0 = Math.max(0, b.y0-padY);
+    const x1 = Math.min(W, b.x1+padX), y1 = Math.min(H, b.y1+padY);
+    const cropW = x1-x0, cropH = y1-y0;
+    const canvas = document.createElement("canvas");
+    const maxDim = 900;
+    const scale = Math.min(1.5, maxDim / Math.max(cropW,cropH));
+    canvas.width = Math.max(1, Math.round(cropW*scale));
+    canvas.height = Math.max(1, Math.round(cropH*scale));
+    canvas.getContext("2d").drawImage(sourceCanvas, x0,y0,cropW,cropH, 0,0,canvas.width,canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.9);
+  }
+
+  function ocrHintsForSpine(spine) {
+    const b = spine.bbox;
+    const pad = Math.max(12, (b.x1-b.x0)*0.35);
+    return ocrWords
+      .filter(w => w && w.bbox)
+      .filter(w => {
+        const c = bboxCenter(w.bbox);
+        return c.x >= b.x0-pad && c.x <= b.x1+pad && c.y >= b.y0-20 && c.y <= b.y1+20;
+      })
+      .sort((a,b) => Number(b.confidence||0)-Number(a.confidence||0))
+      .slice(0,20)
+      .map(w => String(w.text||"").trim())
+      .filter(Boolean);
+  }
+
+  function spineResultToCatalogEntry(spine, result) {
+    if (!result || !result.title || result.title === "Unknown title") return null;
+    return {
+      match: {
+        text: result.title,
+        bbox: spine.bbox,
+        confidence: Math.round((Number(result.confidence)||0)*100)
+      },
+      term: extractCatalogTokens(result.title)[0] || "",
+      result: {
+        title: String(result.title),
+        author: result.author ? String(result.author) : "",
+        confidence: Number(result.confidence)||0,
+        candidateIndex: -1,
+        year: null,
+        publisher: [],
+        isbn: [],
+        cover_i: null,
+        openLibraryKey: null
+      }
+    };
+  }
+
   function sameCatalogBook(a, b) {
     if (!a || !b || !a.result || !b.result) return false;
     const at = normalizeToken(a.result.title), bt = normalizeToken(b.result.title);
@@ -2126,12 +2185,12 @@
     return Math.hypot(A.x - B.x, A.y - B.y) < Math.max(100, sourceCanvas.width * 0.12);
   }
 
-  async function identifyShelfRegion(region, runSerial) {
+  async function detectShelfRegion(region, runSerial) {
     const resp = await fetch(BOOK_ID_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        mode: "region",
+        mode: "detect-region",
         image: renderRegionImage(region),
         regionIndex: region.index,
         ocrWords: region.words
@@ -2140,18 +2199,35 @@
     if (!resp.ok) {
       let detail = "";
       try { detail = JSON.stringify(await resp.json()); } catch (_) {}
-      throw new Error(`Region identification failed (${resp.status}) ${detail}`);
+      throw new Error(`Spine detection failed (${resp.status}) ${detail}`);
     }
     const data = await resp.json();
-    if (runSerial !== catalogingRunSerial) return { books: [], words: [] };
+    if (runSerial !== catalogingRunSerial) return { spines: [], words: [] };
     return {
-      books: (Array.isArray(data.books) ? data.books : [])
-        .map(book => regionBookToCatalogEntry(book, region))
-        .filter(Boolean),
-      words: (Array.isArray(data.visibleWords) ? data.visibleWords : [])
-        .map(word => regionWordToGlobal(word, region))
-        .filter(Boolean)
+      spines: (Array.isArray(data.spines) ? data.spines : []).map(s => regionSpineToGlobal(s,region)).filter(Boolean),
+      words: (Array.isArray(data.visibleWords) ? data.visibleWords : []).map(w => regionWordToGlobal(w,region)).filter(Boolean)
     };
+  }
+
+  async function identifySpineBatch(batch, runSerial) {
+    const payload = batch.map((spine, i) => ({
+      id: String(spine.id),
+      image: renderSpineCrop(spine),
+      ocrWords: ocrHintsForSpine(spine)
+    }));
+    const resp = await fetch(BOOK_ID_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "spine-batch", spines: payload })
+    });
+    if (!resp.ok) {
+      let detail = "";
+      try { detail = JSON.stringify(await resp.json()); } catch (_) {}
+      throw new Error(`Spine identification failed (${resp.status}) ${detail}`);
+    }
+    const data = await resp.json();
+    if (runSerial !== catalogingRunSerial) return [];
+    return Array.isArray(data.results) ? data.results : [];
   }
 
   async function catalogBooks() {
@@ -2169,101 +2245,90 @@
     const regions = makeShelfRegions();
     catalogingOverlay.classList.add("visible");
     catalogingBar.style.width = "0%";
-    catalogingStatus.textContent = `0 of ${regions.length} regions`;
-    if (catalogingEta) catalogingEta.textContent = "Estimating time…";
+    catalogingStatus.textContent = `detecting books · 0 of ${regions.length} regions`;
+    if (catalogingEta) catalogingEta.textContent = "Finding individual spines…";
 
-    let completed = 0;
-    let cursor = 0;
-    const concurrency = 4;
-    const durations = [];
-    const completionTimes = [];
+    // PASS 1: detect physical spines, without requiring identification.
+    const detectedSpines = [];
+    let detectCursor = 0, detectDone = 0;
+    const detectConcurrency = 3;
 
-    function refreshProgress() {
-      const elapsed = (performance.now() - startedAt) / 1000;
-      catalogingStatus.textContent =
-        `${completed} of ${regions.length} regions · ${bookCatalog.length} books`;
-      catalogingBar.style.width = `${Math.round((completed / regions.length) * 100)}%`;
-
-      if (completed < 2) {
-        if (catalogingEta) catalogingEta.textContent = "Estimating time…";
-        return;
-      }
-
-      // ETA based on observed concurrent throughput. Use the recent completion rate
-      // and blend it with mean request duration / worker count to reduce jumping.
-      completionTimes.push({ completed, elapsed });
-      if (completionTimes.length > 5) completionTimes.shift();
-
-      let throughputEta = null;
-      if (completionTimes.length >= 2) {
-        const first = completionTimes[0], last = completionTimes[completionTimes.length - 1];
-        const dt = last.elapsed - first.elapsed;
-        const dn = last.completed - first.completed;
-        if (dt > 0 && dn > 0) {
-          const regionsPerSecond = dn / dt;
-          throughputEta = (regions.length - completed) / regionsPerSecond;
-        }
-      }
-
-      const avgDuration = durations.length
-        ? durations.reduce((a,b) => a + b, 0) / durations.length
-        : 0;
-      const wavesRemaining = Math.ceil((regions.length - completed) / concurrency);
-      const durationEta = avgDuration * wavesRemaining;
-
-      let eta = throughputEta == null ? durationEta : (throughputEta * 0.65 + durationEta * 0.35);
-      if (completed >= regions.length) eta = 0;
-      if (catalogingEta) catalogingEta.textContent = completed >= regions.length
-        ? "Finishing book details…"
-        : `About ${formatDuration(eta)} remaining`;
-    }
-
-    async function worker() {
-      while (cursor < regions.length && runSerial === catalogingRunSerial) {
-        const region = regions[cursor++];
-        const requestStarted = performance.now();
+    async function detectWorker() {
+      while (detectCursor < regions.length && runSerial === catalogingRunSerial) {
+        const region = regions[detectCursor++];
         try {
-          const regionResult = await identifyShelfRegion(region, runSerial);
-          for (const entry of regionResult.books) {
-            const duplicate = bookCatalog.find(existing => sameCatalogBook(existing, entry));
-            if (!duplicate) bookCatalog.push(entry);
-            else if ((entry.result.confidence || 0) > (duplicate.result.confidence || 0)) Object.assign(duplicate, entry);
+          const rr = await detectShelfRegion(region, runSerial);
+          for (const spine of rr.spines) {
+            const dupe = detectedSpines.find(s => sameDetectedSpine(s, spine));
+            if (!dupe) detectedSpines.push(spine);
+            else if ((spine.confidence||0) > (dupe.confidence||0)) Object.assign(dupe, spine);
           }
-          for (const word of regionResult.words) {
-            const duplicate = aiSpineWords.find(existing => sameAIWord(existing, word));
-            if (!duplicate) aiSpineWords.push(word);
-            else if ((word.confidence || 0) > (duplicate.confidence || 0)) Object.assign(duplicate, word);
+          for (const word of rr.words) {
+            const dupe = aiSpineWords.find(existing => sameAIWord(existing,word));
+            if (!dupe) aiSpineWords.push(word);
+            else if ((word.confidence||0) > (dupe.confidence||0)) Object.assign(dupe,word);
           }
           buildTermList();
-        } catch (err) {
-          console.warn(err);
-        }
-
-        durations.push((performance.now() - requestStarted) / 1000);
-        if (durations.length > 8) durations.shift();
-        completed++;
-        refreshProgress();
+        } catch (err) { console.warn(err); }
+        detectDone++;
+        catalogingStatus.textContent = `detecting books · ${detectDone} of ${regions.length} regions · ${detectedSpines.length} spines`;
+        catalogingBar.style.width = `${Math.round((detectDone/regions.length)*35)}%`;
       }
     }
 
-    await Promise.all(Array.from({ length: Math.min(concurrency, regions.length) }, () => worker()));
+    await Promise.all(Array.from({length: Math.min(detectConcurrency,regions.length)},()=>detectWorker()));
     if (runSerial !== catalogingRunSerial) return;
 
-    // Cheap metadata pass: cover, ISBN, publisher, year. This does not call AI.
+    detectedSpines.sort((a,b) => (a.bbox.y0-b.bbox.y0) || (a.bbox.x0-b.bbox.x0));
+    detectedSpines.forEach((s,i) => s.id = i+1);
+
+    // PASS 2: identify tight spine crops in small batches.
+    const batchSize = 8;
+    const batches = [];
+    for (let i=0;i<detectedSpines.length;i+=batchSize) batches.push(detectedSpines.slice(i,i+batchSize));
+    let batchCursor = 0, batchesDone = 0;
+    const identifyConcurrency = 3;
+    if (catalogingEta) catalogingEta.textContent = `${detectedSpines.length} spines detected · identifying…`;
+
+    async function identifyWorker() {
+      while (batchCursor < batches.length && runSerial === catalogingRunSerial) {
+        const batch = batches[batchCursor++];
+        try {
+          const results = await identifySpineBatch(batch,runSerial);
+          const byId = new Map(results.map(r => [String(r.id),r]));
+          for (const spine of batch) {
+            const result = byId.get(String(spine.id));
+            const entry = spineResultToCatalogEntry(spine,result);
+            if (!entry) continue;
+            const dupe = bookCatalog.find(existing => sameCatalogBook(existing,entry));
+            if (!dupe) bookCatalog.push(entry);
+            else if ((entry.result.confidence||0) > (dupe.result.confidence||0)) Object.assign(dupe,entry);
+          }
+          buildTermList();
+        } catch (err) { console.warn(err); }
+        batchesDone++;
+        catalogingStatus.textContent = `${bookCatalog.length} identified · ${detectedSpines.length} spines detected`;
+        catalogingBar.style.width = `${35 + Math.round((batchesDone/Math.max(1,batches.length))*55)}%`;
+      }
+    }
+
+    await Promise.all(Array.from({length: Math.min(identifyConcurrency,Math.max(1,batches.length))},()=>identifyWorker()));
+    if (runSerial !== catalogingRunSerial) return;
+
     if (catalogingEta) catalogingEta.textContent = "Adding book details…";
+    catalogingBar.style.width = "92%";
     await enrichCatalogFromOpenLibrary(runSerial);
     if (runSerial !== catalogingRunSerial) return;
 
     catalogingActive = false;
     buildTermList();
-    const elapsed = (performance.now() - startedAt) / 1000;
-    catalogingStatus.textContent =
-      `${bookCatalog.length} books · ${termList.length} searchable terms`;
-    if (catalogingEta) catalogingEta.textContent = `Completed in ${formatDuration(elapsed)}`;
+    const elapsed = (performance.now()-startedAt)/1000;
+    catalogingStatus.textContent = `${bookCatalog.length} books · ${termList.length} searchable terms`;
+    if (catalogingEta) catalogingEta.textContent = `${detectedSpines.length} spines detected · completed in ${formatDuration(elapsed)}`;
     catalogingBar.style.width = "100%";
     updateCatalogStats(elapsed);
 
-    await new Promise(resolve => setTimeout(resolve, 1100));
+    await new Promise(resolve => setTimeout(resolve,1100));
     catalogingOverlay.classList.remove("visible");
   }
 
