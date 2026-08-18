@@ -1,0 +1,1840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Spineless</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+  <!-- iOS web app meta -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="spineless">
+
+  <!-- Favicons -->
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="icon" href="favicon.ico">
+
+  <!-- iOS home screen icons -->
+  <link rel="apple-touch-icon" sizes="120x120" href="apple-touch-icon-120x120.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon-152x152.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180x180.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon-v2.png">
+
+  <!-- Tesseract.js for OCR -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+
+  <style>
+    :root {
+      --bg-dark: #111;
+      --white: #fff;
+      --accent: #ff7a1a;
+      --input-bg: #fff;
+      --input-text: #111;
+      --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.35);
+      --transition-fast: 0.4s ease;
+      --transition-med: 0.6s ease;
+      --scan-yellow: #e8ff29;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      touch-action: pan-x pan-y;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      background: var(--bg-dark);
+      color: var(--white);
+    }
+
+    #app {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .screen {
+      position: absolute;
+      inset: 0;
+      display: none;
+    }
+    .screen.active { display: block; }
+    .hidden { display: none !important; }
+
+    /* ADD IMAGE SCREEN */
+    #screen-add { background: #111; }
+    #screen-add.active {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #screen-add .label {
+      font-size: 3rem;
+      font-weight: 700;
+      pointer-events: none;
+      text-align: center;
+    }
+    #imageInput {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    /* OCR (SCANNING + SEARCH) SCREEN */
+    #screen-ocr {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #ocr-bg {
+      position: absolute;
+      inset: 0;
+      background-position: center;
+      background-size: cover;
+      filter: brightness(0.45);
+      transform: scale(1.02);
+      z-index: 0;
+    }
+
+    /* Floating found-words overlay (during scanning) */
+    #scan-word-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 2; /* above gradient, below UI text */
+    }
+
+    .scan-float-word {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      transform-origin: center;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      color: var(--scan-yellow);
+      opacity: 0;
+      white-space: nowrap;
+      filter: drop-shadow(0 0 16px rgba(0,0,0,0.85));
+      text-shadow: 0 0 18px rgba(0,0,0,0.85);
+      will-change: transform, opacity;
+      animation: floatWord 1.05s ease-out forwards;
+    }
+
+    @keyframes floatWord {
+      0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.72); }
+      18%  { opacity: 1; }
+      100% { opacity: 0; transform: translate(-50%, -55%) scale(2.15); }
+    }
+
+    #scan-gradient {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      overflow: hidden;
+      mix-blend-mode: screen;
+      z-index: 1;
+    }
+
+    #scan-band { position: absolute; inset: 0; }
+
+    /* 0°: vertical fill */
+    #scan-gradient.mode-0 #scan-band {
+      top: 0; left: 0; width: 100%; height: 0;
+      background: linear-gradient(to bottom, rgba(232, 255, 41, 0) 0%, rgba(232, 255, 41, 1) 100%);
+    }
+
+    /* 90°: horizontal fill left->right */
+    #scan-gradient.mode-90 #scan-band {
+      top: 0; left: 0; height: 100%; width: 0;
+      background: linear-gradient(to right, rgba(232, 255, 41, 0) 0%, rgba(232, 255, 41, 1) 100%);
+    }
+
+    /* -90°: horizontal fill right->left */
+    #scan-gradient.mode-neg90 #scan-band {
+      top: 0; right: 0; height: 100%; width: 0;
+      background: linear-gradient(to left, rgba(232, 255, 41, 0) 0%, rgba(232, 255, 41, 1) 100%);
+    }
+
+    #ocr-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 10vw;
+      z-index: 3;
+    }
+
+    .scanning-label,
+    .search-container {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      transition: opacity var(--transition-med), transform var(--transition-med);
+      will-change: opacity, transform;
+    }
+
+    .scanning-label {
+      bottom: 24vh;
+      opacity: 1;
+      text-align: center;
+      color: var(--scan-yellow);
+      text-shadow: 0 0 16px rgba(0, 0, 0, 0.9);
+    }
+
+    #screen-ocr.angle-0 .scanning-label { transform: translateX(-50%) rotate(0deg); }
+    #screen-ocr.angle-90 .scanning-label { transform: translateX(-50%) rotate(-90deg); }
+    #screen-ocr.angle-neg90 .scanning-label { transform: translateX(-50%) rotate(90deg); }
+
+    #scan-word {
+      font-size: 3rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    #scan-angle {
+      margin-top: 0.2em;
+      font-size: 2.8rem;
+      font-weight: 700;
+      opacity: 0.0;
+    }
+
+    .search-container {
+      bottom: 20vh;
+      width: 80vw;
+      max-width: 480px;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 20px);
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 16px 20px;
+      border-radius: 999px;
+      border: none;
+      font-size: 1.4rem;
+      outline: none;
+      background: var(--input-bg);
+      color: var(--input-text);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .autosuggest {
+      margin-top: 8px;
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.96);
+      color: #111;
+      max-height: 40vh;
+      overflow-y: auto;
+      box-shadow: var(--shadow-soft);
+      opacity: 0;
+      transform: translateY(-8px);
+      pointer-events: none;
+      transition: opacity var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .autosuggest.visible {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .autosuggest-item {
+      padding: 12px 18px;
+      font-size: 1.4rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+      cursor: pointer;
+    }
+    .autosuggest-item:last-child { border-bottom: none; }
+    .autosuggest-item:hover { background: rgba(0, 0, 0, 0.04); }
+
+    #screen-ocr.mode-search .scanning-label {
+      opacity: 0;
+      transform: translate(-50%, -30px);
+      pointer-events: none;
+    }
+    #screen-ocr.mode-search #scan-gradient { opacity: 0; }
+    #screen-ocr.mode-search .search-container {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, 0);
+    }
+    #screen-ocr.mode-search #scan-word-overlay { display: none; }
+
+    #ocr-progress {
+      display: none !important;
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.9rem;
+      background: rgba(0, 0, 0, 0.55);
+      padding: 6px 12px;
+      border-radius: 999px;
+      pointer-events: none;
+    }
+
+    /* RESULTS SCREEN */
+    #screen-results { inset: 0; background: #000; color: #fff; }
+
+    #results-top-row {
+      position: absolute;
+      top: 32px;
+      left: 20px;
+      z-index: 10;
+    }
+
+    #btn-new-image {
+      padding: 8px 18px;
+      border-radius: 999px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+      box-shadow: var(--shadow-soft);
+    }
+
+    #recognized-title-wrap {
+      position: absolute;
+      top: 78px;
+      left: 10px;
+      right: 10px;
+      z-index: 10;
+      display: flex;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    #recognized-title {
+      width: min(94vw, 540px);
+      min-height: 46px;
+      padding: 10px 22px;
+      border-radius: 999px;
+      border: none;
+      background: #8d390b;
+      color: #fff;
+      font-size: 1.25rem;
+      line-height: 1.2;
+      font-weight: 750;
+      text-align: center;
+      box-shadow: var(--shadow-soft);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #recognized-title.is-loading { opacity: 0.72; }
+    #recognized-title.is-uncertain { opacity: 0.78; font-weight: 600; }
+
+    #results-image-wrapper {
+      position: absolute;
+      inset: 0;
+      padding: 126px 0 140px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #results-image-inner {
+      position: relative;
+      width: 100%;
+      max-width: 560px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    #results-image {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      display: block;
+    }
+
+    #highlightsLayer { position: absolute; inset: 0; pointer-events: none; }
+
+    .crosshair-line {
+      position: absolute;
+      background: linear-gradient(to right, rgba(213, 255, 57, 1) 0%, rgba(213, 255, 57, 0) 100%);
+      box-shadow: 0 0 8px rgba(213, 255, 57, 0.7);
+      pointer-events: none;
+      transform-origin: 0 50%;
+    }
+
+    #results-bottom {
+      position: absolute;
+      left: 0; right: 0; bottom: 32px;
+      display: flex;
+      flex-direction: column;
+      align-items:center;
+      gap: 14px;
+      padding: 0 16px;
+      z-index: 10;
+    }
+
+    #results-pills {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .pill {
+      flex: 1;
+      padding: 10px 16px;
+      border-radius: 999px;
+      text-align: center;
+      font-size: 1.3rem;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+
+    .pill-side {
+      background: rgba(0, 0, 0, 0.4);
+      color: #fff;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      font-size: .8rem;
+      max-width: min-content;
+    }
+
+    .pill-side.disabled {
+      opacity: 0.3;
+      border-style: dashed;
+      pointer-events: none;
+    }
+
+    .pill-main-wrapper {
+      flex: 1;
+      max-width: 48%;
+      position: relative;
+      display: flex;
+      justify-content: center;
+    }
+
+    .pill-main {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      box-shadow: var(--shadow-soft);
+      pointer-events: auto;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 16px;
+      overflow: visible;
+      text-overflow: clip;
+      white-space: normal;
+    }
+
+    .pill-main-label {
+      flex: 1;
+      text-align: center;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hit-nav-inline {
+      border: none;
+      background: transparent;
+      color: #fff;
+      font-size: 1.4rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 6px;
+      cursor: pointer;
+    }
+
+    .hit-nav-inline:disabled { opacity: 0.3; cursor: default; }
+
+    #pill-badge {
+      position: absolute;
+      top: -30px;
+      right: -6px;
+      height: 26px;
+      min-width: 38px;
+      border-radius: 999px;
+      display: flex;
+      overflow: hidden;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    .pill-badge-current, .pill-badge-total {
+      padding: 0 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pill-badge-current { background: #c62828; color: #fff; }
+    .pill-badge-total { background: #fff; color: #111; }
+
+    #results-bottom-row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    #new-search-btn {
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: none;
+      background: #583922;
+      color: #fff;
+      font-size: 1.1rem;
+      font-weight: 200;
+      box-shadow: var(--shadow-soft);
+      cursor: pointer;
+      width: auto;
+      min-width: 44%;
+      text-align: center;
+    }
+
+    #instance-nav { display: none !important; }
+
+    .hit-nav-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 1.6rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow-soft);
+      cursor: pointer;
+    }
+
+    #hit-counter {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      background: #fff;
+      color: #111;
+      font-size: 1.4rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    /* TERM DETAIL MODAL */
+    #term-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+
+    #term-modal.visible { display: flex; }
+
+    #term-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+    }
+
+    #term-modal-card {
+      position: relative;
+      width: 86vw;
+      max-width: 520px;
+      max-height: 80vh;
+      border-radius: 24px;
+      border: 3px solid var(--accent);
+      background: rgba(0, 0, 0, 0.9);
+      box-shadow: var(--shadow-soft);
+      padding: 16px 16px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #term-modal-close {
+      position: absolute;
+      top: 8px;
+      right: 12px;
+      border: none;
+      background: transparent;
+      color: var(--accent);
+      font-size: 1.8rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    #term-modal-image-wrapper {
+      width: 100%;
+      max-height: 60vh;
+      border-radius: 18px;
+      overflow: hidden;
+      background: #000;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #term-modal-canvas {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    #term-modal-text {
+      font-size: 1.4rem;
+      font-weight: 500;
+      color: var(--accent);
+      text-align: center;
+    }
+
+    #term-modal-text span { font-weight: 700; }
+
+    @media (min-width: 768px) {
+      #term-modal-card { padding: 24px 24px 28px; }
+      #term-modal-text { font-size: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- ADD IMAGE -->
+    <div id="screen-add" class="screen active">
+      <input type="file" id="imageInput" accept="image/*" />
+      <div class="label">show your<br>bookshelves</div>
+    </div>
+
+    <!-- OCR / SCANNING -->
+    <div id="screen-ocr" class="screen">
+      <div id="ocr-bg"></div>
+      <div id="scan-word-overlay"></div>
+      <div id="scan-gradient"><div id="scan-band"></div></div>
+
+      <div id="ocr-overlay">
+        <div id="ocr-progress" class="hidden">scanning…</div>
+
+        <div class="scanning-label">
+          <div id="scan-word">reading</div>
+          <div id="scan-angle">0°</div>
+        </div>
+
+        <div class="search-container">
+          <input id="searchInput" class="search-input" type="text" placeholder="search" autocomplete="off" />
+          <div id="autosuggest" class="autosuggest"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESULTS -->
+    <div id="screen-results" class="screen">
+      <div id="results-top-row">
+        <button id="btn-new-image">new image</button>
+      </div>
+
+      <div id="recognized-title-wrap" class="hidden">
+        <div id="recognized-title"></div>
+      </div>
+
+      <div id="results-image-wrapper">
+        <div id="results-image-inner">
+          <img id="results-image" src="" alt="Bookshelf" />
+          <div id="highlightsLayer"></div>
+        </div>
+      </div>
+
+      <div id="results-bottom">
+        <div id="results-pills">
+          <button id="pill-left" class="pill pill-side"></button>
+          <div class="pill-main-wrapper">
+            <div id="pill-main" class="pill pill-main">
+              <button id="hit-prev-inline" class="hit-nav-inline" aria-label="Previous result">&#9664;</button>
+              <span id="pill-main-label" class="pill-main-label"></span>
+              <button id="hit-next-inline" class="hit-nav-inline" aria-label="Next result">&#9654;</button>
+            </div>
+            <div id="pill-badge" class="pill-badge hidden"></div>
+          </div>
+          <button id="pill-right" class="pill pill-side"></button>
+        </div>
+
+        <div id="results-bottom-row">
+          <button id="new-search-btn">new search</button>
+          <div id="instance-nav" class="hidden">
+            <button id="hit-prev" class="hit-nav-btn">&#9664;</button>
+            <div id="hit-counter">1</div>
+            <button id="hit-next" class="hit-nav-btn">&#9654;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TERM DETAIL MODAL -->
+    <div id="term-modal">
+      <div id="term-modal-backdrop"></div>
+      <div id="term-modal-card">
+        <button id="term-modal-close" aria-label="Close term details">&times;</button>
+        <div id="term-modal-image-wrapper">
+          <canvas id="term-modal-canvas"></canvas>
+        </div>
+        <div id="term-modal-text">
+          Confidence Level: <span id="term-modal-confidence">–%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const screenAdd = document.getElementById("screen-add");
+  const screenOCR = document.getElementById("screen-ocr");
+  const screenResults = document.getElementById("screen-results");
+  const imageInput = document.getElementById("imageInput");
+  const ocrBg = document.getElementById("ocr-bg");
+  const ocrProgress = document.getElementById("ocr-progress");
+  const searchInput = document.getElementById("searchInput");
+  const autosuggestEl = document.getElementById("autosuggest");
+
+  const resultsImage = document.getElementById("results-image");
+  const recognizedTitleWrap = document.getElementById("recognized-title-wrap");
+  const recognizedTitle = document.getElementById("recognized-title");
+  const btnNewImage = document.getElementById("btn-new-image");
+  const btnNewSearch = document.getElementById("new-search-btn");
+  const pillLeft = document.getElementById("pill-left");
+  const pillRight = document.getElementById("pill-right");
+  const pillMainLabel = document.getElementById("pill-main-label");
+  const pillBadge = document.getElementById("pill-badge");
+  const resultsImageInner = document.getElementById("results-image-inner");
+  const highlightsLayer = document.getElementById("highlightsLayer");
+
+  const scanWordEl = document.getElementById("scan-word");
+  const scanAngleEl = document.getElementById("scan-angle");
+  const scanGradient = document.getElementById("scan-gradient");
+  const scanBand = document.getElementById("scan-band");
+  const scanWordOverlay = document.getElementById("scan-word-overlay");
+
+  const hitPrevBtn = document.getElementById("hit-prev");
+  const hitNextBtn = document.getElementById("hit-next");
+  const hitPrevInline = document.getElementById("hit-prev-inline");
+  const hitNextInline = document.getElementById("hit-next-inline");
+
+  const termModal = document.getElementById("term-modal");
+  const termModalBackdrop = document.getElementById("term-modal-backdrop");
+  const termModalClose = document.getElementById("term-modal-close");
+  const termModalCanvas = document.getElementById("term-modal-canvas");
+  const termModalConfidence = document.getElementById("term-modal-confidence");
+
+  let ocrWords = [];
+  let imageDataUrl = "";
+  let sourceCanvas = null; // normalized, color-correct source used for display + bbox coord space
+  let sourceDataUrl = "";
+
+  let termList = [];
+  let currentTermIndex = -1;
+  let currentTerm = "";
+
+  let currentMatches = [];
+  let currentMatchIndex = 0;
+
+  // AI-assisted book recognition test.
+  // After deploying the Supabase Edge Function included with this build, paste its URL here.
+  // Example: https://YOUR_PROJECT.supabase.co/functions/v1/identify-book
+  const BOOK_ID_ENDPOINT = "YOUR_SUPABASE_FUNCTION_URL";
+  const BOOK_ID_ENABLED = !BOOK_ID_ENDPOINT.includes("YOUR_SUPABASE_FUNCTION_URL");
+  const bookRecognitionCache = new Map();
+  let recognitionRequestSerial = 0;
+
+  // Dictionary + whitelist sets
+  let DICT = null;
+  let WHITELIST = null;
+  let dictLoaded = false;
+  let whitelistLoaded = false;
+
+  const SHORT_COMMON_WORDS = new Set([
+    "a","an","as","at","be","by","do","go","he","if","in","is","it","me","my",
+    "no","of","on","or","so","to","up","us","we"
+  ]);
+
+  function showScreen(el) {
+    [screenAdd, screenOCR, screenResults].forEach((s) => s.classList.remove("active"));
+    el.classList.add("active");
+  }
+
+  async function loadWordLists() {
+    try {
+      const dictResp = await fetch("dictionary.json");
+      if (dictResp.ok) {
+        const dictData = await dictResp.json();
+        DICT = new Set((dictData || []).map(w => String(w).toLowerCase()));
+        dictLoaded = true;
+      }
+    } catch (e) {
+      console.warn("dictionary.json could not be loaded:", e);
+    }
+
+    try {
+      const wlResp = await fetch("whitelist.json");
+      if (wlResp.ok) {
+        const wlData = await wlResp.json();
+        WHITELIST = new Set((wlData || []).map(w => String(w).toLowerCase()));
+        whitelistLoaded = true;
+      }
+    } catch (e) {
+      console.warn("whitelist.json could not be loaded:", e);
+    }
+  }
+
+  function isCarouselWord(word) {
+    if (!word) return false;
+    const w = word.toLowerCase();
+
+    if ((dictLoaded && DICT && DICT.has(w)) ||
+        (whitelistLoaded && WHITELIST && WHITELIST.has(w))) {
+      return true;
+    }
+
+    if (!dictLoaded && !whitelistLoaded) {
+      if (SHORT_COMMON_WORDS.has(w)) return true;
+      if (!/^[a-z]+$/.test(w)) return false;
+      if (w.length < 3) return false;
+      if (!/[aeiouy]/.test(w)) return false;
+      return true;
+    }
+    return false;
+  }
+
+  function findPrevDictIndex(startIndex) {
+    if (!termList.length) return -1;
+    let idx = startIndex;
+    for (let steps = 0; steps < termList.length; steps++) {
+      idx = (idx - 1 + termList.length) % termList.length;
+      if (isCarouselWord(termList[idx])) return idx;
+    }
+    return -1;
+  }
+
+  function findNextDictIndex(startIndex) {
+    if (!termList.length) return -1;
+    let idx = startIndex;
+    for (let steps = 0; steps < termList.length; steps++) {
+      idx = (idx + 1) % termList.length;
+      if (isCarouselWord(termList[idx])) return idx;
+    }
+    return -1;
+  }
+
+  // *** FIXED MAPPING FUNCTION ***
+  function mapBboxToOriginal(bbox, kind, W, H) {
+    let { x0, y0, x1, y1 } = bbox;
+
+    const corners = [
+      [x0, y0], [x1, y0], [x1, y1], [x0, y1],
+    ];
+
+    function fromBase(u, v) { return { x: u, y: v }; }
+    function fromCW(u, v) { return { x: v, y: H - u }; }   // rotated -> original (CW)
+    function fromCCW(u, v) { return { x: W - v, y: u }; }  // rotated -> original (CCW)
+
+    const mapped = corners.map(([u, v]) => {
+      if (kind === "base") return fromBase(u, v);
+      if (kind === "cw")   return fromCW(u, v);
+      return fromCCW(u, v);
+    });
+
+    const xs = mapped.map(p => p.x);
+    const ys = mapped.map(p => p.y);
+
+    let nx0 = Math.min(...xs), ny0 = Math.min(...ys);
+    let nx1 = Math.max(...xs), ny1 = Math.max(...ys);
+
+    nx0 = Math.max(0, Math.min(W, nx0));
+    nx1 = Math.max(0, Math.min(W, nx1));
+    ny0 = Math.max(0, Math.min(H, ny0));
+    ny1 = Math.max(0, Math.min(H, ny1));
+
+    return { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
+  }
+
+  /* ==========================
+     SCANNING WORD PULSES
+     ========================== */
+
+  let scanPulseTimer = null;
+  let scanPulseActive = false;
+  let scanPulsePool = [];
+  let scanPulseDims = { W: 0, H: 0 };
+
+  function clearScanWordOverlay() {
+    if (!scanWordOverlay) return;
+    while (scanWordOverlay.firstChild) scanWordOverlay.removeChild(scanWordOverlay.firstChild);
+  }
+
+  function sanitizePulseText(raw) {
+    const clean = String(raw || "")
+      .trim()
+      .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "")
+      .trim();
+    if (!clean) return "";
+    if (clean.length < 3) return "";
+    if (clean.length > 18) return "";
+    if (!/^[a-z0-9]+$/i.test(clean)) return "";
+    return clean.toLowerCase();
+  }
+
+  function showFloatingWord(wordObj) {
+    if (!scanWordOverlay) return;
+    if (!wordObj || !wordObj.text || !wordObj.bbox) return;
+    if (!screenOCR.classList.contains("active")) return;
+    if (screenOCR.classList.contains("mode-search")) return;
+
+    const text = sanitizePulseText(wordObj.text);
+    if (!text) return;
+
+    const { W, H } = scanPulseDims;
+    if (!W || !H) return;
+
+    const bbox = wordObj.bbox;
+    const cx = ((bbox.x0 + bbox.x1) / 2) / W;
+    const cy = ((bbox.y0 + bbox.y1) / 2) / H;
+
+    const px = Math.max(0.06, Math.min(0.94, cx)) * 100;
+    const py = Math.max(0.10, Math.min(0.90, cy)) * 100;
+
+    const el = document.createElement("div");
+    el.className = "scan-float-word";
+    el.textContent = text;
+
+    // font size scales a bit with word length
+    const len = text.length;
+    const vh = Math.max(9, Math.min(16, 14 + (10 - Math.min(len, 10)) * 0.6));
+    el.style.fontSize = `min(${vh}vh, 96px)`;
+
+    el.style.left = `${px}%`;
+    el.style.top  = `${py}%`;
+
+    scanWordOverlay.appendChild(el);
+    setTimeout(() => { if (el && el.parentNode) el.parentNode.removeChild(el); }, 1200);
+  }
+
+  function pickPulseCandidate() {
+    if (!scanPulsePool.length) return null;
+
+    // random tries for a solid candidate
+    for (let tries = 0; tries < 14; tries++) {
+      const w = scanPulsePool[(Math.random() * scanPulsePool.length) | 0];
+      if (!w || !w.text) continue;
+      if (typeof w.confidence === "number" && w.confidence < 35) continue;
+      if (!sanitizePulseText(w.text)) continue;
+      return w;
+    }
+    return scanPulsePool[(Math.random() * scanPulsePool.length) | 0] || null;
+  }
+
+  function scheduleNextPulse() {
+    if (!scanPulseActive) return;
+
+    // SHORTER interval so it’s visible even on fast devices
+    const delay = 600 + Math.random() * 800; // 0.6s – 1.4s
+
+    scanPulseTimer = setTimeout(() => {
+      if (!scanPulseActive) return;
+      if (screenOCR.classList.contains("mode-search")) return;
+
+      const candidate = pickPulseCandidate();
+      if (candidate) showFloatingWord(candidate);
+
+      scheduleNextPulse();
+    }, delay);
+  }
+
+  function startScanPulses(W, H) {
+    stopScanPulses();
+    scanPulseActive = true;
+    scanPulsePool = [];
+    scanPulseDims = { W, H };
+    clearScanWordOverlay();
+
+    // kick one early (it’ll no-op until pool has words)
+    scheduleNextPulse();
+  }
+
+  function stopScanPulses() {
+    scanPulseActive = false;
+    if (scanPulseTimer) {
+      clearTimeout(scanPulseTimer);
+      scanPulseTimer = null;
+    }
+    clearScanWordOverlay();
+    scanPulsePool = [];
+  }
+
+  /* ========================== */
+
+  imageInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      imageDataUrl = ev.target.result;
+      startOCR(imageDataUrl);
+    };
+    reader.readAsDataURL(file);
+  });
+
+  function buildTermList() {
+    if (!ocrWords.length) { termList = []; return; }
+
+    const cleaned = ocrWords
+      .map(w => (w.text || "").trim())
+      .filter(Boolean)
+      .map(t => t.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "").trim())
+      .filter(t => t.length > 1);
+
+    termList = Array.from(new Set(cleaned)).sort((a, b) => a.localeCompare(b));
+  }
+
+  function setScanMode(angleLabel, modeClass) {
+    screenOCR.classList.add("scanning");
+    scanGradient.style.opacity = "1";
+    scanGradient.classList.remove("mode-0", "mode-90", "mode-neg90");
+    if (modeClass) scanGradient.classList.add(modeClass);
+
+    screenOCR.classList.remove("angle-0", "angle-90", "angle-neg90");
+    if (modeClass === "mode-0") screenOCR.classList.add("angle-0");
+    else if (modeClass === "mode-90") screenOCR.classList.add("angle-90");
+    else if (modeClass === "mode-neg90") screenOCR.classList.add("angle-neg90");
+
+    scanWordEl.textContent = "reading";
+    scanAngleEl.textContent = angleLabel;
+    updateScanProgress(0);
+  }
+
+  function updateScanProgress(progress) {
+    const p = Math.max(0, Math.min(1, progress || 0));
+
+    if (scanGradient.classList.contains("mode-0")) {
+      scanBand.style.width = "100%";
+      scanBand.style.height = (p * 100) + "%";
+      scanBand.style.top = "0";
+      scanBand.style.left = "0";
+      scanBand.style.right = "auto";
+    } else if (scanGradient.classList.contains("mode-90")) {
+      scanBand.style.height = "100%";
+      scanBand.style.width = (p * 100) + "%";
+      scanBand.style.left = "0";
+      scanBand.style.right = "auto";
+    } else if (scanGradient.classList.contains("mode-neg90")) {
+      scanBand.style.height = "100%";
+      scanBand.style.width = (p * 100) + "%";
+      scanBand.style.right = "0";
+      scanBand.style.left = "auto";
+    }
+  }
+
+  function applyGrayscaleAndContrast(canvas, contrastValue = 20) {
+    const ctx = canvas.getContext("2d");
+    const { width, height } = canvas;
+    if (!width || !height) return;
+
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    const c = contrastValue;
+    const factor = (259 * (c + 255)) / (255 * (259 - c));
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+      gray = factor * (gray - 128) + 128;
+      gray = Math.max(0, Math.min(255, gray));
+      data[i] = gray; data[i + 1] = gray; data[i + 2] = gray;
+    }
+    ctx.putImageData(imageData, 0, 0);
+  }
+
+  async function startOCR(dataUrl) {
+    showScreen(screenOCR);
+    screenOCR.classList.remove("mode-search");
+    ocrBg.style.backgroundImage = `url(${dataUrl})`;
+    ocrProgress.classList.remove("hidden");
+    ocrProgress.textContent = "scanning…";
+
+    ocrWords = [];
+    termList = [];
+    currentTermIndex = -1;
+    currentTerm = "";
+    currentMatches = [];
+    currentMatchIndex = 0;
+    clearHighlights();
+    pillMainLabel.textContent = "";
+    pillLeft.textContent = "";
+    pillRight.textContent = "";
+    pillLeft.classList.add("disabled");
+    pillRight.classList.add("disabled");
+    pillBadge.classList.add("hidden");
+    pillBadge.innerHTML = "";
+    hitPrevInline.disabled = true;
+    hitNextInline.disabled = true;
+    hitPrevInline.classList.add("hidden");
+    hitNextInline.classList.add("hidden");
+    setRecognizedTitle("");
+    bookRecognitionCache.clear();
+    recognitionRequestSerial++;
+
+    stopScanPulses();
+
+    try {
+      const img = new Image();
+      img.src = dataUrl;
+
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Could not load image for OCR"));
+      });
+
+      // Normalize into a single, stable pixel coordinate space.
+      // We use this same normalized canvas for:
+      //  - results display (so what you *see* matches what OCR analyzed)
+      //  - bbox coordinates (so mapping never depends on EXIF/canvas quirks)
+      const W0 = img.naturalWidth;
+      const H0 = img.naturalHeight;
+
+      const MAX_DIM = 2200; // keep OCR fast/stable on mobile
+      const scale = Math.min(1, MAX_DIM / Math.max(W0, H0));
+      const W = Math.max(1, Math.round(W0 * scale));
+      const H = Math.max(1, Math.round(H0 * scale));
+
+      // Source canvas (color) used for display + cropping.
+      sourceCanvas = document.createElement("canvas");
+      sourceCanvas.width = W;
+      sourceCanvas.height = H;
+      sourceCanvas.getContext("2d").drawImage(img, 0, 0, W, H);
+
+      // Use the normalized image everywhere in the UI.
+      sourceDataUrl = sourceCanvas.toDataURL("image/jpeg", 0.92);
+      imageDataUrl = sourceDataUrl;
+      ocrBg.style.backgroundImage = `url(${sourceDataUrl})`;
+
+// start pulse loop immediately (words will start once pool fills)
+      startScanPulses(W, H);
+
+      const baseCanvas = document.createElement("canvas");
+      baseCanvas.width = W;
+      baseCanvas.height = H;
+      baseCanvas.getContext("2d").drawImage(sourceCanvas, 0, 0);
+
+      const cwCanvas = document.createElement("canvas");
+      cwCanvas.width = H;
+      cwCanvas.height = W;
+      const ctxCW = cwCanvas.getContext("2d");
+      ctxCW.translate(H, 0);
+      ctxCW.rotate(Math.PI / 2);
+      ctxCW.drawImage(sourceCanvas, 0, 0);
+
+      const ccwCanvas = document.createElement("canvas");
+      ccwCanvas.width = H;
+      ccwCanvas.height = W;
+      const ctxCCW = ccwCanvas.getContext("2d");
+      ctxCCW.translate(0, W);
+      ctxCCW.rotate(-Math.PI / 2);
+      ctxCCW.drawImage(sourceCanvas, 0, 0);
+
+      applyGrayscaleAndContrast(baseCanvas, 20);
+      applyGrayscaleAndContrast(cwCanvas, 20);
+      applyGrayscaleAndContrast(ccwCanvas, 20);
+
+      const passes = [
+        { kind: "base", canvas: baseCanvas, label: "0°",   modeClass: "mode-0" },
+        { kind: "cw",   canvas: cwCanvas,   label: "90°",  modeClass: "mode-90" },
+        { kind: "ccw",  canvas: ccwCanvas,  label: "-90°", modeClass: "mode-neg90" },
+      ];
+
+      let allWords = [];
+
+      for (let i = 0; i < passes.length; i++) {
+        const { kind, canvas, label, modeClass } = passes[i];
+        const passIndex = i + 1;
+        const passTotal = passes.length;
+
+        setScanMode(label, modeClass);
+
+        const result = await Tesseract.recognize(canvas, "eng", {
+          logger: (m) => {
+            if (m.status === "recognizing text") {
+              const pct = Math.round((m.progress || 0) * 100);
+              ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}… ${pct}%`;
+              updateScanProgress(m.progress || 0);
+            } else {
+              ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}…`;
+            }
+          },
+        });
+
+        updateScanProgress(1);
+
+        const words = result.data.words || [];
+
+        const mapped = words
+          .map((w) => {
+            if (!w.text || !w.text.trim().length) return null;
+
+            const confidence =
+              typeof w.confidence === "number"
+                ? w.confidence
+                : typeof w.conf === "number"
+                ? w.conf
+                : null;
+
+            if (typeof confidence === "number" && confidence < 10) return null;
+
+            return {
+              text: w.text.trim(),
+              bbox: mapBboxToOriginal(w.bbox, kind, W, H),
+              confidence,
+            };
+          })
+          .filter(Boolean);
+
+        allWords = allWords.concat(mapped);
+
+        // feed pulse pool as each pass completes (bounded)
+        scanPulsePool = scanPulsePool.concat(mapped).slice(-1200);
+
+        // IMPORTANT: guaranteed visible pulse right now (so you see it even if OCR is fast)
+        const immediate = pickPulseCandidate();
+        if (immediate) showFloatingWord(immediate);
+      }
+
+      scanGradient.style.opacity = "0";
+
+      ocrWords = allWords;
+      buildTermList();
+      ocrProgress.classList.add("hidden");
+
+      // stop pulses once search UI appears
+      stopScanPulses();
+
+      screenOCR.classList.add("mode-search");
+      setTimeout(() => searchInput.focus(), 450);
+    } catch (err) {
+      console.error(err);
+      stopScanPulses();
+      alert(
+        "There was a problem reading the image.\n\n" +
+          (err && err.message ? err.message : String(err))
+      );
+      scanGradient.style.opacity = "0";
+      showScreen(screenAdd);
+    }
+  }
+
+  function updateAutosuggest(query) {
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.length < 3) {
+      autosuggestEl.classList.remove("visible");
+      autosuggestEl.innerHTML = "";
+      return;
+    }
+
+    const q = trimmed.toLowerCase();
+    const suggestions = termList.filter(t => t.startsWith(q)).slice(0, 20);
+
+    if (!suggestions.length) {
+      autosuggestEl.classList.remove("visible");
+      autosuggestEl.innerHTML = "";
+      return;
+    }
+
+    autosuggestEl.innerHTML = suggestions
+      .map(s => `<div class="autosuggest-item" data-value="${s}">${s}</div>`)
+      .join("");
+    autosuggestEl.classList.add("visible");
+  }
+
+  searchInput.addEventListener("input", (e) => updateAutosuggest(e.target.value));
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const term = e.target.value.trim();
+      if (term) runSearch(term);
+    }
+  });
+
+  autosuggestEl.addEventListener("click", (e) => {
+    const item = e.target.closest(".autosuggest-item");
+    if (!item) return;
+    const value = item.dataset.value;
+    searchInput.value = value;
+    autosuggestEl.classList.remove("visible");
+    runSearch(value);
+  });
+
+  function normalizeToken(t) {
+    return (t || "").toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "").trim();
+  }
+
+  function getMatchesForTerm(term) {
+    if (!term || !ocrWords.length) return [];
+    const q = normalizeToken(term);
+    if (!q) return [];
+
+    if (q.length <= 2) return ocrWords.filter(w => normalizeToken(w.text) === q);
+    return ocrWords.filter(w => normalizeToken(w.text).includes(q));
+  }
+
+  function runSearch(term) {
+    if (!ocrWords.length || !termList.length) return;
+
+    const raw = term.trim();
+    if (!raw) return;
+
+    const q = normalizeToken(raw);
+    if (!q) { alert(`No matches found for “${raw}”`); return; }
+
+    let idx = termList.findIndex(t => t === q);
+    if (idx === -1) idx = termList.findIndex(t => t.startsWith(q));
+    if (idx === -1 && q.length >= 3) idx = termList.findIndex(t => t.includes(q));
+
+    if (idx === -1) { alert(`No matches found for “${raw}”`); return; }
+
+    currentTermIndex = idx;
+    currentTerm = termList[currentTermIndex];
+
+    currentMatches = getMatchesForTerm(currentTerm);
+    currentMatchIndex = 0;
+
+    setupResultsScreen();
+    showScreen(screenResults);
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  function truncateLabel(text, maxLen) {
+    if (!text) return "";
+    if (text.length <= maxLen) return text;
+    return text.slice(0, maxLen - 1) + "…";
+  }
+
+  function updateInstanceNav() {
+    if (!currentMatches || currentMatches.length <= 1) {
+      pillBadge.classList.add("hidden");
+      pillBadge.innerHTML = "";
+      hitPrevInline.disabled = true;
+      hitNextInline.disabled = true;
+      hitPrevInline.classList.add("hidden");
+      hitNextInline.classList.add("hidden");
+      return;
+    }
+    const current = currentMatchIndex + 1;
+    const total = currentMatches.length;
+    pillBadge.classList.remove("hidden");
+    pillBadge.innerHTML =
+      `<span class="pill-badge-current">${current}</span>` +
+      `<span class="pill-badge-total">${total}</span>`;
+    hitPrevInline.disabled = false;
+    hitNextInline.disabled = false;
+    hitPrevInline.classList.remove("hidden");
+    hitNextInline.classList.remove("hidden");
+  }
+
+  function setRecognizedTitle(text, state = "") {
+    if (!recognizedTitle || !recognizedTitleWrap) return;
+    recognizedTitle.classList.remove("is-loading", "is-uncertain");
+    if (!text) {
+      recognizedTitle.textContent = "";
+      recognizedTitleWrap.classList.add("hidden");
+      return;
+    }
+    recognizedTitle.textContent = text;
+    if (state) recognizedTitle.classList.add(state);
+    recognizedTitleWrap.classList.remove("hidden");
+  }
+
+  function bboxCenter(b) {
+    return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
+  }
+
+  function buildRecognitionCrop(match) {
+    if (!sourceCanvas || !match || !match.bbox) return null;
+    const b = match.bbox;
+    const W = sourceCanvas.width, H = sourceCanvas.height;
+    const bw = Math.max(1, b.x1 - b.x0);
+    const bh = Math.max(1, b.y1 - b.y0);
+    const c = bboxCenter(b);
+
+    // A generous spine-shaped crop. Vertical OCR gets a narrow/tall crop;
+    // horizontal OCR still gets enough surrounding book to show design cues.
+    let cropW = bh > bw * 1.35 ? Math.max(120, bw * 5.5) : Math.max(150, bw * 2.8);
+    let cropH = bh > bw * 1.35 ? Math.max(420, bh * 2.8) : Math.max(420, bh * 10);
+    cropW = Math.min(W, cropW);
+    cropH = Math.min(H, cropH);
+
+    let x0 = Math.max(0, Math.min(W - cropW, c.x - cropW / 2));
+    let y0 = Math.max(0, Math.min(H - cropH, c.y - cropH / 2));
+    let x1 = x0 + cropW, y1 = y0 + cropH;
+
+    const canvas = document.createElement("canvas");
+    const maxDim = 900;
+    const scale = Math.min(1, maxDim / Math.max(cropW, cropH));
+    canvas.width = Math.max(1, Math.round(cropW * scale));
+    canvas.height = Math.max(1, Math.round(cropH * scale));
+    canvas.getContext("2d").drawImage(sourceCanvas, x0, y0, cropW, cropH, 0, 0, canvas.width, canvas.height);
+
+    const nearby = ocrWords
+      .filter(w => {
+        if (!w.bbox) return false;
+        const p = bboxCenter(w.bbox);
+        return p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1;
+      })
+      .map(w => ({
+        text: normalizeToken(w.text),
+        confidence: typeof w.confidence === "number" ? w.confidence : 0,
+        d: Math.hypot(bboxCenter(w.bbox).x - c.x, bboxCenter(w.bbox).y - c.y)
+      }))
+      .filter(w => w.text && w.text.length > 1)
+      .sort((a,b) => (b.confidence - a.confidence) || (a.d - b.d));
+
+    const contextWords = [];
+    for (const w of nearby) {
+      if (!contextWords.includes(w.text)) contextWords.push(w.text);
+      if (contextWords.length >= 8) break;
+    }
+
+    return {
+      image: canvas.toDataURL("image/jpeg", 0.88),
+      contextWords,
+      crop: { x0, y0, x1, y1 }
+    };
+  }
+
+  async function searchOpenLibraryCandidates(searchTerm, contextWords) {
+    const queries = [];
+    const strongContext = (contextWords || []).filter(w => w.length >= 3 && w !== searchTerm).slice(0, 4);
+    if (strongContext.length) queries.push([searchTerm, ...strongContext].join(" "));
+    queries.push(searchTerm);
+
+    const merged = new Map();
+    for (const q of queries) {
+      try {
+        const params = new URLSearchParams({
+          q,
+          fields: "key,title,author_name,first_publish_year,edition_key,cover_i,isbn,publisher",
+          limit: "12"
+        });
+        const resp = await fetch(`https://openlibrary.org/search.json?${params.toString()}`);
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        for (const doc of (data.docs || [])) {
+          if (!doc.title) continue;
+          const key = doc.key || `${doc.title}|${(doc.author_name || [""])[0]}`;
+          if (merged.has(key)) continue;
+          merged.set(key, {
+            key: doc.key || null,
+            title: doc.title,
+            author: (doc.author_name || []).slice(0, 3).join(", "),
+            year: doc.first_publish_year || null,
+            cover_i: doc.cover_i || null,
+            isbn: (doc.isbn || []).slice(0, 4),
+            publisher: (doc.publisher || []).slice(0, 3),
+            edition_key: (doc.edition_key || []).slice(0, 4)
+          });
+          if (merged.size >= 12) break;
+        }
+      } catch (err) {
+        console.warn("Open Library candidate lookup failed:", err);
+      }
+      if (merged.size >= 12) break;
+    }
+    return Array.from(merged.values()).slice(0, 12);
+  }
+
+  function recognitionCacheKey(match) {
+    if (!match || !match.bbox) return "";
+    const b = match.bbox;
+    return [currentTerm, Math.round(b.x0), Math.round(b.y0), Math.round(b.x1), Math.round(b.y1)].join("|");
+  }
+
+  async function identifyCurrentBook() {
+    if (!BOOK_ID_ENABLED || !currentMatches.length || !sourceCanvas) {
+      setRecognizedTitle("");
+      return;
+    }
+
+    const match = currentMatches[currentMatchIndex] || currentMatches[0];
+    const cacheKey = recognitionCacheKey(match);
+    if (bookRecognitionCache.has(cacheKey)) {
+      const cached = bookRecognitionCache.get(cacheKey);
+      setRecognizedTitle(cached.title || "Unknown title", cached.confidence < 0.55 ? "is-uncertain" : "");
+      return;
+    }
+
+    const serial = ++recognitionRequestSerial;
+    setRecognizedTitle("identifying…", "is-loading");
+
+    const crop = buildRecognitionCrop(match);
+    if (!crop) { setRecognizedTitle(""); return; }
+
+    const candidates = await searchOpenLibraryCandidates(currentTerm, crop.contextWords);
+    if (serial !== recognitionRequestSerial) return;
+    if (!candidates.length) {
+      setRecognizedTitle("Unknown title", "is-uncertain");
+      return;
+    }
+
+    try {
+      const resp = await fetch(BOOK_ID_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image: crop.image,
+          searchTerm: currentTerm,
+          ocrWords: crop.contextWords,
+          candidates
+        })
+      });
+      if (!resp.ok) throw new Error(`Book identification failed (${resp.status})`);
+      const result = await resp.json();
+      if (serial !== recognitionRequestSerial) return;
+
+      const clean = {
+        title: result && result.title ? String(result.title) : "Unknown title",
+        author: result && result.author ? String(result.author) : "",
+        confidence: Number.isFinite(Number(result && result.confidence)) ? Number(result.confidence) : 0,
+        candidateIndex: Number.isFinite(Number(result && result.candidateIndex)) ? Number(result.candidateIndex) : -1
+      };
+      bookRecognitionCache.set(cacheKey, clean);
+      setRecognizedTitle(clean.title, clean.confidence < 0.55 ? "is-uncertain" : "");
+    } catch (err) {
+      console.warn(err);
+      if (serial === recognitionRequestSerial) setRecognizedTitle("Unknown title", "is-uncertain");
+    }
+  }
+
+  function setupResultsScreen() {
+    resultsImage.src = imageDataUrl;
+
+    if (currentTermIndex < 0 || !termList.length) {
+      pillMainLabel.textContent = "";
+      pillLeft.textContent = "";
+      pillRight.textContent = "";
+      pillLeft.classList.add("disabled");
+      pillRight.classList.add("disabled");
+      pillBadge.classList.add("hidden");
+      pillBadge.innerHTML = "";
+      hitPrevInline.disabled = true;
+      hitNextInline.disabled = true;
+      hitPrevInline.classList.add("hidden");
+      hitNextInline.classList.add("hidden");
+      return;
+    }
+
+    const foundTerm = termList[currentTermIndex];
+    pillMainLabel.textContent = truncateLabel(foundTerm, 10);
+
+    const prevIndex = findPrevDictIndex(currentTermIndex);
+    const nextIndex = findNextDictIndex(currentTermIndex);
+
+    if (prevIndex === -1 && nextIndex === -1) {
+      pillLeft.textContent = "";
+      pillRight.textContent = "";
+      pillLeft.classList.add("disabled");
+      pillRight.classList.add("disabled");
+    } else if (prevIndex === nextIndex || (prevIndex === -1 || nextIndex === -1)) {
+      const idx = prevIndex !== -1 ? prevIndex : nextIndex;
+      const label = truncateLabel(termList[idx], 10);
+      pillLeft.textContent = label;
+      pillRight.textContent = label;
+      pillLeft.classList.add("disabled");
+      pillRight.classList.add("disabled");
+    } else {
+      pillLeft.textContent = truncateLabel(termList[prevIndex], 10);
+      pillRight.textContent = truncateLabel(termList[nextIndex], 10);
+      pillLeft.classList.remove("disabled");
+      pillRight.classList.remove("disabled");
+    }
+    updateInstanceNav();
+  }
+
+  function clearHighlights() {
+    while (highlightsLayer.firstChild) highlightsLayer.removeChild(highlightsLayer.firstChild);
+  }
+
+  function drawHighlightsForTerm(term, matchIndex = 0) {
+    if (!term || !ocrWords.length || !resultsImage.src) return;
+
+    const matches = (currentMatches && currentMatches.length) ? currentMatches : getMatchesForTerm(term);
+    clearHighlights();
+
+    if (!matches.length) {
+      pillBadge.classList.add("hidden");
+      pillBadge.innerHTML = "";
+      hitPrevInline.disabled = true;
+      hitNextInline.disabled = true;
+      hitPrevInline.classList.add("hidden");
+      hitNextInline.classList.add("hidden");
+      return;
+    }
+
+    if (matchIndex < 0) matchIndex = 0;
+    if (matchIndex >= matches.length) matchIndex = matches.length - 1;
+
+    const img = resultsImage;
+    if (!img.naturalWidth || !img.naturalHeight) {
+      img.onload = () => drawHighlightsForTerm(term, matchIndex);
+      return;
+    }
+
+    const displayWidth = img.clientWidth;
+    const displayHeight = img.clientHeight;
+    if (!displayWidth || !displayHeight) return;
+
+    const scaleX = displayWidth / img.naturalWidth;
+    const scaleY = displayHeight / img.naturalHeight;
+
+    const imgRect = img.getBoundingClientRect();
+    const wrapRect = resultsImageInner.getBoundingClientRect();
+    const offsetLeft = imgRect.left - wrapRect.left;
+    const offsetTop = imgRect.top - wrapRect.top;
+
+    const imgLeft = offsetLeft;
+    const imgTop = offsetTop;
+    const imgRight = offsetLeft + displayWidth;
+    const imgBottom = offsetTop + displayHeight;
+
+    const target = matches[matchIndex];
+    const bbox = target.bbox;
+
+    const x = bbox.x0 * scaleX;
+    const y = bbox.y0 * scaleY;
+    const w = (bbox.x1 - bbox.x0) * scaleX;
+    const h = (bbox.y1 - bbox.y0) * scaleY;
+
+    const centerX = offsetLeft + x + w / 2;
+    const centerY = offsetTop + y + h / 2;
+
+    const gapPadding = 10;
+    const lineThickness = 4;
+    const gapX = w / 2 + gapPadding;
+    const gapY = h / 2 + gapPadding;
+
+    function addDiagonal(startX, startY, endX, endY) {
+      const line = document.createElement("div");
+      line.className = "crosshair-line";
+      const dx = endX - startX, dy = endY - startY;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+      line.style.width = length + "px";
+      line.style.height = lineThickness + "px";
+      line.style.left = startX + "px";
+      line.style.top = startY + "px";
+      line.style.transform = `rotate(${angle}deg)`;
+      line.style.transformOrigin = "0 50%";
+      highlightsLayer.appendChild(line);
+    }
+
+    addDiagonal(centerX - gapX, centerY - gapY, imgLeft, imgTop);
+    addDiagonal(centerX + gapX, centerY + gapY, imgRight, imgBottom);
+    addDiagonal(centerX + gapX, centerY - gapY, imgRight, imgTop);
+    addDiagonal(centerX - gapX, centerY + gapY, imgLeft, imgBottom);
+
+    currentMatches = matches;
+    currentMatchIndex = matchIndex;
+    updateInstanceNav();
+    identifyCurrentBook();
+  }
+
+  function goPrevTerm() {
+    if (!termList.length) return;
+    const newIndex = findPrevDictIndex(currentTermIndex);
+    if (newIndex === -1) return;
+    currentTermIndex = newIndex;
+    currentTerm = termList[currentTermIndex];
+    currentMatches = getMatchesForTerm(currentTerm);
+    currentMatchIndex = 0;
+    setupResultsScreen();
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  function goNextTerm() {
+    if (!termList.length) return;
+    const newIndex = findNextDictIndex(currentTermIndex);
+    if (newIndex === -1) return;
+    currentTermIndex = newIndex;
+    currentTerm = termList[currentTermIndex];
+    currentMatches = getMatchesForTerm(currentTerm);
+    currentMatchIndex = 0;
+    setupResultsScreen();
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  function goPrevInstance() {
+    if (!currentMatches.length) return;
+    currentMatchIndex = (currentMatchIndex - 1 + currentMatches.length) % currentMatches.length;
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  function goNextInstance() {
+    if (!currentMatches.length) return;
+    currentMatchIndex = (currentMatchIndex + 1) % currentMatches.length;
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  pillLeft.addEventListener("click", goPrevTerm);
+  pillRight.addEventListener("click", goNextTerm);
+
+  if (hitPrevBtn) hitPrevBtn.addEventListener("click", goPrevInstance);
+  if (hitNextBtn) hitNextBtn.addEventListener("click", goNextInstance);
+
+  hitPrevInline.addEventListener("click", (e) => { e.stopPropagation(); goPrevInstance(); });
+  hitNextInline.addEventListener("click", (e) => { e.stopPropagation(); goNextInstance(); });
+
+  let touchStartX = null;
+  resultsImageInner.addEventListener("touchstart", (e) => { touchStartX = e.touches[0].clientX; });
+  resultsImageInner.addEventListener("touchend", (e) => {
+    if (touchStartX == null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 40) {
+      if (dx < 0) goNextTerm();
+      else goPrevTerm();
+    }
+    touchStartX = null;
+  });
+
+  window.addEventListener("resize", () => {
+    if (screenResults.classList.contains("active") && currentTerm) {
+      drawHighlightsForTerm(currentTerm, currentMatchIndex);
+    }
+  });
+
+  btnNewImage.addEventListener("click", () => {
+    imageInput.value = "";
+    ocrWords = [];
+    termList = [];
+    currentTermIndex = -1;
+    currentTerm = "";
+    currentMatches = [];
+    currentMatchIndex = 0;
+    clearHighlights();
+    setRecognizedTitle("");
+    bookRecognitionCache.clear();
+    recognitionRequestSerial++;
+    stopScanPulses();
+    showScreen(screenAdd);
+  });
+
+  btnNewSearch.addEventListener("click", () => {
+    showScreen(screenOCR);
+    screenOCR.classList.add("mode-search");
+    stopScanPulses();
+    searchInput.value = "";
+    autosuggestEl.classList.remove("visible");
+    setTimeout(() => searchInput.focus(), 200);
+  });
+
+  function openTermModal() {
+    // Use the normalized source canvas so the crop always matches the OCR coordinate space.
+    if (!currentMatches.length || !sourceCanvas) return;
+
+    const src = sourceCanvas;
+    const match = currentMatches[currentMatchIndex] || currentMatches[0];
+    const bbox = match.bbox;
+
+    const padding = 40;
+    let x0 = Math.max(0, bbox.x0 - padding);
+    let y0 = Math.max(0, bbox.y0 - padding);
+    let x1 = Math.min(src.width,  bbox.x1 + padding);
+    let y1 = Math.min(src.height, bbox.y1 + padding);
+
+const cropW = Math.max(1, x1 - x0);
+    const cropH = Math.max(1, y1 - y0);
+
+    const maxDim = 800;
+    const scale = Math.min(maxDim / cropW, maxDim / cropH, 1);
+    const outW = cropW * scale;
+    const outH = cropH * scale;
+
+    const canvas = termModalCanvas;
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+
+    ctx.clearRect(0, 0, outW, outH);
+    ctx.drawImage(src, x0, y0, cropW, cropH, 0, 0, outW, outH);
+
+    const localX0 = (bbox.x0 - x0) * scale;
+    const localY0 = (bbox.y0 - y0) * scale;
+    const localW  = (bbox.x1 - bbox.x0) * scale;
+    const localH  = (bbox.y1 - bbox.y0) * scale;
+
+    ctx.save();
+    ctx.fillStyle = "rgba(255,122,26,0.25)";
+    ctx.strokeStyle = "#ff7a1a";
+    ctx.lineWidth = Math.max(2, outW / 200);
+    ctx.shadowColor = "rgba(0,0,0,0.8)";
+    ctx.shadowBlur = 8;
+    ctx.fillRect(localX0, localY0, localW, localH);
+    ctx.strokeRect(localX0, localY0, localW, localH);
+    ctx.restore();
+
+    const conf = match.confidence;
+    const confRounded = typeof conf === "number" ? Math.round(conf) : null;
+    termModalConfidence.textContent = confRounded != null ? confRounded + "%" : "–%";
+    termModal.classList.add("visible");
+  }
+
+  function closeTermModal() { termModal.classList.remove("visible"); }
+
+  pillMainLabel.addEventListener("click", () => {
+    if (!currentTerm || !currentMatches.length) return;
+    openTermModal();
+  });
+
+  termModalBackdrop.addEventListener("click", closeTermModal);
+  termModalClose.addEventListener("click", closeTermModal);
+  termModal.addEventListener("click", (e) => { if (e.target === termModal) closeTermModal(); });
+
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTermModal(); });
+
+  document.addEventListener("gesturestart",  (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("gestureend",    (e) => e.preventDefault(), { passive: false });
+
+  window.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+
+  loadWordLists();
+</script>
+</body>
+</html>
