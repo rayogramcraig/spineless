@@ -1053,6 +1053,86 @@
   // Example: https://YOUR_PROJECT.supabase.co/functions/v1/identify-book
   const BOOK_ID_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/identify-book";
   const BOOK_ID_ENABLED = !BOOK_ID_ENDPOINT.includes("YOUR_SUPABASE_FUNCTION_URL");
+
+  // Global per-scan AI request queue.
+  // Every Supabase/Gemini request from this page passes through here, so even
+  // callers that use Promise.all cannot create a burst of Google API requests.
+  const AI_QUEUE_MIN_GAP_MS = 2500;
+  const AI_QUEUE_MAX_RETRIES = 7;
+  let aiQueueTail = Promise.resolve();
+  let aiQueueLastStart = 0;
+
+  function aiQueueSleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function aiRetryDelay(attempt, retryAfterHeader) {
+    const retryAfter = Number(retryAfterHeader);
+    if (Number.isFinite(retryAfter) && retryAfter > 0) {
+      return Math.min(60000, retryAfter * 1000);
+    }
+    const base = Math.min(45000, 2500 * Math.pow(2, attempt));
+    return base + Math.floor(Math.random() * 1200);
+  }
+
+  function queuedBookFetch(options) {
+    const task = async () => {
+      const gap = Math.max(
+        0,
+        AI_QUEUE_MIN_GAP_MS - (Date.now() - aiQueueLastStart)
+      );
+      if (gap > 0) await aiQueueSleep(gap);
+
+      for (let attempt = 0; attempt <= AI_QUEUE_MAX_RETRIES; attempt++) {
+        aiQueueLastStart = Date.now();
+
+        let resp;
+        try {
+          resp = await fetch(BOOK_ID_ENDPOINT, options);
+        } catch (err) {
+          if (attempt >= AI_QUEUE_MAX_RETRIES) throw err;
+          const delay = aiRetryDelay(attempt, null);
+          console.warn(
+            `AI network error; retry ${attempt + 1}/${AI_QUEUE_MAX_RETRIES} in ${delay}ms`,
+            err
+          );
+          await aiQueueSleep(delay);
+          continue;
+        }
+
+        const transient =
+          resp.status === 408 ||
+          resp.status === 429 ||
+          resp.status === 500 ||
+          resp.status === 502 ||
+          resp.status === 503 ||
+          resp.status === 504;
+
+        if (resp.ok || !transient || attempt >= AI_QUEUE_MAX_RETRIES) {
+          return resp;
+        }
+
+        const delay = aiRetryDelay(attempt, resp.headers.get("retry-after"));
+        console.warn(
+          `AI request returned ${resp.status}; retry ${attempt + 1}/${AI_QUEUE_MAX_RETRIES} in ${delay}ms`
+        );
+        await aiQueueSleep(delay);
+      }
+
+      throw new Error("AI request retry loop ended unexpectedly");
+    };
+
+    const result = aiQueueTail.then(task, task);
+
+    // Keep the queue alive even when one request ultimately fails.
+    aiQueueTail = result.then(
+      () => undefined,
+      () => undefined
+    );
+
+    return result;
+  }
+
   const bookRecognitionCache = new Map();
   let recognitionRequestSerial = 0;
   let bookCatalog = [];
@@ -1907,7 +1987,7 @@
     if (serial !== null && serial !== recognitionRequestSerial) return null;
 
     try {
-      const resp = await fetch(BOOK_ID_ENDPOINT, {
+      const resp = await queuedBookFetch({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2222,7 +2302,7 @@
   }
 
   async function identifyShelfRegion(region, runSerial, scanPass = 1) {
-    const resp = await fetch(BOOK_ID_ENDPOINT, {
+    const resp = await queuedBookFetch({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -2268,7 +2348,7 @@
   }
 
   async function detectShelfRegion(region, runSerial) {
-    const resp = await fetch(BOOK_ID_ENDPOINT, {
+    const resp = await queuedBookFetch({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -2336,7 +2416,7 @@
         targetBBox: crop ? crop.targetBBox : {x0:0,y0:0,x1:1,y1:1},
         nearbyOCR: nearbyOCRForSpine(spine) };
     });
-    const resp = await fetch(BOOK_ID_ENDPOINT, {
+    const resp = await queuedBookFetch({
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: "salvage-batch", items })
     });
@@ -2355,7 +2435,7 @@
       image: renderSpineCrop(spine),
       ocrWords: ocrHintsForSpine(spine)
     }));
-    const resp = await fetch(BOOK_ID_ENDPOINT, {
+    const resp = await queuedBookFetch({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: "spine-batch", spines: payload })
@@ -2426,7 +2506,7 @@
       };
     });
 
-    const resp = await fetch(BOOK_ID_ENDPOINT, {
+    const resp = await queuedBookFetch({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
