@@ -396,6 +396,32 @@
     #recognized-title.is-uncertain { opacity: 0.78; font-weight: 600; }
 
 
+
+    #catalog-stats {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      z-index: 8;
+      display: none;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.72);
+      border: 1px solid rgba(255,122,26,0.55);
+      color: rgba(255,255,255,0.82);
+      font-size: 0.72rem;
+      line-height: 1;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    #catalog-stats.visible { display: block; }
+
+    #cataloging-eta {
+      margin-top: 8px;
+      font-size: 0.9rem;
+      opacity: 0.75;
+      min-height: 1.1em;
+    }
+
     /* BOOK DETAIL MODAL */
     #book-modal {
       position: fixed;
@@ -825,6 +851,7 @@
         <div id="cataloging-card">
           <div id="cataloging-title">cataloging shelf…</div>
           <div id="cataloging-status">preparing…</div>
+          <div id="cataloging-eta">Estimating time…</div>
           <div id="cataloging-track"><div id="cataloging-bar"></div></div>
         </div>
       </div>
@@ -915,6 +942,8 @@
   const autosuggestEl = document.getElementById("autosuggest");
   const catalogingOverlay = document.getElementById("cataloging-overlay");
   const catalogingStatus = document.getElementById("cataloging-status");
+  const catalogingEta = document.getElementById("cataloging-eta");
+  const catalogStats = document.getElementById("catalog-stats");
   const catalogingBar = document.getElementById("cataloging-bar");
 
   const resultsImage = document.getElementById("results-image");
@@ -1843,6 +1872,55 @@
     }
   }
 
+  function formatDuration(seconds) {
+    seconds = Math.max(0, Math.round(Number(seconds) || 0));
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  function updateCatalogStats(elapsedSeconds) {
+    if (!catalogStats) return;
+    catalogStats.textContent =
+      `${bookCatalog.length} books · ${catalogTerms.size} terms · ${formatDuration(elapsedSeconds)}`;
+    catalogStats.classList.add("visible");
+  }
+
+  async function enrichCatalogFromOpenLibrary(runSerial) {
+    const queue = bookCatalog.filter(e => e && e.result && e.result.title);
+    let cursor = 0;
+    const concurrency = 5;
+
+    async function worker() {
+      while (cursor < queue.length && runSerial === catalogingRunSerial) {
+        const entry = queue[cursor++];
+        try {
+          const params = new URLSearchParams({
+            title: entry.result.title,
+            author: entry.result.author || "",
+            fields: "key,title,author_name,first_publish_year,cover_i,isbn,publisher",
+            limit: "3"
+          });
+          const resp = await fetch(`https://openlibrary.org/search.json?${params.toString()}`);
+          if (!resp.ok) continue;
+          const data = await resp.json();
+          const doc = (data.docs || [])[0];
+          if (!doc) continue;
+
+          entry.result.year = doc.first_publish_year || entry.result.year || null;
+          entry.result.publisher = (doc.publisher || []).slice(0, 3);
+          entry.result.isbn = (doc.isbn || []).slice(0, 4);
+          entry.result.cover_i = doc.cover_i || null;
+          entry.result.openLibraryKey = doc.key || null;
+        } catch (err) {
+          console.warn("Open Library enrichment failed:", err);
+        }
+      }
+    }
+
+    await Promise.all(Array.from({length: Math.min(concurrency, queue.length || 1)}, () => worker()));
+  }
+
   function makeShelfRegions() {
     if (!sourceCanvas) return [];
     const W = sourceCanvas.width, H = sourceCanvas.height;
@@ -1965,24 +2043,71 @@
 
   async function catalogBooks() {
     if (!BOOK_ID_ENABLED || !sourceCanvas || !ocrWords.length) return;
+
     const runSerial = ++catalogingRunSerial;
+    const startedAt = performance.now();
     catalogingActive = true;
     bookCatalog = [];
     catalogTerms.clear();
     bookRecognitionCache.clear();
+    catalogStats.classList.remove("visible");
 
     const regions = makeShelfRegions();
     catalogingOverlay.classList.add("visible");
     catalogingBar.style.width = "0%";
     catalogingStatus.textContent = `0 of ${regions.length} regions`;
+    catalogingEta.textContent = "Estimating time…";
 
     let completed = 0;
     let cursor = 0;
     const concurrency = 3;
+    const durations = [];
+    const completionTimes = [];
+
+    function refreshProgress() {
+      const elapsed = (performance.now() - startedAt) / 1000;
+      catalogingStatus.textContent =
+        `${completed} of ${regions.length} regions · ${bookCatalog.length} books`;
+      catalogingBar.style.width = `${Math.round((completed / regions.length) * 100)}%`;
+
+      if (completed < 2) {
+        catalogingEta.textContent = "Estimating time…";
+        return;
+      }
+
+      // ETA based on observed concurrent throughput. Use the recent completion rate
+      // and blend it with mean request duration / worker count to reduce jumping.
+      completionTimes.push({ completed, elapsed });
+      if (completionTimes.length > 5) completionTimes.shift();
+
+      let throughputEta = null;
+      if (completionTimes.length >= 2) {
+        const first = completionTimes[0], last = completionTimes[completionTimes.length - 1];
+        const dt = last.elapsed - first.elapsed;
+        const dn = last.completed - first.completed;
+        if (dt > 0 && dn > 0) {
+          const regionsPerSecond = dn / dt;
+          throughputEta = (regions.length - completed) / regionsPerSecond;
+        }
+      }
+
+      const avgDuration = durations.length
+        ? durations.reduce((a,b) => a + b, 0) / durations.length
+        : 0;
+      const wavesRemaining = Math.ceil((regions.length - completed) / concurrency);
+      const durationEta = avgDuration * wavesRemaining;
+
+      let eta = throughputEta == null ? durationEta : (throughputEta * 0.65 + durationEta * 0.35);
+      if (completed >= regions.length) eta = 0;
+      catalogingEta.textContent = completed >= regions.length
+        ? "Finishing book details…"
+        : `About ${formatDuration(eta)} remaining`;
+    }
 
     async function worker() {
       while (cursor < regions.length && runSerial === catalogingRunSerial) {
         const region = regions[cursor++];
+        const requestStarted = performance.now();
         try {
           const entries = await identifyShelfRegion(region, runSerial);
           for (const entry of entries) {
@@ -1994,22 +2119,32 @@
         } catch (err) {
           console.warn(err);
         }
+
+        durations.push((performance.now() - requestStarted) / 1000);
+        if (durations.length > 8) durations.shift();
         completed++;
-        catalogingStatus.textContent =
-          `${completed} of ${regions.length} regions · ${bookCatalog.length} books`;
-        catalogingBar.style.width = `${Math.round((completed / regions.length) * 100)}%`;
+        refreshProgress();
       }
     }
 
     await Promise.all(Array.from({ length: Math.min(concurrency, regions.length) }, () => worker()));
     if (runSerial !== catalogingRunSerial) return;
 
+    // Cheap metadata pass: cover, ISBN, publisher, year. This does not call AI.
+    catalogingEta.textContent = "Adding book details…";
+    await enrichCatalogFromOpenLibrary(runSerial);
+    if (runSerial !== catalogingRunSerial) return;
+
     catalogingActive = false;
     buildTermList();
+    const elapsed = (performance.now() - startedAt) / 1000;
     catalogingStatus.textContent =
       `${bookCatalog.length} books · ${catalogTerms.size} title/author terms`;
+    catalogingEta.textContent = `Completed in ${formatDuration(elapsed)}`;
     catalogingBar.style.width = "100%";
-    await new Promise(resolve => setTimeout(resolve, 700));
+    updateCatalogStats(elapsed);
+
+    await new Promise(resolve => setTimeout(resolve, 1100));
     catalogingOverlay.classList.remove("visible");
   }
 
@@ -2341,6 +2476,7 @@ const cropW = Math.max(1, x1 - x0);
     if (r.cover_i) {
       bookModalCover.src = `https://covers.openlibrary.org/b/id/${r.cover_i}-M.jpg`;
       bookModalCover.alt = `Cover of ${r.title}`;
+      bookModalCover.onerror = () => bookModalCover.classList.add("hidden-cover");
       bookModalCover.classList.remove("hidden-cover");
     } else {
       bookModalCover.removeAttribute("src");
