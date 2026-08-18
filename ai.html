@@ -1057,7 +1057,7 @@
   // Global per-scan AI request queue.
   // Every Supabase/Gemini request from this page passes through here, so even
   // callers that use Promise.all cannot create a burst of Google API requests.
-  const AI_QUEUE_MIN_GAP_MS = 2500;
+  const AI_QUEUE_MIN_GAP_MS = 15000;
   const AI_QUEUE_MAX_RETRIES = 7;
   let aiQueueTail = Promise.resolve();
   let aiQueueLastStart = 0;
@@ -1066,13 +1066,18 @@
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  function aiRetryDelay(attempt, retryAfterHeader) {
+  function aiRetryDelay(attempt, retryAfterHeader, status) {
     const retryAfter = Number(retryAfterHeader);
     if (Number.isFinite(retryAfter) && retryAfter > 0) {
       return Math.min(60000, retryAfter * 1000);
     }
-    const base = Math.min(45000, 2500 * Math.pow(2, attempt));
-    return base + Math.floor(Math.random() * 1200);
+
+    // For Gemini rate limits, use a predictable full cooldown instead of
+    // rapid exponential retry churn.
+    if (status === 429) return 30000;
+
+    const base = Math.min(45000, 5000 * Math.pow(2, attempt));
+    return base + Math.floor(Math.random() * 1500);
   }
 
   function queuedBookFetch(options) {
@@ -1091,7 +1096,7 @@
           resp = await fetch(BOOK_ID_ENDPOINT, options);
         } catch (err) {
           if (attempt >= AI_QUEUE_MAX_RETRIES) throw err;
-          const delay = aiRetryDelay(attempt, null);
+          const delay = aiRetryDelay(attempt, null, 0);
           console.warn(
             `AI network error; retry ${attempt + 1}/${AI_QUEUE_MAX_RETRIES} in ${delay}ms`,
             err
@@ -1112,9 +1117,9 @@
           return resp;
         }
 
-        const delay = aiRetryDelay(attempt, resp.headers.get("retry-after"));
+        const delay = aiRetryDelay(attempt, resp.headers.get("retry-after"), resp.status);
         console.warn(
-          `AI request returned ${resp.status}; retry ${attempt + 1}/${AI_QUEUE_MAX_RETRIES} in ${delay}ms`
+          `AI request returned ${resp.status}; retry ${attempt + 1}/${AI_QUEUE_MAX_RETRIES} after ${Math.round(delay/1000)}s cooldown`
         );
         await aiQueueSleep(delay);
       }
