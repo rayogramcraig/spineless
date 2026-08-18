@@ -369,7 +369,7 @@
       z-index: 10;
       display: flex;
       justify-content: center;
-      pointer-events: none;
+      pointer-events: auto;
     }
 
     #recognized-title {
@@ -388,10 +388,119 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      cursor: pointer;
     }
 
+    #recognized-title.is-loading { cursor: default; }
     #recognized-title.is-loading { opacity: 0.72; }
     #recognized-title.is-uncertain { opacity: 0.78; font-weight: 600; }
+
+
+    /* BOOK DETAIL MODAL */
+    #book-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 18px;
+    }
+
+    #book-modal.visible { display: flex; }
+
+    #book-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.78);
+    }
+
+    #book-modal-card {
+      position: relative;
+      width: min(92vw, 520px);
+      max-height: 84vh;
+      overflow-y: auto;
+      border-radius: 26px;
+      background: rgba(20,20,20,0.97);
+      border: 2px solid rgba(255,122,26,0.85);
+      box-shadow: var(--shadow-soft);
+      padding: 22px;
+    }
+
+    #book-modal-close {
+      position: absolute;
+      top: 10px;
+      right: 14px;
+      border: 0;
+      background: transparent;
+      color: var(--accent);
+      font-size: 2rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    #book-modal-content {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 18px;
+      align-items: start;
+      padding-right: 14px;
+    }
+
+    #book-modal-cover {
+      width: 96px;
+      min-height: 132px;
+      object-fit: cover;
+      border-radius: 5px;
+      background: #2a2a2a;
+      box-shadow: 0 7px 18px rgba(0,0,0,0.35);
+    }
+
+    #book-modal-cover.hidden-cover { display: none; }
+
+    #book-modal-info {
+      min-width: 0;
+    }
+
+    #book-modal-title {
+      font-size: 1.5rem;
+      line-height: 1.1;
+      font-weight: 800;
+      margin: 3px 24px 6px 0;
+    }
+
+    #book-modal-author {
+      font-size: 1.05rem;
+      line-height: 1.3;
+      margin-bottom: 16px;
+      opacity: 0.9;
+    }
+
+    .book-meta-row {
+      display: flex;
+      gap: 10px;
+      padding: 7px 0;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      font-size: 0.9rem;
+      line-height: 1.3;
+    }
+
+    .book-meta-label {
+      width: 76px;
+      flex: 0 0 76px;
+      opacity: 0.55;
+    }
+
+    .book-meta-value { min-width: 0; }
+
+    @media (max-width: 420px) {
+      #book-modal-content {
+        grid-template-columns: 78px 1fr;
+        gap: 14px;
+      }
+      #book-modal-cover { width: 78px; min-height: 108px; }
+      #book-modal-title { font-size: 1.3rem; }
+    }
 
     #results-image-wrapper {
       position: absolute;
@@ -776,6 +885,23 @@
         </div>
       </div>
     </div>
+
+    <!-- BOOK DETAIL MODAL -->
+    <div id="book-modal">
+      <div id="book-modal-backdrop"></div>
+      <div id="book-modal-card">
+        <button id="book-modal-close" aria-label="Close book details">&times;</button>
+        <div id="book-modal-content">
+          <img id="book-modal-cover" class="hidden-cover" alt="" />
+          <div id="book-modal-info">
+            <div id="book-modal-title"></div>
+            <div id="book-modal-author"></div>
+            <div id="book-modal-meta"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
 <script>
@@ -820,6 +946,14 @@
   const termModalCanvas = document.getElementById("term-modal-canvas");
   const termModalConfidence = document.getElementById("term-modal-confidence");
 
+  const bookModal = document.getElementById("book-modal");
+  const bookModalBackdrop = document.getElementById("book-modal-backdrop");
+  const bookModalClose = document.getElementById("book-modal-close");
+  const bookModalCover = document.getElementById("book-modal-cover");
+  const bookModalTitle = document.getElementById("book-modal-title");
+  const bookModalAuthor = document.getElementById("book-modal-author");
+  const bookModalMeta = document.getElementById("book-modal-meta");
+
   let ocrWords = [];
   let imageDataUrl = "";
   let sourceCanvas = null; // normalized, color-correct source used for display + bbox coord space
@@ -840,6 +974,7 @@
   const bookRecognitionCache = new Map();
   let recognitionRequestSerial = 0;
   let bookCatalog = [];
+  const catalogTerms = new Set();
   let catalogingRunSerial = 0;
   let catalogingActive = false;
 
@@ -886,6 +1021,8 @@
   function isCarouselWord(word) {
     if (!word) return false;
     const w = word.toLowerCase();
+
+    if (catalogTerms.has(w)) return true;
 
     if ((dictLoaded && DICT && DICT.has(w)) ||
         (whitelistLoaded && WHITELIST && WHITELIST.has(w))) {
@@ -1080,16 +1217,36 @@
     reader.readAsDataURL(file);
   });
 
-  function buildTermList() {
-    if (!ocrWords.length) { termList = []; return; }
+  function extractCatalogTokens(textValue) {
+    return String(textValue || "")
+      .toLowerCase()
+      .replace(/['’]/g, "")
+      .split(/[^a-z0-9]+/g)
+      .map(t => t.trim())
+      .filter(t => t.length >= 3 && /[a-z]/.test(t));
+  }
 
+  function rebuildCatalogTerms() {
+    catalogTerms.clear();
+    for (const entry of bookCatalog) {
+      if (!entry || !entry.result) continue;
+      const tokens = [
+        ...extractCatalogTokens(entry.result.title),
+        ...extractCatalogTokens(entry.result.author)
+      ];
+      for (const token of tokens) catalogTerms.add(token);
+    }
+  }
+
+  function buildTermList() {
     const cleaned = ocrWords
       .map(w => (w.text || "").trim())
       .filter(Boolean)
       .map(t => t.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "").trim())
       .filter(t => t.length > 1);
 
-    termList = Array.from(new Set(cleaned)).sort((a, b) => a.localeCompare(b));
+    rebuildCatalogTerms();
+    termList = Array.from(new Set([...cleaned, ...catalogTerms])).sort((a, b) => a.localeCompare(b));
   }
 
   function setScanMode(angleLabel, modeClass) {
@@ -1378,12 +1535,47 @@
   }
 
   function getMatchesForTerm(term) {
-    if (!term || !ocrWords.length) return [];
     const q = normalizeToken(term);
     if (!q) return [];
 
-    if (q.length <= 2) return ocrWords.filter(w => normalizeToken(w.text) === q);
-    return ocrWords.filter(w => normalizeToken(w.text).includes(q));
+    const matches = [];
+    const seen = new Set();
+
+    // Original OCR-derived matches.
+    for (const w of ocrWords) {
+      const token = normalizeToken(w.text);
+      const hit = q.length <= 2 ? token === q : token.includes(q);
+      if (!hit || !w.bbox) continue;
+      const key = `${Math.round(w.bbox.x0)}|${Math.round(w.bbox.y0)}|${Math.round(w.bbox.x1)}|${Math.round(w.bbox.y1)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        matches.push(w);
+      }
+    }
+
+    // Catalog-derived title/author terms. These let Spineless find words Tesseract never read.
+    for (const entry of bookCatalog) {
+      if (!entry || !entry.match || !entry.match.bbox || !entry.result) continue;
+      const tokens = [
+        ...extractCatalogTokens(entry.result.title),
+        ...extractCatalogTokens(entry.result.author)
+      ];
+      if (!tokens.includes(q)) continue;
+
+      const b = entry.match.bbox;
+      const key = `${Math.round(b.x0)}|${Math.round(b.y0)}|${Math.round(b.x1)}|${Math.round(b.y1)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        matches.push({
+          ...entry.match,
+          text: q,
+          catalogEntry: entry,
+          confidence: Math.max(Number(entry.result.confidence || 0) * 100, Number(entry.match.confidence || 0))
+        });
+      }
+    }
+
+    return matches;
   }
 
   function runSearch(term) {
@@ -1630,11 +1822,18 @@
         throw new Error(`Book identification failed (${resp.status}) ${detail}`);
       }
       const result = await resp.json();
+      const candidateIndex = Number.isFinite(Number(result && result.candidateIndex)) ? Number(result.candidateIndex) : -1;
+      const matchedCandidate = candidateIndex >= 0 && candidateIndex < candidates.length ? candidates[candidateIndex] : null;
       const clean = {
         title: result && result.title ? String(result.title) : "Unknown title",
         author: result && result.author ? String(result.author) : "",
         confidence: Number.isFinite(Number(result && result.confidence)) ? Number(result.confidence) : 0,
-        candidateIndex: Number.isFinite(Number(result && result.candidateIndex)) ? Number(result.candidateIndex) : -1
+        candidateIndex,
+        year: matchedCandidate ? matchedCandidate.year : null,
+        publisher: matchedCandidate && matchedCandidate.publisher ? matchedCandidate.publisher : [],
+        isbn: matchedCandidate && matchedCandidate.isbn ? matchedCandidate.isbn : [],
+        cover_i: matchedCandidate ? matchedCandidate.cover_i : null,
+        openLibraryKey: matchedCandidate ? matchedCandidate.key : null
       };
       bookRecognitionCache.set(cacheKey, clean);
       return clean;
@@ -1693,7 +1892,10 @@
           const duplicate = bookCatalog.some(entry =>
             entry.result && entry.result.title === result.title && normalizedDistanceBetweenMatches(seed, entry.match) < 0.07
           );
-          if (!duplicate) bookCatalog.push({ match: seed, term: seed.token, result });
+          if (!duplicate) {
+            bookCatalog.push({ match: seed, term: seed.token, result });
+            buildTermList();
+          }
         }
         completed++;
         catalogingStatus.textContent = `${completed} of ${seeds.length} · ${bookCatalog.length} identified`;
@@ -1704,6 +1906,7 @@
     await Promise.all(Array.from({ length: Math.min(concurrency, seeds.length) }, () => worker()));
     if (runSerial !== catalogingRunSerial) return;
     catalogingActive = false;
+    buildTermList();
     catalogingStatus.textContent = `${bookCatalog.length} books identified`;
     catalogingBar.style.width = "100%";
     await new Promise(resolve => setTimeout(resolve, 550));
@@ -1734,6 +1937,7 @@
     setRecognizedTitle(result.title || "Unknown title", result.confidence < 0.55 ? "is-uncertain" : "");
     if (result.title && result.title !== "Unknown title") {
       bookCatalog.push({ match, term: currentTerm, result });
+      buildTermList();
     }
   }
 
@@ -2020,7 +2224,58 @@ const cropW = Math.max(1, x1 - x0);
   termModalClose.addEventListener("click", closeTermModal);
   termModal.addEventListener("click", (e) => { if (e.target === termModal) closeTermModal(); });
 
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTermModal(); });
+  function getCurrentCatalogEntry() {
+    if (!currentMatches.length) return null;
+    const match = currentMatches[currentMatchIndex] || currentMatches[0];
+    return match.catalogEntry || findCatalogEntryForMatch(match);
+  }
+
+  function openBookModal() {
+    const entry = getCurrentCatalogEntry();
+    if (!entry || !entry.result || !entry.result.title || entry.result.title === "Unknown title") return;
+
+    const r = entry.result;
+    bookModalTitle.textContent = r.title || "";
+    bookModalAuthor.textContent = r.author || "";
+
+    if (r.cover_i) {
+      bookModalCover.src = `https://covers.openlibrary.org/b/id/${r.cover_i}-M.jpg`;
+      bookModalCover.alt = `Cover of ${r.title}`;
+      bookModalCover.classList.remove("hidden-cover");
+    } else {
+      bookModalCover.removeAttribute("src");
+      bookModalCover.classList.add("hidden-cover");
+    }
+
+    const rows = [];
+    if (r.year) rows.push(["First published", String(r.year)]);
+    if (Array.isArray(r.publisher) && r.publisher.length) rows.push(["Publisher", r.publisher[0]]);
+    if (Array.isArray(r.isbn) && r.isbn.length) rows.push(["ISBN", r.isbn[0]]);
+    if (Number.isFinite(Number(r.confidence))) rows.push(["AI confidence", `${Math.round(Number(r.confidence) * 100)}%`]);
+
+    bookModalMeta.innerHTML = rows.map(([label, value]) =>
+      `<div class="book-meta-row"><div class="book-meta-label">${label}</div><div class="book-meta-value">${value}</div></div>`
+    ).join("");
+
+    bookModal.classList.add("visible");
+  }
+
+  function closeBookModal() { bookModal.classList.remove("visible"); }
+
+  recognizedTitle.addEventListener("click", () => {
+    if (recognizedTitle.classList.contains("is-loading")) return;
+    openBookModal();
+  });
+  bookModalBackdrop.addEventListener("click", closeBookModal);
+  bookModalClose.addEventListener("click", closeBookModal);
+  bookModal.addEventListener("click", (e) => { if (e.target === bookModal) closeBookModal(); });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeTermModal();
+      closeBookModal();
+    }
+  });
 
   document.addEventListener("gesturestart",  (e) => e.preventDefault(), { passive: false });
   document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
