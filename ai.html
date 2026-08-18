@@ -2370,6 +2370,82 @@
     return Array.isArray(data.results) ? data.results : [];
   }
 
+
+  function alternateSalvageCrop(spine) {
+    if (!sourceCanvas || !spine || !spine.bbox) return null;
+
+    const W = sourceCanvas.width;
+    const H = sourceCanvas.height;
+    const b = spine.bbox;
+    const bw = Math.max(8, b.x1 - b.x0);
+    const bh = Math.max(24, b.y1 - b.y0);
+
+    const padX = Math.max(bw * 1.7, W * 0.026);
+    const padY = Math.max(bh * 0.22, H * 0.018);
+
+    const x0 = Math.max(0, b.x0 - padX);
+    const x1 = Math.min(W, b.x1 + padX);
+    const y0 = Math.max(0, b.y0 - padY);
+    const y1 = Math.min(H, b.y1 + padY);
+
+    const cropW = x1 - x0;
+    const cropH = y1 - y0;
+
+    const canvas = document.createElement("canvas");
+    const maxW = 1100;
+    const scale = Math.min(1.8, maxW / Math.max(1, cropW));
+    canvas.width = Math.max(1, Math.round(cropW * scale));
+    canvas.height = Math.max(1, Math.round(cropH * scale));
+
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(
+      sourceCanvas,
+      x0, y0, cropW, cropH,
+      0, 0, canvas.width, canvas.height
+    );
+
+    return {
+      image: canvas.toDataURL("image/jpeg", 0.94),
+      targetBBox: {
+        x0: (b.x0 - x0) / cropW,
+        y0: (b.y0 - y0) / cropH,
+        x1: (b.x1 - x0) / cropW,
+        y1: (b.y1 - y0) / cropH
+      }
+    };
+  }
+
+  async function identifyDeepSalvageBatch(batch, runSerial) {
+    const items = batch.map(spine => {
+      const crop = alternateSalvageCrop(spine);
+      return {
+        id: spine.id,
+        image: crop ? crop.image : renderSpineImage(spine),
+        targetBBox: crop ? crop.targetBBox : {x0:0,y0:0,x1:1,y1:1},
+        nearbyOCR: nearbyOCRForSpine(spine, 28)
+      };
+    });
+
+    const resp = await fetch(BOOK_ID_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "deep-salvage-batch",
+        items
+      })
+    });
+
+    if (!resp.ok) {
+      let detail = "";
+      try { detail = JSON.stringify(await resp.json()); } catch (_) {}
+      throw new Error(`Deep salvage failed (${resp.status}) ${detail}`);
+    }
+
+    const data = await resp.json();
+    if (runSerial !== catalogingRunSerial) return [];
+    return Array.isArray(data.results) ? data.results : [];
+  }
+
   async function catalogBooks() {
     if (!BOOK_ID_ENABLED || !sourceCanvas || !ocrWords.length) return;
 
@@ -2546,6 +2622,105 @@
     }
 
     if (salvageBatches.length) await Promise.all(Array.from({length: Math.min(salvageConcurrency, salvageBatches.length)}, () => salvageWorker()));
+    if (runSerial !== catalogingRunSerial) return;
+
+
+    const deepCandidates =
+      detectedSpines.filter(spine => !spineCoveredByCatalog(spine));
+    deepCandidates.forEach((s, i) => s.id = i + 1);
+
+    const deepBatchSize = 2;
+    const deepBatches = [];
+    for (let i = 0; i < deepCandidates.length; i += deepBatchSize) {
+      deepBatches.push(deepCandidates.slice(i, i + deepBatchSize));
+    }
+
+    let deepCursor = 0;
+    let deepDone = 0;
+    const deepConcurrency = 1;
+    const beforeDeep = bookCatalog.length;
+
+    if (catalogingEta && deepCandidates.length) {
+      catalogingEta.textContent =
+        `Deep salvage · ${deepCandidates.length} difficult spines remaining`;
+    }
+
+    async function deepWorker() {
+      while (deepCursor < deepBatches.length && runSerial === catalogingRunSerial) {
+        const batch = deepBatches[deepCursor++];
+
+        try {
+          const results = await identifyDeepSalvageBatch(batch, runSerial);
+          const byId = new Map(results.map(r => [String(r.id), r]));
+
+          for (const spine of batch) {
+            const result = byId.get(String(spine.id));
+            if (!result) continue;
+
+            if (result.status === "identified" && result.title) {
+              const entry = spineResultToCatalogEntry(spine, {
+                title: result.title,
+                author: result.author || "",
+                confidence: Number(result.confidence || 0)
+              });
+
+              if (entry) {
+                const dupe = bookCatalog.find(existing => sameCatalogBook(existing, entry));
+                if (!dupe) bookCatalog.push(entry);
+                else if ((entry.result.confidence || 0) > (dupe.result.confidence || 0)) {
+                  Object.assign(dupe, entry);
+                }
+              }
+            }
+
+            if (Array.isArray(result.partialText)) {
+              for (const raw of result.partialText) {
+                const text = normalizeToken(raw);
+                if (!text || text.length < 2) continue;
+                const word = {
+                  text,
+                  rawText: String(raw),
+                  confidence: Math.max(42, Math.round(Number(result.confidence || 0) * 100)),
+                  source: "ai-deep-salvage",
+                  bbox: { ...spine.bbox }
+                };
+                const dupeWord = aiSpineWords.find(existing => sameAIWord(existing, word));
+                if (!dupeWord) aiSpineWords.push(word);
+              }
+            }
+          }
+
+          buildTermList();
+        } catch (err) {
+          console.warn(err);
+        }
+
+        deepDone++;
+        const deepRecovered = Math.max(0, bookCatalog.length - beforeDeep);
+        const remaining = Math.max(0, deepCandidates.length - deepDone * deepBatchSize);
+
+        catalogingStatus.textContent =
+          `${bookCatalog.length} identified · ${remaining} difficult spines remaining`;
+
+        catalogingBar.style.width =
+          `${93 + Math.round((deepDone / Math.max(1, deepBatches.length)) * 3)}%`;
+
+        if (catalogingEta) {
+          catalogingEta.textContent =
+            `Deep salvage added ${deepRecovered} books`;
+        }
+      }
+    }
+
+    if (deepBatches.length) {
+      await Promise.all(
+        Array.from(
+          { length: Math.min(deepConcurrency, deepBatches.length) },
+          () => deepWorker()
+        )
+      );
+    }
+
     if (runSerial !== catalogingRunSerial) return;
 
     if (catalogingEta) catalogingEta.textContent = "Adding book details…";
