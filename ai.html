@@ -2291,6 +2291,64 @@
     };
   }
 
+  function expandedSalvageCrop(spine) {
+    if (!sourceCanvas || !spine || !spine.bbox) return null;
+    const W = sourceCanvas.width, H = sourceCanvas.height;
+    const b = spine.bbox;
+    const bw = Math.max(8, b.x1 - b.x0);
+    const bh = Math.max(24, b.y1 - b.y0);
+    const padX = Math.max(bw * 1.15, W * 0.018);
+    const padY = Math.max(bh * 0.08, H * 0.008);
+    const x0 = Math.max(0, b.x0 - padX), x1 = Math.min(W, b.x1 + padX);
+    const y0 = Math.max(0, b.y0 - padY), y1 = Math.min(H, b.y1 + padY);
+    const cropW = x1 - x0, cropH = y1 - y0;
+    const canvas = document.createElement("canvas");
+    const maxW = 900;
+    const scale = Math.min(1.6, maxW / Math.max(1, cropW));
+    canvas.width = Math.max(1, Math.round(cropW * scale));
+    canvas.height = Math.max(1, Math.round(cropH * scale));
+    canvas.getContext("2d").drawImage(sourceCanvas, x0, y0, cropW, cropH, 0, 0, canvas.width, canvas.height);
+    return {
+      image: canvas.toDataURL("image/jpeg", 0.92),
+      targetBBox: {
+        x0: (b.x0 - x0) / cropW, y0: (b.y0 - y0) / cropH,
+        x1: (b.x1 - x0) / cropW, y1: (b.y1 - y0) / cropH
+      }
+    };
+  }
+
+  function nearbyOCRForSpine(spine, limit = 18) {
+    if (!spine || !spine.bbox) return [];
+    const b = spine.bbox, cx = (b.x0+b.x1)/2, cy = (b.y0+b.y1)/2;
+    const rx = Math.max(60, (b.x1-b.x0)*2.5), ry = Math.max(90, (b.y1-b.y0)*0.45);
+    return ocrWords.filter(w => w && w.bbox).map(w => {
+      const c = bboxCenter(w.bbox);
+      return { w, score: Math.abs(c.x-cx)/rx + Math.abs(c.y-cy)/ry };
+    }).filter(x => x.score <= 2.2).sort((a,b)=>a.score-b.score).slice(0,limit)
+      .map(x => ({ text: String(x.w.text||"").trim(), confidence: Number(x.w.confidence||0) }))
+      .filter(x => x.text);
+  }
+
+  async function identifySalvageBatch(batch, runSerial) {
+    const items = batch.map(spine => {
+      const crop = expandedSalvageCrop(spine);
+      return { id: spine.id, image: crop ? crop.image : renderSpineImage(spine),
+        targetBBox: crop ? crop.targetBBox : {x0:0,y0:0,x1:1,y1:1},
+        nearbyOCR: nearbyOCRForSpine(spine) };
+    });
+    const resp = await fetch(BOOK_ID_ENDPOINT, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "salvage-batch", items })
+    });
+    if (!resp.ok) {
+      let detail = ""; try { detail = JSON.stringify(await resp.json()); } catch (_) {}
+      throw new Error(`Salvage identification failed (${resp.status}) ${detail}`);
+    }
+    const data = await resp.json();
+    if (runSerial !== catalogingRunSerial) return [];
+    return Array.isArray(data.results) ? data.results : [];
+  }
+
   async function identifySpineBatch(batch, runSerial) {
     const payload = batch.map((spine, i) => ({
       id: String(spine.id),
@@ -2441,46 +2499,53 @@
     const recoverySpines = detectedSpines.filter(spine => !spineCoveredByCatalog(spine));
     recoverySpines.forEach((s,i) => s.id = i + 1);
 
-    // PASS 3: identify only missed spines.
-    const batchSize = 8;
-    const batches = [];
-    for (let i = 0; i < recoverySpines.length; i += batchSize) batches.push(recoverySpines.slice(i, i + batchSize));
+    const salvageBatchSize = 3;
+    const salvageBatches = [];
+    for (let i = 0; i < recoverySpines.length; i += salvageBatchSize) salvageBatches.push(recoverySpines.slice(i, i + salvageBatchSize));
 
-    let batchCursor = 0, batchesDone = 0;
-    // Keep recovery slightly conservative to reduce burst-rate 429s.
-    const identifyConcurrency = 2;
-    if (catalogingEta) {
-      catalogingEta.textContent = `${detectedSpines.length} spines detected · ${recoverySpines.length} possible misses to recover`;
-    }
+    let salvageCursor = 0, salvageDone = 0;
+    const salvageConcurrency = 2;
+    if (catalogingEta) catalogingEta.textContent = `${detectedSpines.length} spines detected · ${recoverySpines.length} remaining`;
 
-    async function recoverWorker() {
-      while (batchCursor < batches.length && runSerial === catalogingRunSerial) {
-        const batch = batches[batchCursor++];
+    async function salvageWorker() {
+      while (salvageCursor < salvageBatches.length && runSerial === catalogingRunSerial) {
+        const batch = salvageBatches[salvageCursor++];
         try {
-          const results = await identifySpineBatch(batch, runSerial);
+          const results = await identifySalvageBatch(batch, runSerial);
           const byId = new Map(results.map(r => [String(r.id), r]));
           for (const spine of batch) {
             const result = byId.get(String(spine.id));
-            const entry = spineResultToCatalogEntry(spine, result);
-            if (!entry) continue;
-            const dupe = bookCatalog.find(existing => sameCatalogBook(existing, entry));
-            if (!dupe) bookCatalog.push(entry);
-            else if ((entry.result.confidence || 0) > (dupe.result.confidence || 0)) Object.assign(dupe, entry);
+            if (!result) continue;
+            if (result.status === "identified" && result.title) {
+              const entry = spineResultToCatalogEntry(spine, { title: result.title, author: result.author || "", confidence: Number(result.confidence || 0) });
+              if (entry) {
+                const dupe = bookCatalog.find(existing => sameCatalogBook(existing, entry));
+                if (!dupe) bookCatalog.push(entry);
+                else if ((entry.result.confidence || 0) > (dupe.result.confidence || 0)) Object.assign(dupe, entry);
+              }
+            }
+            if (Array.isArray(result.partialText)) {
+              for (const raw of result.partialText) {
+                const text = normalizeToken(raw);
+                if (!text || text.length < 2) continue;
+                const word = { text, rawText: String(raw), confidence: Math.max(45, Math.round(Number(result.confidence || 0) * 100)), source: "ai-salvage", bbox: { ...spine.bbox } };
+                const dupeWord = aiSpineWords.find(existing => sameAIWord(existing, word));
+                if (!dupeWord) aiSpineWords.push(word);
+              }
+            }
           }
           buildTermList();
         } catch (err) { console.warn(err); }
-        batchesDone++;
+        salvageDone++;
         const recovered = Math.max(0, bookCatalog.length - initialBookCount);
-        catalogingStatus.textContent =
-          `${bookCatalog.length} books · ${recovered} recovered · ${detectedSpines.length} spines detected`;
-        catalogingBar.style.width =
-          `${73 + Math.round((batchesDone / Math.max(1, batches.length)) * 20)}%`;
+        const remaining = Math.max(0, recoverySpines.length - salvageDone * salvageBatchSize);
+        catalogingStatus.textContent = `${bookCatalog.length} identified · ${remaining} salvage candidates remaining`;
+        catalogingBar.style.width = `${73 + Math.round((salvageDone / Math.max(1, salvageBatches.length)) * 20)}%`;
+        if (catalogingEta) catalogingEta.textContent = `${recovered} recovered after broad scan · ${detectedSpines.length} spines detected`;
       }
     }
 
-    if (batches.length) {
-      await Promise.all(Array.from({length: Math.min(identifyConcurrency, batches.length)}, () => recoverWorker()));
-    }
+    if (salvageBatches.length) await Promise.all(Array.from({length: Math.min(salvageConcurrency, salvageBatches.length)}, () => salvageWorker()));
     if (runSerial !== catalogingRunSerial) return;
 
     if (catalogingEta) catalogingEta.textContent = "Adding book details…";
