@@ -2221,7 +2221,7 @@
     return Math.hypot(A.x - B.x, A.y - B.y) < Math.max(100, sourceCanvas.width * 0.12);
   }
 
-  async function identifyShelfRegion(region, runSerial) {
+  async function identifyShelfRegion(region, runSerial, scanPass = 1) {
     const resp = await fetch(BOOK_ID_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2229,6 +2229,7 @@
         mode: "region",
         image: renderRegionImage(region),
         regionIndex: region.index,
+        scanPass,
         ocrWords: region.words
       })
     });
@@ -2327,40 +2328,80 @@
     catalogingOverlay.classList.add("visible");
     catalogingBar.style.width = "0%";
 
-    // PASS 1: fast whole-region identification, using the proven baseline approach.
-    catalogingStatus.textContent = `fast scan · 0 of ${regions.length} regions`;
-    if (catalogingEta) catalogingEta.textContent = "Identifying obvious books…";
-
-    let fastCursor = 0, fastDone = 0;
+    // PASSES 1–3: three complementary whole-region reads.
+    const passAdds = [];
     const fastConcurrency = 3;
 
-    async function fastWorker() {
-      while (fastCursor < regions.length && runSerial === catalogingRunSerial) {
-        const region = regions[fastCursor++];
-        try {
-          const rr = await identifyShelfRegion(region, runSerial);
-          for (const entry of rr.books) {
-            const dupe = bookCatalog.find(existing => sameCatalogBook(existing, entry));
-            if (!dupe) bookCatalog.push(entry);
-            else if ((entry.result.confidence || 0) > (dupe.result.confidence || 0)) Object.assign(dupe, entry);
+    async function runBroadPass(passIndex) {
+      let fastCursor = 0;
+      let fastDone = 0;
+      const before = bookCatalog.length;
+
+      async function fastWorker() {
+        while (fastCursor < regions.length && runSerial === catalogingRunSerial) {
+          const region = regions[fastCursor++];
+          try {
+            const rr = await identifyShelfRegion(region, runSerial, passIndex);
+
+            for (const entry of rr.books) {
+              const dupe = bookCatalog.find(existing => sameCatalogBook(existing, entry));
+              if (!dupe) bookCatalog.push(entry);
+              else if ((entry.result.confidence || 0) > (dupe.result.confidence || 0)) {
+                Object.assign(dupe, entry);
+              }
+            }
+
+            for (const word of rr.words) {
+              const dupe = aiSpineWords.find(existing => sameAIWord(existing, word));
+              if (!dupe) aiSpineWords.push(word);
+              else if ((word.confidence || 0) > (dupe.confidence || 0)) {
+                Object.assign(dupe, word);
+              }
+            }
+
+            buildTermList();
+          } catch (err) {
+            console.warn(`AI pass ${passIndex} region failed:`, err);
           }
-          for (const word of rr.words) {
-            const dupe = aiSpineWords.find(existing => sameAIWord(existing, word));
-            if (!dupe) aiSpineWords.push(word);
-            else if ((word.confidence || 0) > (dupe.confidence || 0)) Object.assign(dupe, word);
+
+          fastDone++;
+          const completedBroad =
+            ((passIndex - 1) * regions.length) + fastDone;
+          const totalBroad = regions.length * 3;
+
+          catalogingStatus.textContent =
+            `AI pass ${passIndex} of 3 · ${fastDone} of ${regions.length} regions · ${bookCatalog.length} books`;
+          catalogingBar.style.width =
+            `${Math.round((completedBroad / totalBroad) * 58)}%`;
+
+          if (catalogingEta) {
+            catalogingEta.textContent =
+              `Pass ${passIndex} added ${Math.max(0, bookCatalog.length - before)} unique books so far`;
           }
-          buildTermList();
-        } catch (err) { console.warn(err); }
-        fastDone++;
-        catalogingStatus.textContent = `fast scan · ${fastDone} of ${regions.length} regions · ${bookCatalog.length} books`;
-        catalogingBar.style.width = `${Math.round((fastDone / regions.length) * 40)}%`;
+        }
       }
+
+      await Promise.all(
+        Array.from(
+          { length: Math.min(fastConcurrency, regions.length) },
+          () => fastWorker()
+        )
+      );
+
+      passAdds.push(Math.max(0, bookCatalog.length - before));
     }
 
-    await Promise.all(Array.from({length: Math.min(fastConcurrency, regions.length)}, () => fastWorker()));
-    if (runSerial !== catalogingRunSerial) return;
+    for (let passIndex = 1; passIndex <= 3; passIndex++) {
+      await runBroadPass(passIndex);
+      if (runSerial !== catalogingRunSerial) return;
+    }
 
     const initialBookCount = bookCatalog.length;
+
+    if (catalogingEta) {
+      catalogingEta.textContent =
+        `3-pass gains: +${passAdds[0] || 0} · +${passAdds[1] || 0} · +${passAdds[2] || 0}`;
+    }
 
     // PASS 2: detect all physical spines, then recover only those not already covered.
     catalogingStatus.textContent = `${initialBookCount} found · checking for missed books`;
@@ -2389,7 +2430,7 @@
         } catch (err) { console.warn(err); }
         detectDone++;
         catalogingStatus.textContent = `${initialBookCount} found · ${detectedSpines.length} spines detected`;
-        catalogingBar.style.width = `${40 + Math.round((detectDone / regions.length) * 22)}%`;
+        catalogingBar.style.width = `${58 + Math.round((detectDone / regions.length) * 15)}%`;
       }
     }
 
@@ -2433,7 +2474,7 @@
         catalogingStatus.textContent =
           `${bookCatalog.length} books · ${recovered} recovered · ${detectedSpines.length} spines detected`;
         catalogingBar.style.width =
-          `${62 + Math.round((batchesDone / Math.max(1, batches.length)) * 30)}%`;
+          `${73 + Math.round((batchesDone / Math.max(1, batches.length)) * 20)}%`;
       }
     }
 
@@ -2443,7 +2484,7 @@
     if (runSerial !== catalogingRunSerial) return;
 
     if (catalogingEta) catalogingEta.textContent = "Adding book details…";
-    catalogingBar.style.width = "94%";
+    catalogingBar.style.width = "95%";
     await enrichCatalogFromOpenLibrary(runSerial);
     if (runSerial !== catalogingRunSerial) return;
 
@@ -2454,7 +2495,7 @@
     catalogingStatus.textContent = `${bookCatalog.length} books · ${termList.length} searchable terms`;
     if (catalogingEta) {
       catalogingEta.textContent =
-        `${initialBookCount} fast + ${recovered} recovered · ${detectedSpines.length} spines detected · ${formatDuration(elapsed)}`;
+        `3-pass ${initialBookCount} + ${recovered} recovered · ${detectedSpines.length} spines detected · ${formatDuration(elapsed)}`;
     }
     catalogingBar.style.width = "100%";
     updateCatalogStats(elapsed);
