@@ -867,6 +867,8 @@
         <div id="recognized-title"></div>
       </div>
 
+      <div id="catalog-stats"></div>
+
       <div id="results-image-wrapper">
         <div id="results-image-inner">
           <img id="results-image" src="" alt="Bookshelf" />
@@ -2050,13 +2052,13 @@
     bookCatalog = [];
     catalogTerms.clear();
     bookRecognitionCache.clear();
-    catalogStats.classList.remove("visible");
+    if (catalogStats) catalogStats.classList.remove("visible");
 
     const regions = makeShelfRegions();
     catalogingOverlay.classList.add("visible");
     catalogingBar.style.width = "0%";
     catalogingStatus.textContent = `0 of ${regions.length} regions`;
-    catalogingEta.textContent = "Estimating time…";
+    if (catalogingEta) catalogingEta.textContent = "Estimating time…";
 
     let completed = 0;
     let cursor = 0;
@@ -2071,7 +2073,7 @@
       catalogingBar.style.width = `${Math.round((completed / regions.length) * 100)}%`;
 
       if (completed < 2) {
-        catalogingEta.textContent = "Estimating time…";
+        if (catalogingEta) catalogingEta.textContent = "Estimating time…";
         return;
       }
 
@@ -2099,7 +2101,7 @@
 
       let eta = throughputEta == null ? durationEta : (throughputEta * 0.65 + durationEta * 0.35);
       if (completed >= regions.length) eta = 0;
-      catalogingEta.textContent = completed >= regions.length
+      if (catalogingEta) catalogingEta.textContent = completed >= regions.length
         ? "Finishing book details…"
         : `About ${formatDuration(eta)} remaining`;
     }
@@ -2131,7 +2133,7 @@
     if (runSerial !== catalogingRunSerial) return;
 
     // Cheap metadata pass: cover, ISBN, publisher, year. This does not call AI.
-    catalogingEta.textContent = "Adding book details…";
+    if (catalogingEta) catalogingEta.textContent = "Adding book details…";
     await enrichCatalogFromOpenLibrary(runSerial);
     if (runSerial !== catalogingRunSerial) return;
 
@@ -2140,7 +2142,7 @@
     const elapsed = (performance.now() - startedAt) / 1000;
     catalogingStatus.textContent =
       `${bookCatalog.length} books · ${catalogTerms.size} title/author terms`;
-    catalogingEta.textContent = `Completed in ${formatDuration(elapsed)}`;
+    if (catalogingEta) catalogingEta.textContent = `Completed in ${formatDuration(elapsed)}`;
     catalogingBar.style.width = "100%";
     updateCatalogStats(elapsed);
 
