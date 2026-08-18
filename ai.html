@@ -1387,56 +1387,73 @@
     return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
   }
 
-  function buildRecognitionCrop(match) {
+  function buildRecognitionContext(match) {
     if (!sourceCanvas || !match || !match.bbox) return null;
     const b = match.bbox;
     const W = sourceCanvas.width, H = sourceCanvas.height;
-    const bw = Math.max(1, b.x1 - b.x0);
-    const bh = Math.max(1, b.y1 - b.y0);
     const c = bboxCenter(b);
 
-    // A generous spine-shaped crop. Vertical OCR gets a narrow/tall crop;
-    // horizontal OCR still gets enough surrounding book to show design cues.
-    let cropW = bh > bw * 1.35 ? Math.max(120, bw * 5.5) : Math.max(150, bw * 2.8);
-    let cropH = bh > bw * 1.35 ? Math.max(420, bh * 2.8) : Math.max(420, bh * 10);
-    cropW = Math.min(W, cropW);
-    cropH = Math.min(H, cropH);
-
-    let x0 = Math.max(0, Math.min(W - cropW, c.x - cropW / 2));
-    let y0 = Math.max(0, Math.min(H - cropH, c.y - cropH / 2));
-    let x1 = x0 + cropW, y1 = y0 + cropH;
-
+    // Send the whole shelf image so the vision model can infer the actual book boundaries.
+    // We draw a conspicuous marker around the OCR hit so the model knows exactly which
+    // word/spine the user selected without relying only on coordinate math.
+    const maxDim = 1600;
+    const scale = Math.min(1, maxDim / Math.max(W, H));
     const canvas = document.createElement("canvas");
-    const maxDim = 900;
-    const scale = Math.min(1, maxDim / Math.max(cropW, cropH));
-    canvas.width = Math.max(1, Math.round(cropW * scale));
-    canvas.height = Math.max(1, Math.round(cropH * scale));
-    canvas.getContext("2d").drawImage(sourceCanvas, x0, y0, cropW, cropH, 0, 0, canvas.width, canvas.height);
+    canvas.width = Math.max(1, Math.round(W * scale));
+    canvas.height = Math.max(1, Math.round(H * scale));
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
 
+    const sx = canvas.width / W;
+    const sy = canvas.height / H;
+    const x = b.x0 * sx;
+    const y = b.y0 * sy;
+    const bw = Math.max(2, (b.x1 - b.x0) * sx);
+    const bh = Math.max(2, (b.y1 - b.y0) * sy);
+    const pad = Math.max(8, Math.min(24, Math.max(bw, bh) * 0.35));
+
+    ctx.save();
+    ctx.strokeStyle = "#ff2d2d";
+    ctx.lineWidth = Math.max(5, Math.round(Math.min(canvas.width, canvas.height) / 180));
+    ctx.shadowColor = "rgba(0,0,0,0.8)";
+    ctx.shadowBlur = 8;
+    ctx.strokeRect(
+      Math.max(1, x - pad),
+      Math.max(1, y - pad),
+      Math.min(canvas.width - x + pad - 1, bw + pad * 2),
+      Math.min(canvas.height - y + pad - 1, bh + pad * 2)
+    );
+    ctx.restore();
+
+    // Gather OCR context primarily by physical proximity to the selected word.
+    // This is only a hint; the model gets the full image and can read the rest itself.
     const nearby = ocrWords
-      .filter(w => {
-        if (!w.bbox) return false;
-        const p = bboxCenter(w.bbox);
-        return p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1;
-      })
+      .filter(w => w && w.bbox)
       .map(w => ({
         text: normalizeToken(w.text),
         confidence: typeof w.confidence === "number" ? w.confidence : 0,
         d: Math.hypot(bboxCenter(w.bbox).x - c.x, bboxCenter(w.bbox).y - c.y)
       }))
       .filter(w => w.text && w.text.length > 1)
-      .sort((a,b) => (b.confidence - a.confidence) || (a.d - b.d));
+      .sort((a,b) => (a.d - b.d) || (b.confidence - a.confidence));
 
     const contextWords = [];
     for (const w of nearby) {
       if (!contextWords.includes(w.text)) contextWords.push(w.text);
-      if (contextWords.length >= 8) break;
+      if (contextWords.length >= 12) break;
     }
 
     return {
-      image: canvas.toDataURL("image/jpeg", 0.88),
+      image: canvas.toDataURL("image/jpeg", 0.90),
       contextWords,
-      crop: { x0, y0, x1, y1 }
+      target: {
+        x0: b.x0 / W,
+        y0: b.y0 / H,
+        x1: b.x1 / W,
+        y1: b.y1 / H,
+        centerX: c.x / W,
+        centerY: c.y / H
+      }
     };
   }
 
@@ -1504,10 +1521,10 @@
     const serial = ++recognitionRequestSerial;
     setRecognizedTitle("identifying…", "is-loading");
 
-    const crop = buildRecognitionCrop(match);
-    if (!crop) { setRecognizedTitle(""); return; }
+    const recognitionContext = buildRecognitionContext(match);
+    if (!recognitionContext) { setRecognizedTitle(""); return; }
 
-    const candidates = await searchOpenLibraryCandidates(currentTerm, crop.contextWords);
+    const candidates = await searchOpenLibraryCandidates(currentTerm, recognitionContext.contextWords);
     if (serial !== recognitionRequestSerial) return;
     if (!candidates.length) {
       setRecognizedTitle("Unknown title", "is-uncertain");
@@ -1519,13 +1536,18 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          image: crop.image,
+          image: recognitionContext.image,
           searchTerm: currentTerm,
-          ocrWords: crop.contextWords,
+          ocrWords: recognitionContext.contextWords,
+          target: recognitionContext.target,
           candidates
         })
       });
-      if (!resp.ok) throw new Error(`Book identification failed (${resp.status})`);
+      if (!resp.ok) {
+        let detail = "";
+        try { detail = JSON.stringify(await resp.json()); } catch (_) { detail = await resp.text(); }
+        throw new Error(`Book identification failed (${resp.status}) ${detail}`);
+      }
       const result = await resp.json();
       if (serial !== recognitionRequestSerial) return;
 
@@ -1539,7 +1561,7 @@
       setRecognizedTitle(clean.title, clean.confidence < 0.55 ? "is-uncertain" : "");
     } catch (err) {
       console.warn(err);
-      if (serial === recognitionRequestSerial) setRecognizedTitle("Unknown title", "is-uncertain");
+      if (serial === recognitionRequestSerial) setRecognizedTitle("AI recognition error", "is-uncertain");
     }
   }
 
