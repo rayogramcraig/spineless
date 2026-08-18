@@ -423,6 +423,51 @@
     }
 
     /* BOOK DETAIL MODAL */
+
+    #search-catalog-stats {
+      position: absolute;
+      right: 18px;
+      bottom: 18px;
+      z-index: 7;
+      display: none;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.72);
+      border: 1px solid rgba(255,122,26,0.55);
+      color: rgba(255,255,255,0.82);
+      font-size: 0.72rem;
+      line-height: 1;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    #screen-ocr.mode-search #search-catalog-stats.visible { display: block; }
+
+    #book-modal-cover-wrap {
+      width: 96px;
+      min-height: 132px;
+      position: relative;
+    }
+    #book-modal-no-cover {
+      width: 96px;
+      height: 132px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 5px;
+      background: #2a2a2a;
+      color: rgba(255,255,255,0.42);
+      font-size: 0.72rem;
+      text-transform: lowercase;
+      letter-spacing: 0.03em;
+      box-shadow: 0 7px 18px rgba(0,0,0,0.35);
+    }
+    #book-modal-no-cover.hidden { display: none; }
+
+    @media (max-width: 420px) {
+      #book-modal-cover-wrap { width: 78px; min-height: 108px; }
+      #book-modal-no-cover { width: 78px; height: 108px; }
+    }
+
     #book-modal {
       position: fixed;
       inset: 0;
@@ -845,6 +890,7 @@
           <input id="searchInput" class="search-input" type="text" placeholder="search" autocomplete="off" />
           <div id="autosuggest" class="autosuggest"></div>
         </div>
+        <div id="search-catalog-stats"></div>
       </div>
 
       <div id="cataloging-overlay">
@@ -921,7 +967,10 @@
       <div id="book-modal-card">
         <button id="book-modal-close" aria-label="Close book details">&times;</button>
         <div id="book-modal-content">
-          <img id="book-modal-cover" class="hidden-cover" alt="" />
+          <div id="book-modal-cover-wrap">
+            <img id="book-modal-cover" class="hidden-cover" alt="" />
+            <div id="book-modal-no-cover">no image</div>
+          </div>
           <div id="book-modal-info">
             <div id="book-modal-title"></div>
             <div id="book-modal-author"></div>
@@ -946,6 +995,7 @@
   const catalogingStatus = document.getElementById("cataloging-status");
   const catalogingEta = document.getElementById("cataloging-eta");
   const catalogStats = document.getElementById("catalog-stats");
+  const searchCatalogStats = document.getElementById("search-catalog-stats");
   const catalogingBar = document.getElementById("cataloging-bar");
 
   const resultsImage = document.getElementById("results-image");
@@ -981,6 +1031,7 @@
   const bookModalBackdrop = document.getElementById("book-modal-backdrop");
   const bookModalClose = document.getElementById("book-modal-close");
   const bookModalCover = document.getElementById("book-modal-cover");
+  const bookModalNoCover = document.getElementById("book-modal-no-cover");
   const bookModalTitle = document.getElementById("book-modal-title");
   const bookModalAuthor = document.getElementById("book-modal-author");
   const bookModalMeta = document.getElementById("book-modal-meta");
@@ -1005,6 +1056,7 @@
   const bookRecognitionCache = new Map();
   let recognitionRequestSerial = 0;
   let bookCatalog = [];
+  let aiSpineWords = [];
   const catalogTerms = new Set();
   let catalogingRunSerial = 0;
   let catalogingActive = false;
@@ -1276,8 +1328,12 @@
       .map(t => t.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "").trim())
       .filter(t => t.length > 1);
 
+    const aiCleaned = aiSpineWords
+      .map(w => normalizeToken(w.text))
+      .filter(t => t.length > 1);
+
     rebuildCatalogTerms();
-    termList = Array.from(new Set([...cleaned, ...catalogTerms])).sort((a, b) => a.localeCompare(b));
+    termList = Array.from(new Set([...cleaned, ...aiCleaned, ...catalogTerms])).sort((a, b) => a.localeCompare(b));
   }
 
   function setScanMode(angleLabel, modeClass) {
@@ -1367,6 +1423,9 @@
     setRecognizedTitle("");
     bookRecognitionCache.clear();
     bookCatalog = [];
+    aiSpineWords = [];
+    if (catalogStats) catalogStats.classList.remove("visible");
+    if (searchCatalogStats) searchCatalogStats.classList.remove("visible");
     recognitionRequestSerial++;
     catalogingRunSerial++;
     catalogingActive = false;
@@ -1574,6 +1633,18 @@
 
     // Original OCR-derived matches.
     for (const w of ocrWords) {
+      const token = normalizeToken(w.text);
+      const hit = q.length <= 2 ? token === q : token.includes(q);
+      if (!hit || !w.bbox) continue;
+      const key = `${Math.round(w.bbox.x0)}|${Math.round(w.bbox.y0)}|${Math.round(w.bbox.x1)}|${Math.round(w.bbox.y1)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        matches.push(w);
+      }
+    }
+
+    // AI-read literal spine text, including books the model could not identify.
+    for (const w of aiSpineWords) {
       const token = normalizeToken(w.text);
       const hit = q.length <= 2 ? token === q : token.includes(q);
       if (!hit || !w.bbox) continue;
@@ -1882,10 +1953,15 @@
   }
 
   function updateCatalogStats(elapsedSeconds) {
-    if (!catalogStats) return;
-    catalogStats.textContent =
-      `${bookCatalog.length} books · ${catalogTerms.size} terms · ${formatDuration(elapsedSeconds)}`;
-    catalogStats.classList.add("visible");
+    const label = `${bookCatalog.length} books · ${termList.length} terms · ${formatDuration(elapsedSeconds)}`;
+    if (catalogStats) {
+      catalogStats.textContent = label;
+      catalogStats.classList.add("visible");
+    }
+    if (searchCatalogStats) {
+      searchCatalogStats.textContent = label;
+      searchCatalogStats.classList.add("visible");
+    }
   }
 
   async function enrichCatalogFromOpenLibrary(runSerial) {
@@ -2012,6 +2088,36 @@
     };
   }
 
+  function regionWordToGlobal(word, region) {
+    if (!word || !word.text || !word.bbox) return null;
+    const W = sourceCanvas.width;
+    const regionH = region.y1 - region.y0;
+    const rb = word.bbox || {};
+    const clamp = n => Math.max(0, Math.min(1, Number(n) || 0));
+    const x0 = clamp(rb.x0), y0 = clamp(rb.y0), x1 = clamp(rb.x1), y1 = clamp(rb.y1);
+    const token = normalizeToken(word.text);
+    if (!token || token.length < 2) return null;
+
+    return {
+      text: token,
+      rawText: String(word.text),
+      confidence: Math.round((Number(word.confidence) || 0) * 100),
+      source: "ai-spine",
+      bbox: {
+        x0: x0 * W,
+        y0: region.y0 + y0 * regionH,
+        x1: Math.max(x0 * W + 2, x1 * W),
+        y1: Math.max(region.y0 + y0 * regionH + 2, region.y0 + y1 * regionH)
+      }
+    };
+  }
+
+  function sameAIWord(a, b) {
+    if (!a || !b || normalizeToken(a.text) !== normalizeToken(b.text)) return false;
+    const A = bboxCenter(a.bbox), B = bboxCenter(b.bbox);
+    return Math.hypot(A.x - B.x, A.y - B.y) < Math.max(35, sourceCanvas.width * 0.035);
+  }
+
   function sameCatalogBook(a, b) {
     if (!a || !b || !a.result || !b.result) return false;
     const at = normalizeToken(a.result.title), bt = normalizeToken(b.result.title);
@@ -2037,10 +2143,15 @@
       throw new Error(`Region identification failed (${resp.status}) ${detail}`);
     }
     const data = await resp.json();
-    if (runSerial !== catalogingRunSerial) return [];
-    return (Array.isArray(data.books) ? data.books : [])
-      .map(book => regionBookToCatalogEntry(book, region))
-      .filter(Boolean);
+    if (runSerial !== catalogingRunSerial) return { books: [], words: [] };
+    return {
+      books: (Array.isArray(data.books) ? data.books : [])
+        .map(book => regionBookToCatalogEntry(book, region))
+        .filter(Boolean),
+      words: (Array.isArray(data.visibleWords) ? data.visibleWords : [])
+        .map(word => regionWordToGlobal(word, region))
+        .filter(Boolean)
+    };
   }
 
   async function catalogBooks() {
@@ -2050,6 +2161,7 @@
     const startedAt = performance.now();
     catalogingActive = true;
     bookCatalog = [];
+    aiSpineWords = [];
     catalogTerms.clear();
     bookRecognitionCache.clear();
     if (catalogStats) catalogStats.classList.remove("visible");
@@ -2111,11 +2223,16 @@
         const region = regions[cursor++];
         const requestStarted = performance.now();
         try {
-          const entries = await identifyShelfRegion(region, runSerial);
-          for (const entry of entries) {
+          const regionResult = await identifyShelfRegion(region, runSerial);
+          for (const entry of regionResult.books) {
             const duplicate = bookCatalog.find(existing => sameCatalogBook(existing, entry));
             if (!duplicate) bookCatalog.push(entry);
             else if ((entry.result.confidence || 0) > (duplicate.result.confidence || 0)) Object.assign(duplicate, entry);
+          }
+          for (const word of regionResult.words) {
+            const duplicate = aiSpineWords.find(existing => sameAIWord(existing, word));
+            if (!duplicate) aiSpineWords.push(word);
+            else if ((word.confidence || 0) > (duplicate.confidence || 0)) Object.assign(duplicate, word);
           }
           buildTermList();
         } catch (err) {
@@ -2141,7 +2258,7 @@
     buildTermList();
     const elapsed = (performance.now() - startedAt) / 1000;
     catalogingStatus.textContent =
-      `${bookCatalog.length} books · ${catalogTerms.size} title/author terms`;
+      `${bookCatalog.length} books · ${termList.length} searchable terms`;
     if (catalogingEta) catalogingEta.textContent = `Completed in ${formatDuration(elapsed)}`;
     catalogingBar.style.width = "100%";
     updateCatalogStats(elapsed);
@@ -2385,6 +2502,10 @@
     clearHighlights();
     setRecognizedTitle("");
     bookRecognitionCache.clear();
+    bookCatalog = [];
+    aiSpineWords = [];
+    if (catalogStats) catalogStats.classList.remove("visible");
+    if (searchCatalogStats) searchCatalogStats.classList.remove("visible");
     recognitionRequestSerial++;
     stopScanPulses();
     showScreen(screenAdd);
@@ -2475,14 +2596,20 @@ const cropW = Math.max(1, x1 - x0);
     bookModalTitle.textContent = r.title || "";
     bookModalAuthor.textContent = r.author || "";
 
+    const showNoCover = () => {
+      bookModalCover.removeAttribute("src");
+      bookModalCover.classList.add("hidden-cover");
+      bookModalNoCover.classList.remove("hidden");
+    };
+
     if (r.cover_i) {
       bookModalCover.src = `https://covers.openlibrary.org/b/id/${r.cover_i}-M.jpg`;
       bookModalCover.alt = `Cover of ${r.title}`;
-      bookModalCover.onerror = () => bookModalCover.classList.add("hidden-cover");
+      bookModalCover.onerror = showNoCover;
       bookModalCover.classList.remove("hidden-cover");
+      bookModalNoCover.classList.add("hidden");
     } else {
-      bookModalCover.removeAttribute("src");
-      bookModalCover.classList.add("hidden-cover");
+      showNoCover();
     }
 
     const rows = [];
