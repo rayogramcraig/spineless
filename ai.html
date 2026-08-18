@@ -2121,22 +2121,35 @@
       (centerDist < Math.max(18, Math.min(aw,bw)*0.55) && Math.abs(ah-bh) < Math.max(60, Math.max(ah,bh)*0.45));
   }
 
-  function renderSpineCrop(spine) {
+  function renderSpineContext(spine) {
     const b = spine.bbox;
     const W = sourceCanvas.width, H = sourceCanvas.height;
-    const bw = b.x1-b.x0, bh = b.y1-b.y0;
-    const padX = Math.max(8, bw * 0.28);
-    const padY = Math.max(8, bh * 0.05);
+    const bw = Math.max(1, b.x1-b.x0), bh = Math.max(1, b.y1-b.y0);
+
+    // Give Gemini substantially more neighborhood context: roughly 1.5–2 nearby
+    // spine widths on each side, plus a little shelf context above/below.
+    const padX = Math.max(42, bw * 1.8);
+    const padY = Math.max(18, bh * 0.10);
     const x0 = Math.max(0, b.x0-padX), y0 = Math.max(0, b.y0-padY);
     const x1 = Math.min(W, b.x1+padX), y1 = Math.min(H, b.y1+padY);
-    const cropW = x1-x0, cropH = y1-y0;
+    const cropW = Math.max(1, x1-x0), cropH = Math.max(1, y1-y0);
+
     const canvas = document.createElement("canvas");
-    const maxDim = 900;
-    const scale = Math.min(1.5, maxDim / Math.max(cropW,cropH));
+    const maxDim = 1100;
+    const scale = Math.min(1.6, maxDim / Math.max(cropW,cropH));
     canvas.width = Math.max(1, Math.round(cropW*scale));
     canvas.height = Math.max(1, Math.round(cropH*scale));
     canvas.getContext("2d").drawImage(sourceCanvas, x0,y0,cropW,cropH, 0,0,canvas.width,canvas.height);
-    return canvas.toDataURL("image/jpeg", 0.9);
+
+    return {
+      image: canvas.toDataURL("image/jpeg", 0.92),
+      targetBBox: {
+        x0: (b.x0-x0)/cropW,
+        y0: (b.y0-y0)/cropH,
+        x1: (b.x1-x0)/cropW,
+        y1: (b.y1-y0)/cropH
+      }
+    };
   }
 
   function ocrHintsForSpine(spine) {
@@ -2210,11 +2223,15 @@
   }
 
   async function identifySpineBatch(batch, runSerial) {
-    const payload = batch.map((spine, i) => ({
-      id: String(spine.id),
-      image: renderSpineCrop(spine),
-      ocrWords: ocrHintsForSpine(spine)
-    }));
+    const payload = batch.map((spine, i) => {
+      const context = renderSpineContext(spine);
+      return {
+        id: String(spine.id),
+        image: context.image,
+        targetBBox: context.targetBBox,
+        ocrWords: ocrHintsForSpine(spine)
+      };
+    });
     const resp = await fetch(BOOK_ID_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
