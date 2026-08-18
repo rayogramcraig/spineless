@@ -823,7 +823,7 @@
 
       <div id="cataloging-overlay">
         <div id="cataloging-card">
-          <div id="cataloging-title">cataloging books…</div>
+          <div id="cataloging-title">cataloging shelf…</div>
           <div id="cataloging-status">preparing…</div>
           <div id="cataloging-track"><div id="cataloging-bar"></div></div>
         </div>
@@ -1843,73 +1843,173 @@
     }
   }
 
-  function chooseCatalogSeeds() {
+  function makeShelfRegions() {
     if (!sourceCanvas) return [];
     const W = sourceCanvas.width, H = sourceCanvas.height;
-    const candidates = ocrWords
-      .filter(w => w && w.bbox)
-      .map(w => ({ ...w, token: normalizeToken(w.text), center: bboxCenter(w.bbox) }))
-      .filter(w => w.token && w.token.length >= 4 && (typeof w.confidence !== "number" || w.confidence >= 38))
-      .sort((a,b) => ((b.confidence || 0) - (a.confidence || 0)) || (b.token.length - a.token.length));
+    const bands = 6;
+    const overlap = 0.12;
+    const regions = [];
 
-    const seeds = [];
-    for (const w of candidates) {
-      const tooClose = seeds.some(s => {
-        const dx = Math.abs(w.center.x - s.center.x) / W;
-        const dy = Math.abs(w.center.y - s.center.y) / H;
-        return dx < 0.035 && dy < 0.055;
-      });
-      if (tooClose) continue;
-      seeds.push(w);
-      if (seeds.length >= 28) break;
+    for (let i = 0; i < bands; i++) {
+      const bandH = H / bands;
+      const y0 = Math.max(0, i * bandH - bandH * overlap);
+      const y1 = Math.min(H, (i + 1) * bandH + bandH * overlap);
+
+      const words = ocrWords
+        .filter(w => w && w.bbox)
+        .filter(w => {
+          const c = bboxCenter(w.bbox);
+          return c.y >= y0 && c.y <= y1;
+        })
+        .map(w => ({
+          text: normalizeToken(w.text),
+          confidence: Number(w.confidence || 0),
+          bbox: {
+            x0: w.bbox.x0 / W,
+            y0: (w.bbox.y0 - y0) / (y1 - y0),
+            x1: w.bbox.x1 / W,
+            y1: (w.bbox.y1 - y0) / (y1 - y0)
+          }
+        }))
+        .filter(w => w.text && w.text.length > 1)
+        .sort((a,b) => b.confidence - a.confidence)
+        .slice(0, 90);
+
+      regions.push({ index: i, x0: 0, y0, x1: W, y1, words });
     }
-    return seeds;
+    return regions;
+  }
+
+  function renderRegionImage(region) {
+    const cropW = region.x1 - region.x0;
+    const cropH = region.y1 - region.y0;
+    const canvas = document.createElement("canvas");
+    const maxW = 1500;
+    const scale = Math.min(1, maxW / cropW);
+    canvas.width = Math.max(1, Math.round(cropW * scale));
+    canvas.height = Math.max(1, Math.round(cropH * scale));
+    canvas.getContext("2d").drawImage(
+      sourceCanvas,
+      region.x0, region.y0, cropW, cropH,
+      0, 0, canvas.width, canvas.height
+    );
+    return canvas.toDataURL("image/jpeg", 0.84);
+  }
+
+  function regionBookToCatalogEntry(book, region) {
+    if (!book || !book.title) return null;
+    const W = sourceCanvas.width;
+    const regionH = region.y1 - region.y0;
+    const rb = book.bbox || {};
+    const clamp = n => Math.max(0, Math.min(1, Number(n) || 0));
+    const x0 = clamp(rb.x0), y0 = clamp(rb.y0), x1 = clamp(rb.x1), y1 = clamp(rb.y1);
+
+    const bbox = {
+      x0: x0 * W,
+      y0: region.y0 + y0 * regionH,
+      x1: Math.max(x0 * W + 2, x1 * W),
+      y1: Math.max(region.y0 + y0 * regionH + 2, region.y0 + y1 * regionH)
+    };
+
+    return {
+      match: {
+        text: book.title,
+        bbox,
+        confidence: Math.round((Number(book.confidence) || 0) * 100)
+      },
+      term: extractCatalogTokens(book.title)[0] || "",
+      result: {
+        title: String(book.title),
+        author: book.author ? String(book.author) : "",
+        confidence: Number(book.confidence) || 0,
+        candidateIndex: -1,
+        year: book.year || null,
+        publisher: book.publisher ? [String(book.publisher)] : [],
+        isbn: book.isbn ? [String(book.isbn)] : [],
+        cover_i: null,
+        openLibraryKey: null
+      }
+    };
+  }
+
+  function sameCatalogBook(a, b) {
+    if (!a || !b || !a.result || !b.result) return false;
+    const at = normalizeToken(a.result.title), bt = normalizeToken(b.result.title);
+    if (!at || at !== bt) return false;
+    const A = bboxCenter(a.match.bbox), B = bboxCenter(b.match.bbox);
+    return Math.hypot(A.x - B.x, A.y - B.y) < Math.max(100, sourceCanvas.width * 0.12);
+  }
+
+  async function identifyShelfRegion(region, runSerial) {
+    const resp = await fetch(BOOK_ID_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "region",
+        image: renderRegionImage(region),
+        regionIndex: region.index,
+        ocrWords: region.words
+      })
+    });
+    if (!resp.ok) {
+      let detail = "";
+      try { detail = JSON.stringify(await resp.json()); } catch (_) {}
+      throw new Error(`Region identification failed (${resp.status}) ${detail}`);
+    }
+    const data = await resp.json();
+    if (runSerial !== catalogingRunSerial) return [];
+    return (Array.isArray(data.books) ? data.books : [])
+      .map(book => regionBookToCatalogEntry(book, region))
+      .filter(Boolean);
   }
 
   async function catalogBooks() {
     if (!BOOK_ID_ENABLED || !sourceCanvas || !ocrWords.length) return;
     const runSerial = ++catalogingRunSerial;
     catalogingActive = true;
-    const seeds = chooseCatalogSeeds();
-    if (!seeds.length) { catalogingActive = false; return; }
+    bookCatalog = [];
+    catalogTerms.clear();
+    bookRecognitionCache.clear();
 
+    const regions = makeShelfRegions();
     catalogingOverlay.classList.add("visible");
     catalogingBar.style.width = "0%";
-    catalogingStatus.textContent = `0 of ${seeds.length}`;
+    catalogingStatus.textContent = `0 of ${regions.length} regions`;
 
     let completed = 0;
     let cursor = 0;
     const concurrency = 3;
 
     async function worker() {
-      while (cursor < seeds.length && runSerial === catalogingRunSerial) {
-        const idx = cursor++;
-        const seed = seeds[idx];
-        const result = await identifyMatch(seed, seed.token, { updateUI: false });
-        if (runSerial !== catalogingRunSerial) return;
-        if (result && !result.error && result.title && result.title !== "Unknown title") {
-          // Deduplicate multiple OCR words that resolved to the same nearby book/title.
-          const duplicate = bookCatalog.some(entry =>
-            entry.result && entry.result.title === result.title && normalizedDistanceBetweenMatches(seed, entry.match) < 0.07
-          );
-          if (!duplicate) {
-            bookCatalog.push({ match: seed, term: seed.token, result });
-            buildTermList();
+      while (cursor < regions.length && runSerial === catalogingRunSerial) {
+        const region = regions[cursor++];
+        try {
+          const entries = await identifyShelfRegion(region, runSerial);
+          for (const entry of entries) {
+            const duplicate = bookCatalog.find(existing => sameCatalogBook(existing, entry));
+            if (!duplicate) bookCatalog.push(entry);
+            else if ((entry.result.confidence || 0) > (duplicate.result.confidence || 0)) Object.assign(duplicate, entry);
           }
+          buildTermList();
+        } catch (err) {
+          console.warn(err);
         }
         completed++;
-        catalogingStatus.textContent = `${completed} of ${seeds.length} · ${bookCatalog.length} identified`;
-        catalogingBar.style.width = `${Math.round((completed / seeds.length) * 100)}%`;
+        catalogingStatus.textContent =
+          `${completed} of ${regions.length} regions · ${bookCatalog.length} books`;
+        catalogingBar.style.width = `${Math.round((completed / regions.length) * 100)}%`;
       }
     }
 
-    await Promise.all(Array.from({ length: Math.min(concurrency, seeds.length) }, () => worker()));
+    await Promise.all(Array.from({ length: Math.min(concurrency, regions.length) }, () => worker()));
     if (runSerial !== catalogingRunSerial) return;
+
     catalogingActive = false;
     buildTermList();
-    catalogingStatus.textContent = `${bookCatalog.length} books identified`;
+    catalogingStatus.textContent =
+      `${bookCatalog.length} books · ${catalogTerms.size} title/author terms`;
     catalogingBar.style.width = "100%";
-    await new Promise(resolve => setTimeout(resolve, 550));
+    await new Promise(resolve => setTimeout(resolve, 700));
     catalogingOverlay.classList.remove("visible");
   }
 
