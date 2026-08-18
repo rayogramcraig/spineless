@@ -1053,91 +1053,6 @@
   // Example: https://YOUR_PROJECT.supabase.co/functions/v1/identify-book
   const BOOK_ID_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/identify-book";
   const BOOK_ID_ENABLED = !BOOK_ID_ENDPOINT.includes("YOUR_SUPABASE_FUNCTION_URL");
-
-  // Global per-scan AI request queue.
-  // Every Supabase/Gemini request from this page passes through here, so even
-  // callers that use Promise.all cannot create a burst of Google API requests.
-  const AI_QUEUE_MIN_GAP_MS = 15000;
-  const AI_QUEUE_MAX_RETRIES = 7;
-  let aiQueueTail = Promise.resolve();
-  let aiQueueLastStart = 0;
-
-  function aiQueueSleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  function aiRetryDelay(attempt, retryAfterHeader, status) {
-    const retryAfter = Number(retryAfterHeader);
-    if (Number.isFinite(retryAfter) && retryAfter > 0) {
-      return Math.min(60000, retryAfter * 1000);
-    }
-
-    // For Gemini rate limits, use a predictable full cooldown instead of
-    // rapid exponential retry churn.
-    if (status === 429) return 30000;
-
-    const base = Math.min(45000, 5000 * Math.pow(2, attempt));
-    return base + Math.floor(Math.random() * 1500);
-  }
-
-  function queuedBookFetch(options) {
-    const task = async () => {
-      const gap = Math.max(
-        0,
-        AI_QUEUE_MIN_GAP_MS - (Date.now() - aiQueueLastStart)
-      );
-      if (gap > 0) await aiQueueSleep(gap);
-
-      for (let attempt = 0; attempt <= AI_QUEUE_MAX_RETRIES; attempt++) {
-        aiQueueLastStart = Date.now();
-
-        let resp;
-        try {
-          resp = await fetch(BOOK_ID_ENDPOINT, options);
-        } catch (err) {
-          if (attempt >= AI_QUEUE_MAX_RETRIES) throw err;
-          const delay = aiRetryDelay(attempt, null, 0);
-          console.warn(
-            `AI network error; retry ${attempt + 1}/${AI_QUEUE_MAX_RETRIES} in ${delay}ms`,
-            err
-          );
-          await aiQueueSleep(delay);
-          continue;
-        }
-
-        const transient =
-          resp.status === 408 ||
-          resp.status === 429 ||
-          resp.status === 500 ||
-          resp.status === 502 ||
-          resp.status === 503 ||
-          resp.status === 504;
-
-        if (resp.ok || !transient || attempt >= AI_QUEUE_MAX_RETRIES) {
-          return resp;
-        }
-
-        const delay = aiRetryDelay(attempt, resp.headers.get("retry-after"), resp.status);
-        console.warn(
-          `AI request returned ${resp.status}; retry ${attempt + 1}/${AI_QUEUE_MAX_RETRIES} after ${Math.round(delay/1000)}s cooldown`
-        );
-        await aiQueueSleep(delay);
-      }
-
-      throw new Error("AI request retry loop ended unexpectedly");
-    };
-
-    const result = aiQueueTail.then(task, task);
-
-    // Keep the queue alive even when one request ultimately fails.
-    aiQueueTail = result.then(
-      () => undefined,
-      () => undefined
-    );
-
-    return result;
-  }
-
   const bookRecognitionCache = new Map();
   let recognitionRequestSerial = 0;
   let bookCatalog = [];
@@ -1992,7 +1907,7 @@
     if (serial !== null && serial !== recognitionRequestSerial) return null;
 
     try {
-      const resp = await queuedBookFetch({
+      const resp = await fetch(BOOK_ID_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2307,7 +2222,7 @@
   }
 
   async function identifyShelfRegion(region, runSerial, scanPass = 1) {
-    const resp = await queuedBookFetch({
+    const resp = await fetch(BOOK_ID_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -2353,7 +2268,7 @@
   }
 
   async function detectShelfRegion(region, runSerial) {
-    const resp = await queuedBookFetch({
+    const resp = await fetch(BOOK_ID_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -2421,7 +2336,7 @@
         targetBBox: crop ? crop.targetBBox : {x0:0,y0:0,x1:1,y1:1},
         nearbyOCR: nearbyOCRForSpine(spine) };
     });
-    const resp = await queuedBookFetch({
+    const resp = await fetch(BOOK_ID_ENDPOINT, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: "salvage-batch", items })
     });
@@ -2440,7 +2355,7 @@
       image: renderSpineCrop(spine),
       ocrWords: ocrHintsForSpine(spine)
     }));
-    const resp = await queuedBookFetch({
+    const resp = await fetch(BOOK_ID_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: "spine-batch", spines: payload })
@@ -2450,82 +2365,6 @@
       try { detail = JSON.stringify(await resp.json()); } catch (_) {}
       throw new Error(`Spine identification failed (${resp.status}) ${detail}`);
     }
-    const data = await resp.json();
-    if (runSerial !== catalogingRunSerial) return [];
-    return Array.isArray(data.results) ? data.results : [];
-  }
-
-
-  function alternateSalvageCrop(spine) {
-    if (!sourceCanvas || !spine || !spine.bbox) return null;
-
-    const W = sourceCanvas.width;
-    const H = sourceCanvas.height;
-    const b = spine.bbox;
-    const bw = Math.max(8, b.x1 - b.x0);
-    const bh = Math.max(24, b.y1 - b.y0);
-
-    const padX = Math.max(bw * 1.7, W * 0.026);
-    const padY = Math.max(bh * 0.22, H * 0.018);
-
-    const x0 = Math.max(0, b.x0 - padX);
-    const x1 = Math.min(W, b.x1 + padX);
-    const y0 = Math.max(0, b.y0 - padY);
-    const y1 = Math.min(H, b.y1 + padY);
-
-    const cropW = x1 - x0;
-    const cropH = y1 - y0;
-
-    const canvas = document.createElement("canvas");
-    const maxW = 1100;
-    const scale = Math.min(1.8, maxW / Math.max(1, cropW));
-    canvas.width = Math.max(1, Math.round(cropW * scale));
-    canvas.height = Math.max(1, Math.round(cropH * scale));
-
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(
-      sourceCanvas,
-      x0, y0, cropW, cropH,
-      0, 0, canvas.width, canvas.height
-    );
-
-    return {
-      image: canvas.toDataURL("image/jpeg", 0.94),
-      targetBBox: {
-        x0: (b.x0 - x0) / cropW,
-        y0: (b.y0 - y0) / cropH,
-        x1: (b.x1 - x0) / cropW,
-        y1: (b.y1 - y0) / cropH
-      }
-    };
-  }
-
-  async function identifyDeepSalvageBatch(batch, runSerial) {
-    const items = batch.map(spine => {
-      const crop = alternateSalvageCrop(spine);
-      return {
-        id: spine.id,
-        image: crop ? crop.image : renderSpineImage(spine),
-        targetBBox: crop ? crop.targetBBox : {x0:0,y0:0,x1:1,y1:1},
-        nearbyOCR: nearbyOCRForSpine(spine, 28)
-      };
-    });
-
-    const resp = await queuedBookFetch({
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mode: "deep-salvage-batch",
-        items
-      })
-    });
-
-    if (!resp.ok) {
-      let detail = "";
-      try { detail = JSON.stringify(await resp.json()); } catch (_) {}
-      throw new Error(`Deep salvage failed (${resp.status}) ${detail}`);
-    }
-
     const data = await resp.json();
     if (runSerial !== catalogingRunSerial) return [];
     return Array.isArray(data.results) ? data.results : [];
@@ -2707,105 +2546,6 @@
     }
 
     if (salvageBatches.length) await Promise.all(Array.from({length: Math.min(salvageConcurrency, salvageBatches.length)}, () => salvageWorker()));
-    if (runSerial !== catalogingRunSerial) return;
-
-
-    const deepCandidates =
-      detectedSpines.filter(spine => !spineCoveredByCatalog(spine));
-    deepCandidates.forEach((s, i) => s.id = i + 1);
-
-    const deepBatchSize = 2;
-    const deepBatches = [];
-    for (let i = 0; i < deepCandidates.length; i += deepBatchSize) {
-      deepBatches.push(deepCandidates.slice(i, i + deepBatchSize));
-    }
-
-    let deepCursor = 0;
-    let deepDone = 0;
-    const deepConcurrency = 1;
-    const beforeDeep = bookCatalog.length;
-
-    if (catalogingEta && deepCandidates.length) {
-      catalogingEta.textContent =
-        `Deep salvage · ${deepCandidates.length} difficult spines remaining`;
-    }
-
-    async function deepWorker() {
-      while (deepCursor < deepBatches.length && runSerial === catalogingRunSerial) {
-        const batch = deepBatches[deepCursor++];
-
-        try {
-          const results = await identifyDeepSalvageBatch(batch, runSerial);
-          const byId = new Map(results.map(r => [String(r.id), r]));
-
-          for (const spine of batch) {
-            const result = byId.get(String(spine.id));
-            if (!result) continue;
-
-            if (result.status === "identified" && result.title) {
-              const entry = spineResultToCatalogEntry(spine, {
-                title: result.title,
-                author: result.author || "",
-                confidence: Number(result.confidence || 0)
-              });
-
-              if (entry) {
-                const dupe = bookCatalog.find(existing => sameCatalogBook(existing, entry));
-                if (!dupe) bookCatalog.push(entry);
-                else if ((entry.result.confidence || 0) > (dupe.result.confidence || 0)) {
-                  Object.assign(dupe, entry);
-                }
-              }
-            }
-
-            if (Array.isArray(result.partialText)) {
-              for (const raw of result.partialText) {
-                const text = normalizeToken(raw);
-                if (!text || text.length < 2) continue;
-                const word = {
-                  text,
-                  rawText: String(raw),
-                  confidence: Math.max(42, Math.round(Number(result.confidence || 0) * 100)),
-                  source: "ai-deep-salvage",
-                  bbox: { ...spine.bbox }
-                };
-                const dupeWord = aiSpineWords.find(existing => sameAIWord(existing, word));
-                if (!dupeWord) aiSpineWords.push(word);
-              }
-            }
-          }
-
-          buildTermList();
-        } catch (err) {
-          console.warn(err);
-        }
-
-        deepDone++;
-        const deepRecovered = Math.max(0, bookCatalog.length - beforeDeep);
-        const remaining = Math.max(0, deepCandidates.length - deepDone * deepBatchSize);
-
-        catalogingStatus.textContent =
-          `${bookCatalog.length} identified · ${remaining} difficult spines remaining`;
-
-        catalogingBar.style.width =
-          `${93 + Math.round((deepDone / Math.max(1, deepBatches.length)) * 3)}%`;
-
-        if (catalogingEta) {
-          catalogingEta.textContent =
-            `Deep salvage added ${deepRecovered} books`;
-        }
-      }
-    }
-
-    if (deepBatches.length) {
-      await Promise.all(
-        Array.from(
-          { length: Math.min(deepConcurrency, deepBatches.length) },
-          () => deepWorker()
-        )
-      );
-    }
-
     if (runSerial !== catalogingRunSerial) return;
 
     if (catalogingEta) catalogingEta.textContent = "Adding book details…";
