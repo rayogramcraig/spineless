@@ -2002,8 +2002,8 @@
   function makeShelfRegions() {
     if (!sourceCanvas) return [];
     const W = sourceCanvas.width, H = sourceCanvas.height;
-    const bands = 6;
-    const overlap = 0.12;
+    const bands = 5;
+    const overlap = 0.09;
     const regions = [];
 
     for (let i = 0; i < bands; i++) {
@@ -2040,7 +2040,7 @@
     const cropW = region.x1 - region.x0;
     const cropH = region.y1 - region.y0;
     const canvas = document.createElement("canvas");
-    const maxW = 1500;
+    const maxW = 1280;
     const scale = Math.min(1, maxW / cropW);
     canvas.width = Math.max(1, Math.round(cropW * scale));
     canvas.height = Math.max(1, Math.round(cropH * scale));
@@ -2049,7 +2049,7 @@
       region.x0, region.y0, cropW, cropH,
       0, 0, canvas.width, canvas.height
     );
-    return canvas.toDataURL("image/jpeg", 0.84);
+    return canvas.toDataURL("image/jpeg", 0.80);
   }
 
   function regionBookToCatalogEntry(book, region) {
@@ -2174,7 +2174,7 @@
 
     let completed = 0;
     let cursor = 0;
-    const concurrency = 3;
+    const concurrency = 4;
     const durations = [];
     const completionTimes = [];
 
