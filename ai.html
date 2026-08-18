@@ -2052,6 +2052,42 @@
     return canvas.toDataURL("image/jpeg", 0.84);
   }
 
+  function regionBookToCatalogEntry(book, region) {
+    if (!book || !book.title) return null;
+    const W = sourceCanvas.width;
+    const regionH = region.y1 - region.y0;
+    const rb = book.bbox || {};
+    const clamp = n => Math.max(0, Math.min(1, Number(n) || 0));
+    const x0 = clamp(rb.x0), y0 = clamp(rb.y0), x1 = clamp(rb.x1), y1 = clamp(rb.y1);
+
+    const bbox = {
+      x0: x0 * W,
+      y0: region.y0 + y0 * regionH,
+      x1: Math.max(x0 * W + 2, x1 * W),
+      y1: Math.max(region.y0 + y0 * regionH + 2, region.y0 + y1 * regionH)
+    };
+
+    return {
+      match: {
+        text: book.title,
+        bbox,
+        confidence: Math.round((Number(book.confidence) || 0) * 100)
+      },
+      term: extractCatalogTokens(book.title)[0] || "",
+      result: {
+        title: String(book.title),
+        author: book.author ? String(book.author) : "",
+        confidence: Number(book.confidence) || 0,
+        candidateIndex: -1,
+        year: book.year || null,
+        publisher: book.publisher ? [String(book.publisher)] : [],
+        isbn: book.isbn ? [String(book.isbn)] : [],
+        cover_i: null,
+        openLibraryKey: null
+      }
+    };
+  }
+
   function regionSpineToGlobal(spine, region) {
     if (!spine || !spine.bbox) return null;
     const W = sourceCanvas.width;
@@ -2121,35 +2157,22 @@
       (centerDist < Math.max(18, Math.min(aw,bw)*0.55) && Math.abs(ah-bh) < Math.max(60, Math.max(ah,bh)*0.45));
   }
 
-  function renderSpineContext(spine) {
+  function renderSpineCrop(spine) {
     const b = spine.bbox;
     const W = sourceCanvas.width, H = sourceCanvas.height;
-    const bw = Math.max(1, b.x1-b.x0), bh = Math.max(1, b.y1-b.y0);
-
-    // Give Gemini substantially more neighborhood context: roughly 1.5–2 nearby
-    // spine widths on each side, plus a little shelf context above/below.
-    const padX = Math.max(42, bw * 1.8);
-    const padY = Math.max(18, bh * 0.10);
+    const bw = b.x1-b.x0, bh = b.y1-b.y0;
+    const padX = Math.max(8, bw * 0.28);
+    const padY = Math.max(8, bh * 0.05);
     const x0 = Math.max(0, b.x0-padX), y0 = Math.max(0, b.y0-padY);
     const x1 = Math.min(W, b.x1+padX), y1 = Math.min(H, b.y1+padY);
-    const cropW = Math.max(1, x1-x0), cropH = Math.max(1, y1-y0);
-
+    const cropW = x1-x0, cropH = y1-y0;
     const canvas = document.createElement("canvas");
-    const maxDim = 1100;
-    const scale = Math.min(1.6, maxDim / Math.max(cropW,cropH));
+    const maxDim = 900;
+    const scale = Math.min(1.5, maxDim / Math.max(cropW,cropH));
     canvas.width = Math.max(1, Math.round(cropW*scale));
     canvas.height = Math.max(1, Math.round(cropH*scale));
     canvas.getContext("2d").drawImage(sourceCanvas, x0,y0,cropW,cropH, 0,0,canvas.width,canvas.height);
-
-    return {
-      image: canvas.toDataURL("image/jpeg", 0.92),
-      targetBBox: {
-        x0: (b.x0-x0)/cropW,
-        y0: (b.y0-y0)/cropH,
-        x1: (b.x1-x0)/cropW,
-        y1: (b.y1-y0)/cropH
-      }
-    };
+    return canvas.toDataURL("image/jpeg", 0.9);
   }
 
   function ocrHintsForSpine(spine) {
@@ -2198,6 +2221,51 @@
     return Math.hypot(A.x - B.x, A.y - B.y) < Math.max(100, sourceCanvas.width * 0.12);
   }
 
+  async function identifyShelfRegion(region, runSerial) {
+    const resp = await fetch(BOOK_ID_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "region",
+        image: renderRegionImage(region),
+        regionIndex: region.index,
+        ocrWords: region.words
+      })
+    });
+    if (!resp.ok) {
+      let detail = "";
+      try { detail = JSON.stringify(await resp.json()); } catch (_) {}
+      throw new Error(`Region identification failed (${resp.status}) ${detail}`);
+    }
+    const data = await resp.json();
+    if (runSerial !== catalogingRunSerial) return { books: [], words: [] };
+    return {
+      books: (Array.isArray(data.books) ? data.books : [])
+        .map(book => regionBookToCatalogEntry(book, region))
+        .filter(Boolean),
+      words: (Array.isArray(data.visibleWords) ? data.visibleWords : [])
+        .map(word => regionWordToGlobal(word, region))
+        .filter(Boolean)
+    };
+  }
+
+
+  function spineCoveredByCatalog(spine) {
+    if (!spine || !spine.bbox) return false;
+    const sc = bboxCenter(spine.bbox);
+    for (const entry of bookCatalog) {
+      if (!entry || !entry.match || !entry.match.bbox) continue;
+      const b = entry.match.bbox;
+      const padX = Math.max(8, (b.x1 - b.x0) * 0.18);
+      const padY = Math.max(8, (b.y1 - b.y0) * 0.08);
+      const inside =
+        sc.x >= b.x0 - padX && sc.x <= b.x1 + padX &&
+        sc.y >= b.y0 - padY && sc.y <= b.y1 + padY;
+      if (inside || bboxIoU(spine.bbox, b) > 0.22) return true;
+    }
+    return false;
+  }
+
   async function detectShelfRegion(region, runSerial) {
     const resp = await fetch(BOOK_ID_ENDPOINT, {
       method: "POST",
@@ -2223,15 +2291,11 @@
   }
 
   async function identifySpineBatch(batch, runSerial) {
-    const payload = batch.map((spine, i) => {
-      const context = renderSpineContext(spine);
-      return {
-        id: String(spine.id),
-        image: context.image,
-        targetBBox: context.targetBBox,
-        ocrWords: ocrHintsForSpine(spine)
-      };
-    });
+    const payload = batch.map((spine, i) => ({
+      id: String(spine.id),
+      image: renderSpineCrop(spine),
+      ocrWords: ocrHintsForSpine(spine)
+    }));
     const resp = await fetch(BOOK_ID_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2262,10 +2326,46 @@
     const regions = makeShelfRegions();
     catalogingOverlay.classList.add("visible");
     catalogingBar.style.width = "0%";
-    catalogingStatus.textContent = `detecting books · 0 of ${regions.length} regions`;
-    if (catalogingEta) catalogingEta.textContent = "Finding individual spines…";
 
-    // PASS 1: detect physical spines, without requiring identification.
+    // PASS 1: fast whole-region identification, using the proven baseline approach.
+    catalogingStatus.textContent = `fast scan · 0 of ${regions.length} regions`;
+    if (catalogingEta) catalogingEta.textContent = "Identifying obvious books…";
+
+    let fastCursor = 0, fastDone = 0;
+    const fastConcurrency = 3;
+
+    async function fastWorker() {
+      while (fastCursor < regions.length && runSerial === catalogingRunSerial) {
+        const region = regions[fastCursor++];
+        try {
+          const rr = await identifyShelfRegion(region, runSerial);
+          for (const entry of rr.books) {
+            const dupe = bookCatalog.find(existing => sameCatalogBook(existing, entry));
+            if (!dupe) bookCatalog.push(entry);
+            else if ((entry.result.confidence || 0) > (dupe.result.confidence || 0)) Object.assign(dupe, entry);
+          }
+          for (const word of rr.words) {
+            const dupe = aiSpineWords.find(existing => sameAIWord(existing, word));
+            if (!dupe) aiSpineWords.push(word);
+            else if ((word.confidence || 0) > (dupe.confidence || 0)) Object.assign(dupe, word);
+          }
+          buildTermList();
+        } catch (err) { console.warn(err); }
+        fastDone++;
+        catalogingStatus.textContent = `fast scan · ${fastDone} of ${regions.length} regions · ${bookCatalog.length} books`;
+        catalogingBar.style.width = `${Math.round((fastDone / regions.length) * 40)}%`;
+      }
+    }
+
+    await Promise.all(Array.from({length: Math.min(fastConcurrency, regions.length)}, () => fastWorker()));
+    if (runSerial !== catalogingRunSerial) return;
+
+    const initialBookCount = bookCatalog.length;
+
+    // PASS 2: detect all physical spines, then recover only those not already covered.
+    catalogingStatus.textContent = `${initialBookCount} found · checking for missed books`;
+    if (catalogingEta) catalogingEta.textContent = "Detecting remaining spines…";
+
     const detectedSpines = [];
     let detectCursor = 0, detectDone = 0;
     const detectConcurrency = 3;
@@ -2278,76 +2378,91 @@
           for (const spine of rr.spines) {
             const dupe = detectedSpines.find(s => sameDetectedSpine(s, spine));
             if (!dupe) detectedSpines.push(spine);
-            else if ((spine.confidence||0) > (dupe.confidence||0)) Object.assign(dupe, spine);
+            else if ((spine.confidence || 0) > (dupe.confidence || 0)) Object.assign(dupe, spine);
           }
           for (const word of rr.words) {
-            const dupe = aiSpineWords.find(existing => sameAIWord(existing,word));
+            const dupe = aiSpineWords.find(existing => sameAIWord(existing, word));
             if (!dupe) aiSpineWords.push(word);
-            else if ((word.confidence||0) > (dupe.confidence||0)) Object.assign(dupe,word);
+            else if ((word.confidence || 0) > (dupe.confidence || 0)) Object.assign(dupe, word);
           }
           buildTermList();
         } catch (err) { console.warn(err); }
         detectDone++;
-        catalogingStatus.textContent = `detecting books · ${detectDone} of ${regions.length} regions · ${detectedSpines.length} spines`;
-        catalogingBar.style.width = `${Math.round((detectDone/regions.length)*35)}%`;
+        catalogingStatus.textContent = `${initialBookCount} found · ${detectedSpines.length} spines detected`;
+        catalogingBar.style.width = `${40 + Math.round((detectDone / regions.length) * 22)}%`;
       }
     }
 
-    await Promise.all(Array.from({length: Math.min(detectConcurrency,regions.length)},()=>detectWorker()));
+    await Promise.all(Array.from({length: Math.min(detectConcurrency, regions.length)}, () => detectWorker()));
     if (runSerial !== catalogingRunSerial) return;
 
     detectedSpines.sort((a,b) => (a.bbox.y0-b.bbox.y0) || (a.bbox.x0-b.bbox.x0));
-    detectedSpines.forEach((s,i) => s.id = i+1);
+    const recoverySpines = detectedSpines.filter(spine => !spineCoveredByCatalog(spine));
+    recoverySpines.forEach((s,i) => s.id = i + 1);
 
-    // PASS 2: identify tight spine crops in small batches.
+    // PASS 3: identify only missed spines.
     const batchSize = 8;
     const batches = [];
-    for (let i=0;i<detectedSpines.length;i+=batchSize) batches.push(detectedSpines.slice(i,i+batchSize));
-    let batchCursor = 0, batchesDone = 0;
-    const identifyConcurrency = 3;
-    if (catalogingEta) catalogingEta.textContent = `${detectedSpines.length} spines detected · identifying…`;
+    for (let i = 0; i < recoverySpines.length; i += batchSize) batches.push(recoverySpines.slice(i, i + batchSize));
 
-    async function identifyWorker() {
+    let batchCursor = 0, batchesDone = 0;
+    // Keep recovery slightly conservative to reduce burst-rate 429s.
+    const identifyConcurrency = 2;
+    if (catalogingEta) {
+      catalogingEta.textContent = `${detectedSpines.length} spines detected · ${recoverySpines.length} possible misses to recover`;
+    }
+
+    async function recoverWorker() {
       while (batchCursor < batches.length && runSerial === catalogingRunSerial) {
         const batch = batches[batchCursor++];
         try {
-          const results = await identifySpineBatch(batch,runSerial);
-          const byId = new Map(results.map(r => [String(r.id),r]));
+          const results = await identifySpineBatch(batch, runSerial);
+          const byId = new Map(results.map(r => [String(r.id), r]));
           for (const spine of batch) {
             const result = byId.get(String(spine.id));
-            const entry = spineResultToCatalogEntry(spine,result);
+            const entry = spineResultToCatalogEntry(spine, result);
             if (!entry) continue;
-            const dupe = bookCatalog.find(existing => sameCatalogBook(existing,entry));
+            const dupe = bookCatalog.find(existing => sameCatalogBook(existing, entry));
             if (!dupe) bookCatalog.push(entry);
-            else if ((entry.result.confidence||0) > (dupe.result.confidence||0)) Object.assign(dupe,entry);
+            else if ((entry.result.confidence || 0) > (dupe.result.confidence || 0)) Object.assign(dupe, entry);
           }
           buildTermList();
         } catch (err) { console.warn(err); }
         batchesDone++;
-        catalogingStatus.textContent = `${bookCatalog.length} identified · ${detectedSpines.length} spines detected`;
-        catalogingBar.style.width = `${35 + Math.round((batchesDone/Math.max(1,batches.length))*55)}%`;
+        const recovered = Math.max(0, bookCatalog.length - initialBookCount);
+        catalogingStatus.textContent =
+          `${bookCatalog.length} books · ${recovered} recovered · ${detectedSpines.length} spines detected`;
+        catalogingBar.style.width =
+          `${62 + Math.round((batchesDone / Math.max(1, batches.length)) * 30)}%`;
       }
     }
 
-    await Promise.all(Array.from({length: Math.min(identifyConcurrency,Math.max(1,batches.length))},()=>identifyWorker()));
+    if (batches.length) {
+      await Promise.all(Array.from({length: Math.min(identifyConcurrency, batches.length)}, () => recoverWorker()));
+    }
     if (runSerial !== catalogingRunSerial) return;
 
     if (catalogingEta) catalogingEta.textContent = "Adding book details…";
-    catalogingBar.style.width = "92%";
+    catalogingBar.style.width = "94%";
     await enrichCatalogFromOpenLibrary(runSerial);
     if (runSerial !== catalogingRunSerial) return;
 
     catalogingActive = false;
     buildTermList();
-    const elapsed = (performance.now()-startedAt)/1000;
+    const elapsed = (performance.now() - startedAt) / 1000;
+    const recovered = Math.max(0, bookCatalog.length - initialBookCount);
     catalogingStatus.textContent = `${bookCatalog.length} books · ${termList.length} searchable terms`;
-    if (catalogingEta) catalogingEta.textContent = `${detectedSpines.length} spines detected · completed in ${formatDuration(elapsed)}`;
+    if (catalogingEta) {
+      catalogingEta.textContent =
+        `${initialBookCount} fast + ${recovered} recovered · ${detectedSpines.length} spines detected · ${formatDuration(elapsed)}`;
+    }
     catalogingBar.style.width = "100%";
     updateCatalogStats(elapsed);
 
-    await new Promise(resolve => setTimeout(resolve,1100));
+    await new Promise(resolve => setTimeout(resolve, 1100));
     catalogingOverlay.classList.remove("visible");
   }
+
 
   async function identifyCurrentBook() {
     if (!BOOK_ID_ENABLED || !currentMatches.length || !sourceCanvas) {
