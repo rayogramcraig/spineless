@@ -289,6 +289,56 @@
       pointer-events: none;
     }
 
+    /* CATALOGING OVERLAY */
+    #cataloging-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 8;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.58);
+      pointer-events: none;
+    }
+
+    #cataloging-overlay.visible { display: flex; }
+
+    #cataloging-card {
+      width: min(84vw, 420px);
+      padding: 24px 26px;
+      border-radius: 28px;
+      background: rgba(17,17,17,0.94);
+      box-shadow: var(--shadow-soft);
+      text-align: center;
+    }
+
+    #cataloging-title {
+      font-size: 1.65rem;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    #cataloging-status {
+      font-size: 1rem;
+      opacity: 0.8;
+      margin-bottom: 14px;
+    }
+
+    #cataloging-track {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.16);
+    }
+
+    #cataloging-bar {
+      width: 0%;
+      height: 100%;
+      background: var(--accent);
+      transition: width 0.25s ease;
+    }
+
     /* RESULTS SCREEN */
     #screen-results { inset: 0; background: #000; color: #fff; }
 
@@ -661,6 +711,14 @@
           <div id="autosuggest" class="autosuggest"></div>
         </div>
       </div>
+
+      <div id="cataloging-overlay">
+        <div id="cataloging-card">
+          <div id="cataloging-title">cataloging books…</div>
+          <div id="cataloging-status">preparing…</div>
+          <div id="cataloging-track"><div id="cataloging-bar"></div></div>
+        </div>
+      </div>
     </div>
 
     <!-- RESULTS -->
@@ -729,6 +787,9 @@
   const ocrProgress = document.getElementById("ocr-progress");
   const searchInput = document.getElementById("searchInput");
   const autosuggestEl = document.getElementById("autosuggest");
+  const catalogingOverlay = document.getElementById("cataloging-overlay");
+  const catalogingStatus = document.getElementById("cataloging-status");
+  const catalogingBar = document.getElementById("cataloging-bar");
 
   const resultsImage = document.getElementById("results-image");
   const recognizedTitleWrap = document.getElementById("recognized-title-wrap");
@@ -778,6 +839,9 @@
   const BOOK_ID_ENABLED = !BOOK_ID_ENDPOINT.includes("YOUR_SUPABASE_FUNCTION_URL");
   const bookRecognitionCache = new Map();
   let recognitionRequestSerial = 0;
+  let bookCatalog = [];
+  let catalogingRunSerial = 0;
+  let catalogingActive = false;
 
   // Dictionary + whitelist sets
   let DICT = null;
@@ -1114,7 +1178,12 @@
     hitNextInline.classList.add("hidden");
     setRecognizedTitle("");
     bookRecognitionCache.clear();
+    bookCatalog = [];
     recognitionRequestSerial++;
+    catalogingRunSerial++;
+    catalogingActive = false;
+    if (catalogingOverlay) catalogingOverlay.classList.remove("visible");
+    if (catalogingBar) catalogingBar.style.width = "0%";
 
     stopScanPulses();
 
@@ -1249,6 +1318,7 @@
       // stop pulses once search UI appears
       stopScanPulses();
 
+      await catalogBooks();
       screenOCR.classList.add("mode-search");
       setTimeout(() => searchInput.focus(), 450);
     } catch (err) {
@@ -1498,38 +1568,49 @@
     return Array.from(merged.values()).slice(0, 12);
   }
 
-  function recognitionCacheKey(match) {
+  function recognitionCacheKey(match, term = currentTerm) {
     if (!match || !match.bbox) return "";
     const b = match.bbox;
-    return [currentTerm, Math.round(b.x0), Math.round(b.y0), Math.round(b.x1), Math.round(b.y1)].join("|");
+    return [term || "", Math.round(b.x0), Math.round(b.y0), Math.round(b.x1), Math.round(b.y1)].join("|");
   }
 
-  async function identifyCurrentBook() {
-    if (!BOOK_ID_ENABLED || !currentMatches.length || !sourceCanvas) {
-      setRecognizedTitle("");
-      return;
+  function normalizedDistanceBetweenMatches(a, b) {
+    if (!sourceCanvas || !a || !b || !a.bbox || !b.bbox) return Infinity;
+    const ca = bboxCenter(a.bbox), cb = bboxCenter(b.bbox);
+    const dx = (ca.x - cb.x) / sourceCanvas.width;
+    const dy = (ca.y - cb.y) / sourceCanvas.height;
+    return Math.hypot(dx, dy);
+  }
+
+  function findCatalogEntryForMatch(match) {
+    if (!match || !bookCatalog.length) return null;
+    let best = null, bestD = Infinity;
+    for (const entry of bookCatalog) {
+      const d = normalizedDistanceBetweenMatches(match, entry.match);
+      if (d < bestD) { bestD = d; best = entry; }
+    }
+    // Tight enough to usually mean the same physical book, but forgiving of different OCR words on it.
+    return bestD <= 0.045 ? best : null;
+  }
+
+  async function identifyMatch(match, searchTerm, options = {}) {
+    if (!BOOK_ID_ENABLED || !match || !sourceCanvas) return null;
+    const { updateUI = false, serial = null } = options;
+
+    const existingCatalog = findCatalogEntryForMatch(match);
+    if (existingCatalog && existingCatalog.result && existingCatalog.result.title !== "Unknown title") {
+      return existingCatalog.result;
     }
 
-    const match = currentMatches[currentMatchIndex] || currentMatches[0];
-    const cacheKey = recognitionCacheKey(match);
-    if (bookRecognitionCache.has(cacheKey)) {
-      const cached = bookRecognitionCache.get(cacheKey);
-      setRecognizedTitle(cached.title || "Unknown title", cached.confidence < 0.55 ? "is-uncertain" : "");
-      return;
-    }
+    const cacheKey = recognitionCacheKey(match, searchTerm);
+    if (bookRecognitionCache.has(cacheKey)) return bookRecognitionCache.get(cacheKey);
 
-    const serial = ++recognitionRequestSerial;
-    setRecognizedTitle("identifying…", "is-loading");
-
+    if (updateUI) setRecognizedTitle("identifying…", "is-loading");
     const recognitionContext = buildRecognitionContext(match);
-    if (!recognitionContext) { setRecognizedTitle(""); return; }
+    if (!recognitionContext) return null;
 
-    const candidates = await searchOpenLibraryCandidates(currentTerm, recognitionContext.contextWords);
-    if (serial !== recognitionRequestSerial) return;
-    if (!candidates.length) {
-      setRecognizedTitle("Unknown title", "is-uncertain");
-      return;
-    }
+    const candidates = await searchOpenLibraryCandidates(searchTerm, recognitionContext.contextWords);
+    if (serial !== null && serial !== recognitionRequestSerial) return null;
 
     try {
       const resp = await fetch(BOOK_ID_ENDPOINT, {
@@ -1537,7 +1618,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           image: recognitionContext.image,
-          searchTerm: currentTerm,
+          searchTerm,
           ocrWords: recognitionContext.contextWords,
           target: recognitionContext.target,
           candidates
@@ -1549,8 +1630,6 @@
         throw new Error(`Book identification failed (${resp.status}) ${detail}`);
       }
       const result = await resp.json();
-      if (serial !== recognitionRequestSerial) return;
-
       const clean = {
         title: result && result.title ? String(result.title) : "Unknown title",
         author: result && result.author ? String(result.author) : "",
@@ -1558,10 +1637,103 @@
         candidateIndex: Number.isFinite(Number(result && result.candidateIndex)) ? Number(result.candidateIndex) : -1
       };
       bookRecognitionCache.set(cacheKey, clean);
-      setRecognizedTitle(clean.title, clean.confidence < 0.55 ? "is-uncertain" : "");
+      return clean;
     } catch (err) {
       console.warn(err);
-      if (serial === recognitionRequestSerial) setRecognizedTitle("AI recognition error", "is-uncertain");
+      return { title: "AI recognition error", author: "", confidence: 0, candidateIndex: -1, error: true };
+    }
+  }
+
+  function chooseCatalogSeeds() {
+    if (!sourceCanvas) return [];
+    const W = sourceCanvas.width, H = sourceCanvas.height;
+    const candidates = ocrWords
+      .filter(w => w && w.bbox)
+      .map(w => ({ ...w, token: normalizeToken(w.text), center: bboxCenter(w.bbox) }))
+      .filter(w => w.token && w.token.length >= 4 && (typeof w.confidence !== "number" || w.confidence >= 38))
+      .sort((a,b) => ((b.confidence || 0) - (a.confidence || 0)) || (b.token.length - a.token.length));
+
+    const seeds = [];
+    for (const w of candidates) {
+      const tooClose = seeds.some(s => {
+        const dx = Math.abs(w.center.x - s.center.x) / W;
+        const dy = Math.abs(w.center.y - s.center.y) / H;
+        return dx < 0.035 && dy < 0.055;
+      });
+      if (tooClose) continue;
+      seeds.push(w);
+      if (seeds.length >= 28) break;
+    }
+    return seeds;
+  }
+
+  async function catalogBooks() {
+    if (!BOOK_ID_ENABLED || !sourceCanvas || !ocrWords.length) return;
+    const runSerial = ++catalogingRunSerial;
+    catalogingActive = true;
+    const seeds = chooseCatalogSeeds();
+    if (!seeds.length) { catalogingActive = false; return; }
+
+    catalogingOverlay.classList.add("visible");
+    catalogingBar.style.width = "0%";
+    catalogingStatus.textContent = `0 of ${seeds.length}`;
+
+    let completed = 0;
+    let cursor = 0;
+    const concurrency = 3;
+
+    async function worker() {
+      while (cursor < seeds.length && runSerial === catalogingRunSerial) {
+        const idx = cursor++;
+        const seed = seeds[idx];
+        const result = await identifyMatch(seed, seed.token, { updateUI: false });
+        if (runSerial !== catalogingRunSerial) return;
+        if (result && !result.error && result.title && result.title !== "Unknown title") {
+          // Deduplicate multiple OCR words that resolved to the same nearby book/title.
+          const duplicate = bookCatalog.some(entry =>
+            entry.result && entry.result.title === result.title && normalizedDistanceBetweenMatches(seed, entry.match) < 0.07
+          );
+          if (!duplicate) bookCatalog.push({ match: seed, term: seed.token, result });
+        }
+        completed++;
+        catalogingStatus.textContent = `${completed} of ${seeds.length} · ${bookCatalog.length} identified`;
+        catalogingBar.style.width = `${Math.round((completed / seeds.length) * 100)}%`;
+      }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(concurrency, seeds.length) }, () => worker()));
+    if (runSerial !== catalogingRunSerial) return;
+    catalogingActive = false;
+    catalogingStatus.textContent = `${bookCatalog.length} books identified`;
+    catalogingBar.style.width = "100%";
+    await new Promise(resolve => setTimeout(resolve, 550));
+    catalogingOverlay.classList.remove("visible");
+  }
+
+  async function identifyCurrentBook() {
+    if (!BOOK_ID_ENABLED || !currentMatches.length || !sourceCanvas) {
+      setRecognizedTitle("");
+      return;
+    }
+
+    const match = currentMatches[currentMatchIndex] || currentMatches[0];
+    const catalogEntry = findCatalogEntryForMatch(match);
+    if (catalogEntry && catalogEntry.result) {
+      const r = catalogEntry.result;
+      setRecognizedTitle(r.title || "Unknown title", r.confidence < 0.55 ? "is-uncertain" : "");
+      return;
+    }
+
+    const serial = ++recognitionRequestSerial;
+    const result = await identifyMatch(match, currentTerm, { updateUI: true, serial });
+    if (serial !== recognitionRequestSerial || !result) return;
+    if (result.error) {
+      setRecognizedTitle("AI recognition error", "is-uncertain");
+      return;
+    }
+    setRecognizedTitle(result.title || "Unknown title", result.confidence < 0.55 ? "is-uncertain" : "");
+    if (result.title && result.title !== "Unknown title") {
+      bookCatalog.push({ match, term: currentTerm, result });
     }
   }
 
