@@ -1125,6 +1125,9 @@
   let sourceDataUrl = "";
 
   let termList = [];
+  let baseOCRTerms = [];
+  let openLibraryRescuedTerms = [];
+  let openLibraryRescueRecords = [];
   let currentTermIndex = -1;
   let currentTerm = "";
 
@@ -1416,12 +1419,113 @@
       .map(t => t.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "").trim())
       .filter(t => t.length > 1);
 
+    baseOCRTerms = Array.from(new Set(cleaned)).sort((a, b) => a.localeCompare(b));
+
     const aiCleaned = aiSpineWords
       .map(w => normalizeToken(w.text))
       .filter(t => t.length > 1);
 
     rebuildCatalogTerms();
-    termList = Array.from(new Set([...cleaned, ...aiCleaned, ...catalogTerms])).sort((a, b) => a.localeCompare(b));
+    termList = Array.from(new Set([...baseOCRTerms, ...openLibraryRescuedTerms, ...aiCleaned, ...catalogTerms]))
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  function editDistance(a, b) {
+    a = String(a || ""); b = String(b || "");
+    const prev = Array.from({length: b.length + 1}, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(
+          cur[j - 1] + 1,
+          prev[j] + 1,
+          prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+        );
+      }
+      for (let j = 0; j <= b.length; j++) prev[j] = cur[j];
+    }
+    return prev[b.length];
+  }
+
+  function similarity(a, b) {
+    a = String(a || "").toLowerCase();
+    b = String(b || "").toLowerCase();
+    const n = Math.max(a.length, b.length);
+    return n ? 1 - editDistance(a, b) / n : 1;
+  }
+
+  function metadataTokens(doc) {
+    const values = [doc?.title || "", ...(doc?.author_name || []), ...(doc?.publisher || []).slice(0, 4)];
+    return Array.from(new Set(values.flatMap(v => String(v).toLowerCase().split(/[^a-z0-9]+/g))
+      .filter(t => t.length >= 4 && /^[a-z][a-z0-9]*$/.test(t))));
+  }
+
+  async function rescueTermsWithOpenLibrary() {
+    openLibraryRescuedTerms = [];
+    openLibraryRescueRecords = [];
+
+    // Focus the single lookup on distinctive, imperfect OCR tokens. This is intentionally
+    // a high-recall experiment, but we only accept close spelling corrections back.
+    const best = new Map();
+    for (const w of (ocrWords || [])) {
+      const raw = String(w?.text || "").toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, "");
+      const conf = Number(w?.confidence || 0);
+      if (raw.length < 4 || raw.length > 18) continue;
+      if (!/^[a-z][a-z0-9]*$/.test(raw)) continue;
+      if (conf < 20) continue;
+      const prev = best.get(raw);
+      if (!prev || conf > prev.confidence) best.set(raw, { term: raw, confidence: conf });
+    }
+
+    const candidates = Array.from(best.values())
+      .filter(x => !isCarouselWord(x.term))
+      .sort((a, b) => (b.confidence - a.confidence) || (b.term.length - a.term.length))
+      .slice(0, 28);
+
+    if (!candidates.length) { buildTermList(); return; }
+
+    try {
+      const q = candidates.map(x => `"${x.term}"`).join(" OR ");
+      const params = new URLSearchParams({
+        q,
+        fields: "key,title,author_name,publisher",
+        limit: "60"
+      });
+      const resp = await fetch(`https://openlibrary.org/search.json?${params.toString()}`);
+      if (!resp.ok) throw new Error(`Open Library returned ${resp.status}`);
+      const data = await resp.json();
+      const docs = Array.isArray(data?.docs) ? data.docs : [];
+
+      const allMeta = [];
+      for (const doc of docs) {
+        for (const token of metadataTokens(doc)) allMeta.push({ token, doc });
+      }
+
+      const rescued = new Set();
+      for (const source of candidates) {
+        let bestMatch = null;
+        for (const item of allMeta) {
+          const score = similarity(source.term, item.token);
+          if (!bestMatch || score > bestMatch.score) bestMatch = { ...item, score };
+        }
+        const threshold = source.term.length <= 4 ? 0.67 : 0.60;
+        if (bestMatch && bestMatch.score >= threshold && bestMatch.token !== source.term) {
+          rescued.add(bestMatch.token);
+          openLibraryRescueRecords.push({
+            from: source.term,
+            to: bestMatch.token,
+            score: bestMatch.score,
+            confidence: source.confidence,
+            title: bestMatch.doc?.title || "",
+            author: (bestMatch.doc?.author_name || []).slice(0, 2).join(", ")
+          });
+        }
+      }
+      openLibraryRescuedTerms = Array.from(rescued).sort((a, b) => a.localeCompare(b));
+    } catch (err) {
+      console.warn("Open Library OCR-term rescue failed:", err);
+    }
+    buildTermList();
   }
 
   function setScanMode(angleLabel, modeClass) {
@@ -1492,6 +1596,9 @@
 
     ocrWords = [];
     termList = [];
+    baseOCRTerms = [];
+    openLibraryRescuedTerms = [];
+    openLibraryRescueRecords = [];
     currentTermIndex = -1;
     currentTerm = "";
     currentMatches = [];
@@ -1653,6 +1760,8 @@
 
       ocrWords = allWords;
       buildTermList();
+      ocrProgress.textContent = "checking Open Library…";
+      await rescueTermsWithOpenLibrary();
       ocrProgress.classList.add("hidden");
 
       // stop pulses once search UI appears
@@ -2530,13 +2639,18 @@
     });
 
     return [
-      "Spineless OCR-only diagnostic",
-      `${words.length} OCR words · ${uniqueTerms} unique search terms · average confidence ${Math.round(avgConfidence)}%`,
+      "Spineless OCR v3 diagnostic",
+      `${words.length} OCR words · ${baseOCRTerms.length} OCR search terms + ${openLibraryRescuedTerms.length} Open Library rescued = ${uniqueTerms} total · average confidence ${Math.round(avgConfidence)}%`,
       `passes: 0° ${byPass["0°"]} · 90° ${byPass["90°"]} · -90° ${byPass["-90°"]}`,
       sourceCanvas ? `image: ${sourceCanvas.width} × ${sourceCanvas.height}px` : "",
       "",
       "OCR WORDS",
       ...lines,
+      "",
+      "OPEN LIBRARY RESCUES",
+      ...(openLibraryRescueRecords.length
+        ? openLibraryRescueRecords.map(r => `${r.from} → ${r.to} · similarity ${Math.round(r.score * 100)}% · OCR ${Math.round(r.confidence)}%${r.title ? ` · ${r.title}${r.author ? " — " + r.author : ""}` : ""}`)
+        : ["(none)"]),
       "",
       "SEARCH TERMS",
       ...(Array.isArray(termList) ? termList : [])
