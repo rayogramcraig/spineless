@@ -342,12 +342,7 @@
     /* RESULTS SCREEN */
     #screen-results { inset: 0; background: #000; color: #fff; }
 
-    #results-top-row {
-      position: absolute;
-      top: 32px;
-      left: 20px;
-      z-index: 10;
-    }
+    #results-top-row { display: none; }
 
     #btn-new-image {
       padding: 8px 18px;
@@ -363,7 +358,7 @@
 
     #recognized-title-wrap {
       position: absolute;
-      top: 78px;
+      top: 18px;
       left: 10px;
       right: 10px;
       z-index: 10;
@@ -400,7 +395,7 @@
     #catalog-stats {
       position: absolute;
       right: 14px;
-      bottom: 14px;
+      bottom: 72px;
       z-index: 8;
       display: none;
       padding: 7px 11px;
@@ -426,6 +421,66 @@
       font-size: 0.9rem;
       opacity: 0.75;
       min-height: 1.1em;
+    }
+
+
+    /* v27 bottom utility controls: picture / search / info */
+    #results-utility-bar {
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 16px;
+      z-index: 16;
+      display: grid;
+      grid-template-columns: 52px minmax(150px, 1fr) 52px;
+      align-items: center;
+      gap: 14px;
+      max-width: 560px;
+      margin: 0 auto;
+      pointer-events: auto;
+    }
+
+    .results-utility-icon,
+    #utility-new-search {
+      height: 46px;
+      border: none;
+      cursor: pointer;
+      box-shadow: var(--shadow-soft);
+      color: #fff;
+    }
+
+    .results-utility-icon {
+      width: 52px;
+      padding: 0;
+      border-radius: 999px;
+      background: rgba(143, 67, 21, 0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .results-utility-icon svg {
+      width: 24px;
+      height: 24px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    #utility-new-search {
+      min-width: 0;
+      padding: 0 22px;
+      border-radius: 999px;
+      background: #7b431f;
+      font-size: 1.05rem;
+      font-weight: 500;
+      text-align: center;
+    }
+
+    #utility-data.is-copied {
+      background: var(--accent);
     }
 
     /* BOOK DETAIL MODAL */
@@ -582,7 +637,7 @@
     #results-image-wrapper {
       position: absolute;
       inset: 0;
-      padding: 126px 0 140px;
+      padding: 82px 0 190px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -619,7 +674,7 @@
 
     #results-bottom {
       position: absolute;
-      left: 0; right: 0; bottom: 32px;
+      left: 0; right: 0; bottom: 86px;
       display: flex;
       flex-direction: column;
       align-items:center;
@@ -738,7 +793,7 @@
 
     #results-bottom-row {
       width: 100%;
-      display: flex;
+      display: none;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
@@ -951,6 +1006,23 @@
           </div>
         </div>
       </div>
+
+      <div id="results-utility-bar" aria-label="Results controls">
+        <button id="utility-new-image" class="results-utility-icon" aria-label="New picture" title="New picture">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h3l1.4-2h7.2L17 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+        </button>
+        <button id="utility-new-search">new search</button>
+        <button id="utility-data" class="results-utility-icon" aria-label="Copy catalog data" title="Copy catalog data">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 11v6"/>
+            <path d="M12 7.5h.01"/>
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- TERM DETAIL MODAL -->
@@ -1009,6 +1081,9 @@
   const recognizedTitle = document.getElementById("recognized-title");
   const btnNewImage = document.getElementById("btn-new-image");
   const btnNewSearch = document.getElementById("new-search-btn");
+  const utilityNewImage = document.getElementById("utility-new-image");
+  const utilityNewSearch = document.getElementById("utility-new-search");
+  const utilityData = document.getElementById("utility-data");
   const pillLeft = document.getElementById("pill-left");
   const pillRight = document.getElementById("pill-right");
   const pillMainLabel = document.getElementById("pill-main-label");
@@ -2104,6 +2179,79 @@
     return pa.x - pb.x;
   }
 
+
+  function sameCanonicalDetectedSpine(a, b) {
+    if (!a || !b || !a.bbox || !b.bbox) return false;
+    const A = a.bbox, B = b.bbox;
+    const iou = bboxIoU(A, B);
+    if (iou >= 0.55) return true;
+
+    const ac = bboxCenter(A), bc = bboxCenter(B);
+    const aw = Math.max(1, A.x1-A.x0), bw = Math.max(1, B.x1-B.x0);
+    const ah = Math.max(1, A.y1-A.y0), bh = Math.max(1, B.y1-B.y0);
+    const xClose = Math.abs(ac.x-bc.x) <= Math.max(4, Math.min(aw,bw)*0.32);
+    const yClose = Math.abs(ac.y-bc.y) <= Math.max(7, Math.min(ah,bh)*0.09);
+    return xClose && yClose && bboxVerticalOverlap(A,B) >= 0.86;
+  }
+
+  function canonicalizeDetectedSpines(spines) {
+    const groups = [];
+    for (const spine of (spines || [])) {
+      if (!spine || !spine.bbox) continue;
+      let group = groups.find(g => g.members.some(existing => sameCanonicalDetectedSpine(existing, spine)));
+      if (!group) {
+        group = { members: [], spine: null };
+        groups.push(group);
+      }
+      group.members.push(spine);
+      group.spine = group.members.slice().sort((a,b) => (b.confidence||0)-(a.confidence||0))[0];
+    }
+    return groups.map((g,index) => ({ ...g.spine, canonicalIndex:index, members:g.members }));
+  }
+
+  function bestSpineForEntryFromList(entry, spineList) {
+    const b = entry && entry.match && entry.match.bbox;
+    if (!b || !spineList || !spineList.length) return null;
+    const ec = bboxCenter(b);
+    let best = null, bestScore = -Infinity;
+    for (let i=0;i<spineList.length;i++) {
+      const spine = spineList[i];
+      if (!spine || !spine.bbox) continue;
+      const sb=spine.bbox, sc=bboxCenter(sb);
+      const iou=bboxIoU(b,sb), vo=bboxVerticalOverlap(b,sb);
+      const sw=Math.max(1,sb.x1-sb.x0), sh=Math.max(1,sb.y1-sb.y0);
+      const dx=Math.abs(ec.x-sc.x)/sw, dy=Math.abs(ec.y-sc.y)/sh;
+      const score=iou*8 + vo*2.5 - dx*1.6 - dy*0.8;
+      if (score>bestScore) { bestScore=score; best={spine,index:i,score,iou,vo,dx,dy}; }
+    }
+    if (!best) return null;
+    if (best.iou < 0.05 && (best.dx > 1.35 || best.dy > 0.55)) return null;
+    return best;
+  }
+
+  function titleTokenSimilarity(a, b) {
+    const A = new Set(meaningfulTitleTokens(a));
+    const B = new Set(meaningfulTitleTokens(b));
+    if (!A.size || !B.size) return 0;
+    let inter=0;
+    for (const t of A) if (B.has(t)) inter++;
+    return inter / Math.max(A.size, B.size);
+  }
+
+  function sameVerifiedPhysicalBook(a, b) {
+    if (!a || !b || !a.match || !b.match) return false;
+    const sim = titleTokenSimilarity(a.result && a.result.title, b.result && b.result.title);
+    if (sim < 0.72) return false;
+    const A=a.match.bbox, B=b.match.bbox;
+    if (bboxIoU(A,B) >= 0.30) return true;
+    const ac=bboxCenter(A), bc=bboxCenter(B);
+    const aw=Math.max(1,A.x1-A.x0), bw=Math.max(1,B.x1-B.x0);
+    const ah=Math.max(1,A.y1-A.y0), bh=Math.max(1,B.y1-B.y0);
+    const xClose=Math.abs(ac.x-bc.x) <= Math.max(8, Math.max(aw,bw)*0.72);
+    const yClose=Math.abs(ac.y-bc.y) <= Math.max(12, Math.min(ah,bh)*0.12);
+    return xClose && yClose && bboxVerticalOverlap(A,B) >= 0.70;
+  }
+
   function bestDetectedSpineForEntry(entry) {
     const b = entry && entry.match && entry.match.bbox;
     if (!b || !diagnosticDetectedSpines.length) return null;
@@ -2152,61 +2300,55 @@
       .filter(e => e && e.result && e.match && e.match.bbox)
       .slice();
 
-    // v26 reconciliation: detected spines are the physical-book identity.
-    // Every raw AI/OCR reading is assigned to its best detected spine first.
-    // This prevents several slightly different boxes for one book from inflating
-    // the final count while preserving two real copies that occupy two spines.
+    // v27: first reconcile the detector itself. Overlapping detections from
+    // multiple region passes become one canonical physical spine.
+    const canonicalSpines = canonicalizeDetectedSpines(diagnosticDetectedSpines);
     const spineClusters = new Map();
     const unassignedClusters = [];
 
     for (const entry of raw) {
-      const assignment = bestDetectedSpineForEntry(entry);
+      const assignment = bestSpineForEntryFromList(entry, canonicalSpines);
       if (assignment) {
         const key = `spine-${assignment.index}`;
         if (!spineClusters.has(key)) spineClusters.set(key, []);
         spineClusters.get(key).push(entry);
       } else {
         let cluster = unassignedClusters.find(c => c.some(existing => samePhysicalBookDiagnostic(existing, entry)));
-        if (!cluster) { cluster = []; unassignedClusters.push(cluster); }
+        if (!cluster) { cluster=[]; unassignedClusters.push(cluster); }
         cluster.push(entry);
       }
     }
 
     const clusters = [...spineClusters.values(), ...unassignedClusters];
-    const credible = [];
-    const rejected = [];
-    const duplicates = [];
+    const credible = [], rejected = [], duplicates = [];
 
     for (const cluster of clusters) {
       const { best, ranked } = reconcileCluster(cluster);
       const bestScore = credibilityScore(best);
       const title = normalizeBookField(best && best.result && best.result.title);
       const supported = titleHasVisualEvidence(best);
-
       if (title && supported && bestScore >= 2.5) credible.push(best);
-      else rejected.push({ entry: best, reason: supported ? "low-credibility" : "unverified-title", score: bestScore });
+      else rejected.push({entry:best, reason:supported ? 'low-credibility' : 'unverified-title', score:bestScore});
 
       for (const entry of ranked) {
         if (entry === best) continue;
-        duplicates.push({ entry, reason: "same-physical-spine", score: credibilityScore(entry) });
+        duplicates.push({entry, reason:'same-physical-spine', score:credibilityScore(entry)});
       }
     }
 
-    // A final safety merge only for entries that resolve to essentially the same
-    // physical position. Never merge title matches across distinct detected spines.
-    const finalCredible = [];
+    // Second reconciliation: occasionally Gemini's detector returns two slightly
+    // shifted canonical boxes for the same physical book. Merge only when BOTH
+    // title evidence and spatial proximity agree; never merge title matches that
+    // live in clearly different positions on the shelf.
+    const finalCredible=[];
     for (const entry of credible.sort(visualBookSort)) {
-      const same = finalCredible.find(existing =>
-        normalizedBookText(existing.result.title) === normalizedBookText(entry.result.title) &&
-        samePhysicalBookDiagnostic(existing, entry)
-      );
+      const same = finalCredible.find(existing => sameVerifiedPhysicalBook(existing, entry));
       if (!same) finalCredible.push(entry);
-      else {
-        const keepEntry = credibilityScore(entry) > credibilityScore(same);
-        if (keepEntry) {
-          finalCredible[finalCredible.indexOf(same)] = entry;
-          duplicates.push({ entry: same, reason: "same-physical-spine", score: credibilityScore(same) });
-        } else duplicates.push({ entry, reason: "same-physical-spine", score: credibilityScore(entry) });
+      else if (credibilityScore(entry) > credibilityScore(same)) {
+        finalCredible[finalCredible.indexOf(same)] = entry;
+        duplicates.push({entry:same, reason:'reconciled-duplicate-spine', score:credibilityScore(same)});
+      } else {
+        duplicates.push({entry, reason:'reconciled-duplicate-spine', score:credibilityScore(entry)});
       }
     }
 
@@ -2216,7 +2358,8 @@
       rejected,
       duplicates,
       rawCount: raw.length,
-      spineCount: diagnosticDetectedSpines.length
+      spineCount: canonicalSpines.length,
+      rawSpineCount: diagnosticDetectedSpines.length
     };
   }
 
@@ -2260,8 +2403,8 @@
     const rejectedLines = rejectedItems.map(diagnosticRejectedLine);
 
     return [
-      `Spineless v26 diagnostic`,
-      `${d.credible.length} verified unique books · ${d.rawCount} raw identifications · ${d.spineCount} detected spines · ${formatDuration(diagnosticLastElapsed)}`,
+      `Spineless v27 diagnostic`,
+      `${d.credible.length} verified unique books · ${d.rawCount} raw identifications · ${d.spineCount} reconciled spines (${d.rawSpineCount} raw detections) · ${formatDuration(diagnosticLastElapsed)}`,
       "",
       "VERIFIED UNIQUE BOOKS",
       ...credibleLines,
@@ -2945,14 +3088,14 @@
     if (runSerial !== catalogingRunSerial) return;
 
 
-    // v25: verify unresolved detected spines using enlarged tight crops.
+    // v27: verify unresolved detected spines using enlarged tight crops.
     const verifyCandidates=detectedSpines.filter(spine=>{
       const overlapping=bookCatalog
         .filter(e=>e&&e.match&&e.match.bbox&&bboxIoU(e.match.bbox,spine.bbox)>=0.28)
         .sort((a,b)=>bboxIoU(b.match.bbox,spine.bbox)-bboxIoU(a.match.bbox,spine.bbox));
       return !overlapping.length || !titleHasVisualEvidence(overlapping[0]);
     });
-    verifyCandidates.forEach((s,i)=>s.id=`v25-${i+1}`);
+    verifyCandidates.forEach((s,i)=>s.id=`v27-${i+1}`);
 
     const verifyBatchSize=4, verifyBatches=[];
     for(let i=0;i<verifyCandidates.length;i+=verifyBatchSize) verifyBatches.push(verifyCandidates.slice(i,i+verifyBatchSize));
@@ -2999,10 +3142,14 @@
     if (runSerial !== catalogingRunSerial) return;
 
     catalogingActive = false;
-    buildTermList();
     const elapsed = (performance.now() - startedAt) / 1000;
     const recovered = Math.max(0, bookCatalog.length - initialBookCount);
     const finalDiagnostics = getCatalogDiagnostics();
+
+    // v27: the UI/search catalog now uses the reconciled physical-book list,
+    // not the noisier intermediate bookCatalog assembled during scanning.
+    bookCatalog = finalDiagnostics.credible.slice();
+    buildTermList();
     catalogingStatus.textContent =
       `${finalDiagnostics.credible.length} verified books · ${finalDiagnostics.rawCount} raw identifications`;
     if (catalogingEta) {
@@ -3382,6 +3529,14 @@ const cropW = Math.max(1, x1 - x0);
     openBookModal();
   });
   bookModalBackdrop.addEventListener("click", closeBookModal);
+  if (utilityNewImage) utilityNewImage.addEventListener("click", () => btnNewImage.click());
+  if (utilityNewSearch) utilityNewSearch.addEventListener("click", () => btnNewSearch.click());
+  if (utilityData) utilityData.addEventListener("click", async () => {
+    await copyCatalogBookList(utilityData);
+    utilityData.classList.add("is-copied");
+    setTimeout(() => utilityData.classList.remove("is-copied"), 1200);
+  });
+
   bookModalClose.addEventListener("click", closeBookModal);
   bookModal.addEventListener("click", (e) => { if (e.target === bookModal) closeBookModal(); });
 
@@ -3402,7 +3557,7 @@ const cropW = Math.max(1, x1 - x0);
 </script>
 
 <!-- Spineless build version -->
-<div id="spineless-build-version" aria-label="Build version">v26</div>
+<div id="spineless-build-version" aria-label="Build version">v27</div>
 <style>
   #spineless-build-version {
     position: fixed;
