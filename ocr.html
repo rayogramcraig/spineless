@@ -1,0 +1,3697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Spineless — OCR Only</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+  <!-- iOS web app meta -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="spineless">
+
+  <!-- Favicons -->
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="icon" href="favicon.ico">
+
+  <!-- iOS home screen icons -->
+  <link rel="apple-touch-icon" sizes="120x120" href="apple-touch-icon-120x120.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon-152x152.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180x180.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon-v2.png">
+
+  <!-- Tesseract.js for OCR -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+
+  <style>
+    :root {
+      --bg-dark: #111;
+      --white: #fff;
+      --accent: #ff7a1a;
+      --input-bg: #fff;
+      --input-text: #111;
+      --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.35);
+      --transition-fast: 0.4s ease;
+      --transition-med: 0.6s ease;
+      --scan-yellow: #e8ff29;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      touch-action: pan-x pan-y;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      background: var(--bg-dark);
+      color: var(--white);
+    }
+
+    #app {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .screen {
+      position: absolute;
+      inset: 0;
+      display: none;
+    }
+    .screen.active { display: block; }
+    .hidden { display: none !important; }
+
+    /* ADD IMAGE SCREEN */
+    #screen-add { background: #111; }
+    #screen-add.active {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #screen-add .label {
+      font-size: 3rem;
+      font-weight: 700;
+      pointer-events: none;
+      text-align: center;
+    }
+    #imageInput {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    /* OCR (SCANNING + SEARCH) SCREEN */
+    #screen-ocr {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #ocr-bg {
+      position: absolute;
+      inset: 0;
+      background-position: center;
+      background-size: cover;
+      filter: brightness(0.45);
+      transform: scale(1.02);
+      z-index: 0;
+    }
+
+    /* Floating found-words overlay (during scanning) */
+    #scan-word-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 2; /* above gradient, below UI text */
+    }
+
+    .scan-float-word {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      transform-origin: center;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      color: var(--scan-yellow);
+      opacity: 0;
+      white-space: nowrap;
+      filter: drop-shadow(0 0 16px rgba(0,0,0,0.85));
+      text-shadow: 0 0 18px rgba(0,0,0,0.85);
+      will-change: transform, opacity;
+      animation: floatWord 1.05s ease-out forwards;
+    }
+
+    @keyframes floatWord {
+      0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.72); }
+      18%  { opacity: 1; }
+      100% { opacity: 0; transform: translate(-50%, -55%) scale(2.15); }
+    }
+
+    #scan-gradient {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      overflow: hidden;
+      mix-blend-mode: screen;
+      z-index: 1;
+    }
+
+    #scan-band { position: absolute; inset: 0; }
+
+    /* 0°: vertical fill */
+    #scan-gradient.mode-0 #scan-band {
+      top: 0; left: 0; width: 100%; height: 0;
+      background: linear-gradient(to bottom, rgba(232, 255, 41, 0) 0%, rgba(232, 255, 41, 1) 100%);
+    }
+
+    /* 90°: horizontal fill left->right */
+    #scan-gradient.mode-90 #scan-band {
+      top: 0; left: 0; height: 100%; width: 0;
+      background: linear-gradient(to right, rgba(232, 255, 41, 0) 0%, rgba(232, 255, 41, 1) 100%);
+    }
+
+    /* -90°: horizontal fill right->left */
+    #scan-gradient.mode-neg90 #scan-band {
+      top: 0; right: 0; height: 100%; width: 0;
+      background: linear-gradient(to left, rgba(232, 255, 41, 0) 0%, rgba(232, 255, 41, 1) 100%);
+    }
+
+    #ocr-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 10vw;
+      z-index: 3;
+    }
+
+    .scanning-label,
+    .search-container {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      transition: opacity var(--transition-med), transform var(--transition-med);
+      will-change: opacity, transform;
+    }
+
+    .scanning-label {
+      bottom: 24vh;
+      opacity: 1;
+      text-align: center;
+      color: var(--scan-yellow);
+      text-shadow: 0 0 16px rgba(0, 0, 0, 0.9);
+    }
+
+    #screen-ocr.angle-0 .scanning-label { transform: translateX(-50%) rotate(0deg); }
+    #screen-ocr.angle-90 .scanning-label { transform: translateX(-50%) rotate(-90deg); }
+    #screen-ocr.angle-neg90 .scanning-label { transform: translateX(-50%) rotate(90deg); }
+
+    #scan-word {
+      font-size: 3rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    #scan-angle {
+      margin-top: 0.2em;
+      font-size: 2.8rem;
+      font-weight: 700;
+      opacity: 0.0;
+    }
+
+    .search-container {
+      bottom: 20vh;
+      width: 80vw;
+      max-width: 480px;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 20px);
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 16px 20px;
+      border-radius: 999px;
+      border: none;
+      font-size: 1.4rem;
+      outline: none;
+      background: var(--input-bg);
+      color: var(--input-text);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .autosuggest {
+      margin-top: 8px;
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.96);
+      color: #111;
+      max-height: 40vh;
+      overflow-y: auto;
+      box-shadow: var(--shadow-soft);
+      opacity: 0;
+      transform: translateY(-8px);
+      pointer-events: none;
+      transition: opacity var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .autosuggest.visible {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .autosuggest-item {
+      padding: 12px 18px;
+      font-size: 1.4rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+      cursor: pointer;
+    }
+    .autosuggest-item:last-child { border-bottom: none; }
+    .autosuggest-item:hover { background: rgba(0, 0, 0, 0.04); }
+
+    #screen-ocr.mode-search .scanning-label {
+      opacity: 0;
+      transform: translate(-50%, -30px);
+      pointer-events: none;
+    }
+    #screen-ocr.mode-search #scan-gradient { opacity: 0; }
+    #screen-ocr.mode-search .search-container {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, 0);
+    }
+    #screen-ocr.mode-search #scan-word-overlay { display: none; }
+
+    #ocr-progress {
+      display: none !important;
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.9rem;
+      background: rgba(0, 0, 0, 0.55);
+      padding: 6px 12px;
+      border-radius: 999px;
+      pointer-events: none;
+    }
+
+    /* CATALOGING OVERLAY */
+    #cataloging-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 8;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.58);
+      pointer-events: none;
+    }
+
+    #cataloging-overlay.visible { display: flex; }
+
+    #cataloging-card {
+      width: min(84vw, 420px);
+      padding: 24px 26px;
+      border-radius: 28px;
+      background: rgba(17,17,17,0.94);
+      box-shadow: var(--shadow-soft);
+      text-align: center;
+    }
+
+    #cataloging-title {
+      font-size: 1.65rem;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    #cataloging-status {
+      font-size: 1rem;
+      opacity: 0.8;
+      margin-bottom: 14px;
+    }
+
+    #cataloging-track {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.16);
+    }
+
+    #cataloging-bar {
+      width: 0%;
+      height: 100%;
+      background: var(--accent);
+      transition: width 0.25s ease;
+    }
+
+    /* RESULTS SCREEN */
+    #screen-results { inset: 0; background: #000; color: #fff; }
+
+    #results-top-row { display: none; }
+
+    #btn-new-image {
+      padding: 8px 18px;
+      border-radius: 999px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+      box-shadow: var(--shadow-soft);
+    }
+
+    #recognized-title-wrap {
+      position: absolute;
+      top: 18px;
+      left: 10px;
+      right: 10px;
+      z-index: 10;
+      display: flex;
+      justify-content: center;
+      pointer-events: auto;
+    }
+
+    #recognized-title {
+      width: min(94vw, 540px);
+      min-height: 46px;
+      padding: 10px 22px;
+      border-radius: 999px;
+      border: none;
+      background: #8d390b;
+      color: #fff;
+      font-size: 1.25rem;
+      line-height: 1.2;
+      font-weight: 750;
+      text-align: center;
+      box-shadow: var(--shadow-soft);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+
+    #recognized-title.is-loading { cursor: default; }
+    #recognized-title.is-loading { opacity: 0.72; }
+    #recognized-title.is-uncertain { opacity: 0.78; font-weight: 600; }
+
+
+
+    #catalog-stats {
+      position: absolute;
+      right: 14px;
+      bottom: 72px;
+      z-index: 8;
+      display: none;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.72);
+      border: 1px solid rgba(255,122,26,0.55);
+      color: rgba(255,255,255,0.82);
+      font-size: 0.72rem;
+      line-height: 1;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    #catalog-stats.visible { display: none; }
+    #catalog-stats.visible,
+    #screen-ocr.mode-search #search-catalog-stats.visible {
+      pointer-events: auto;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    #cataloging-eta {
+      margin-top: 8px;
+      font-size: 0.9rem;
+      opacity: 0.75;
+      min-height: 1.1em;
+    }
+
+
+    /* v27 bottom utility controls: picture / search / info */
+    #results-utility-bar {
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 16px;
+      z-index: 16;
+      display: grid;
+      grid-template-columns: 52px minmax(150px, 1fr) 52px;
+      align-items: center;
+      gap: 14px;
+      max-width: 560px;
+      margin: 0 auto;
+      pointer-events: auto;
+    }
+
+    .results-utility-icon,
+    #utility-new-search {
+      height: 46px;
+      border: none;
+      cursor: pointer;
+      box-shadow: var(--shadow-soft);
+      color: #fff;
+    }
+
+    .results-utility-icon {
+      width: 52px;
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .results-utility-icon svg {
+      width: 28px;
+      height: 28px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    #utility-new-search {
+      min-width: 0;
+      padding: 0 22px;
+      border-radius: 999px;
+      background: #7b431f;
+      font-size: 1.05rem;
+      font-weight: 500;
+      text-align: center;
+    }
+
+    #utility-data.is-copied {
+      opacity: 0.55;
+    }
+
+    /* BOOK DETAIL MODAL */
+
+    #search-catalog-stats {
+      position: absolute;
+      right: 18px;
+      bottom: 18px;
+      z-index: 7;
+      display: none;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.72);
+      border: 1px solid rgba(255,122,26,0.55);
+      color: rgba(255,255,255,0.82);
+      font-size: 0.72rem;
+      line-height: 1;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    #screen-ocr.mode-search #search-catalog-stats.visible { display: none; }
+
+    #book-modal-cover-wrap {
+      width: 96px;
+      min-height: 132px;
+      position: relative;
+    }
+    #book-modal-no-cover {
+      width: 96px;
+      height: 132px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 5px;
+      background: #2a2a2a;
+      color: rgba(255,255,255,0.42);
+      font-size: 0.72rem;
+      text-transform: lowercase;
+      letter-spacing: 0.03em;
+      box-shadow: 0 7px 18px rgba(0,0,0,0.35);
+    }
+    #book-modal-no-cover.hidden { display: none; }
+
+    @media (max-width: 420px) {
+      #book-modal-cover-wrap { width: 78px; min-height: 108px; }
+      #book-modal-no-cover { width: 78px; height: 108px; }
+    }
+
+    #book-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 18px;
+    }
+
+    #book-modal.visible { display: flex; }
+
+    #book-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.78);
+    }
+
+    #book-modal-card {
+      position: relative;
+      width: min(92vw, 520px);
+      max-height: 84vh;
+      overflow-y: auto;
+      border-radius: 26px;
+      background: rgba(20,20,20,0.97);
+      border: 2px solid rgba(255,122,26,0.85);
+      box-shadow: var(--shadow-soft);
+      padding: 22px;
+    }
+
+    #book-modal-close {
+      position: absolute;
+      top: 10px;
+      right: 14px;
+      border: 0;
+      background: transparent;
+      color: var(--accent);
+      font-size: 2rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    #book-modal-content {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 18px;
+      align-items: start;
+      padding-right: 14px;
+    }
+
+    #book-modal-cover {
+      width: 96px;
+      min-height: 132px;
+      object-fit: cover;
+      border-radius: 5px;
+      background: #2a2a2a;
+      box-shadow: 0 7px 18px rgba(0,0,0,0.35);
+    }
+
+    #book-modal-cover.hidden-cover { display: none; }
+
+    #book-modal-info {
+      min-width: 0;
+    }
+
+    #book-modal-title {
+      font-size: 1.5rem;
+      line-height: 1.1;
+      font-weight: 800;
+      margin: 3px 24px 6px 0;
+    }
+
+    #book-modal-author {
+      font-size: 1.05rem;
+      line-height: 1.3;
+      margin-bottom: 16px;
+      opacity: 0.9;
+    }
+
+    .book-meta-row {
+      display: flex;
+      gap: 10px;
+      padding: 7px 0;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      font-size: 0.9rem;
+      line-height: 1.3;
+    }
+
+    .book-meta-label {
+      width: 76px;
+      flex: 0 0 76px;
+      opacity: 0.55;
+    }
+
+    .book-meta-value { min-width: 0; }
+
+    @media (max-width: 420px) {
+      #book-modal-content {
+        grid-template-columns: 78px 1fr;
+        gap: 14px;
+      }
+      #book-modal-cover { width: 78px; min-height: 108px; }
+      #book-modal-title { font-size: 1.3rem; }
+    }
+
+    #results-image-wrapper {
+      position: absolute;
+      inset: 0;
+      padding: 82px 0 190px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #results-image-inner {
+      position: relative;
+      width: 100%;
+      max-width: 560px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    #results-image {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      display: block;
+    }
+
+    #highlightsLayer { position: absolute; inset: 0; pointer-events: none; }
+
+    .crosshair-line {
+      position: absolute;
+      background: linear-gradient(to right, rgba(213, 255, 57, 1) 0%, rgba(213, 255, 57, 0) 100%);
+      box-shadow: 0 0 8px rgba(213, 255, 57, 0.7);
+      pointer-events: none;
+      transform-origin: 0 50%;
+    }
+
+    #results-bottom {
+      position: absolute;
+      left: 0; right: 0; bottom: 86px;
+      display: flex;
+      flex-direction: column;
+      align-items:center;
+      gap: 14px;
+      padding: 0 16px;
+      z-index: 10;
+    }
+
+    #results-pills {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .pill {
+      flex: 1;
+      padding: 10px 16px;
+      border-radius: 999px;
+      text-align: center;
+      font-size: 1.3rem;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+
+    .pill-side {
+      background: rgba(0, 0, 0, 0.4);
+      color: #fff;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      font-size: .8rem;
+      max-width: min-content;
+    }
+
+    .pill-side.disabled {
+      opacity: 0.3;
+      border-style: dashed;
+      pointer-events: none;
+    }
+
+    .pill-main-wrapper {
+      flex: 1;
+      max-width: 48%;
+      position: relative;
+      display: flex;
+      justify-content: center;
+    }
+
+    .pill-main {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      box-shadow: var(--shadow-soft);
+      pointer-events: auto;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 16px;
+      overflow: visible;
+      text-overflow: clip;
+      white-space: normal;
+    }
+
+    .pill-main-label {
+      flex: 1;
+      text-align: center;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hit-nav-inline {
+      border: none;
+      background: transparent;
+      color: #fff;
+      font-size: 1.4rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 6px;
+      cursor: pointer;
+    }
+
+    .hit-nav-inline:disabled { opacity: 0.3; cursor: default; }
+
+    #pill-badge {
+      position: absolute;
+      top: -30px;
+      right: -6px;
+      height: 26px;
+      min-width: 38px;
+      border-radius: 999px;
+      display: flex;
+      overflow: hidden;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    .pill-badge-current, .pill-badge-total {
+      padding: 0 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pill-badge-current { background: #c62828; color: #fff; }
+    .pill-badge-total { background: #fff; color: #111; }
+
+    #results-bottom-row {
+      width: 100%;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    #new-search-btn {
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: none;
+      background: #583922;
+      color: #fff;
+      font-size: 1.1rem;
+      font-weight: 200;
+      box-shadow: var(--shadow-soft);
+      cursor: pointer;
+      width: auto;
+      min-width: 44%;
+      text-align: center;
+    }
+
+    #instance-nav { display: none !important; }
+
+    .hit-nav-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 1.6rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow-soft);
+      cursor: pointer;
+    }
+
+    #hit-counter {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      background: #fff;
+      color: #111;
+      font-size: 1.4rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    /* TERM DETAIL MODAL */
+    #term-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+
+    #term-modal.visible { display: flex; }
+
+    #term-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+    }
+
+    #term-modal-card {
+      position: relative;
+      width: 86vw;
+      max-width: 520px;
+      max-height: 80vh;
+      border-radius: 24px;
+      border: 3px solid var(--accent);
+      background: rgba(0, 0, 0, 0.9);
+      box-shadow: var(--shadow-soft);
+      padding: 16px 16px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #term-modal-close {
+      position: absolute;
+      top: 8px;
+      right: 12px;
+      border: none;
+      background: transparent;
+      color: var(--accent);
+      font-size: 1.8rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    #term-modal-image-wrapper {
+      width: 100%;
+      max-height: 60vh;
+      border-radius: 18px;
+      overflow: hidden;
+      background: #000;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #term-modal-canvas {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    #term-modal-text {
+      font-size: 1.4rem;
+      font-weight: 500;
+      color: var(--accent);
+      text-align: center;
+    }
+
+    #term-modal-text span { font-weight: 700; }
+
+    @media (min-width: 768px) {
+      #term-modal-card { padding: 24px 24px 28px; }
+      #term-modal-text { font-size: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- ADD IMAGE -->
+    <div id="screen-add" class="screen active">
+      <input type="file" id="imageInput" accept="image/*" />
+      <div class="label">show your<br>bookshelves</div>
+    </div>
+
+    <!-- OCR / SCANNING -->
+    <div id="screen-ocr" class="screen">
+      <div id="ocr-bg"></div>
+      <div id="scan-word-overlay"></div>
+      <div id="scan-gradient"><div id="scan-band"></div></div>
+
+      <div id="ocr-overlay">
+        <div id="ocr-progress" class="hidden">scanning…</div>
+
+        <div class="scanning-label">
+          <div id="scan-word">reading</div>
+          <div id="scan-angle">0°</div>
+        </div>
+
+        <div class="search-container">
+          <input id="searchInput" class="search-input" type="text" placeholder="search" autocomplete="off" />
+          <div id="autosuggest" class="autosuggest"></div>
+        </div>
+        <div id="search-catalog-stats"></div>
+      </div>
+
+      <div id="cataloging-overlay">
+        <div id="cataloging-card">
+          <div id="cataloging-title">cataloging shelf…</div>
+          <div id="cataloging-status">preparing…</div>
+          <div id="cataloging-eta">Estimating time…</div>
+          <div id="cataloging-track"><div id="cataloging-bar"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESULTS -->
+    <div id="screen-results" class="screen">
+      <div id="results-top-row">
+        <button id="btn-new-image">new image</button>
+      </div>
+
+      <div id="recognized-title-wrap" class="hidden">
+        <div id="recognized-title"></div>
+      </div>
+
+      <div id="catalog-stats"></div>
+
+      <div id="results-image-wrapper">
+        <div id="results-image-inner">
+          <img id="results-image" src="" alt="Bookshelf" />
+          <div id="highlightsLayer"></div>
+        </div>
+      </div>
+
+      <div id="results-bottom">
+        <div id="results-pills">
+          <button id="pill-left" class="pill pill-side"></button>
+          <div class="pill-main-wrapper">
+            <div id="pill-main" class="pill pill-main">
+              <button id="hit-prev-inline" class="hit-nav-inline" aria-label="Previous result">&#9664;</button>
+              <span id="pill-main-label" class="pill-main-label"></span>
+              <button id="hit-next-inline" class="hit-nav-inline" aria-label="Next result">&#9654;</button>
+            </div>
+            <div id="pill-badge" class="pill-badge hidden"></div>
+          </div>
+          <button id="pill-right" class="pill pill-side"></button>
+        </div>
+
+        <div id="results-bottom-row">
+          <button id="new-search-btn">new search</button>
+          <div id="instance-nav" class="hidden">
+            <button id="hit-prev" class="hit-nav-btn">&#9664;</button>
+            <div id="hit-counter">1</div>
+            <button id="hit-next" class="hit-nav-btn">&#9654;</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="results-utility-bar" aria-label="Results controls">
+        <button id="utility-new-image" class="results-utility-icon" aria-label="New picture" title="New picture">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h3l1.4-2h7.2L17 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+        </button>
+        <button id="utility-new-search">new search</button>
+        <button id="utility-data" class="results-utility-icon" aria-label="Copy catalog data" title="Copy catalog data">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 11v6"/>
+            <path d="M12 7.5h.01"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- TERM DETAIL MODAL -->
+    <div id="term-modal">
+      <div id="term-modal-backdrop"></div>
+      <div id="term-modal-card">
+        <button id="term-modal-close" aria-label="Close term details">&times;</button>
+        <div id="term-modal-image-wrapper">
+          <canvas id="term-modal-canvas"></canvas>
+        </div>
+        <div id="term-modal-text">
+          Confidence Level: <span id="term-modal-confidence">–%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOOK DETAIL MODAL -->
+    <div id="book-modal">
+      <div id="book-modal-backdrop"></div>
+      <div id="book-modal-card">
+        <button id="book-modal-close" aria-label="Close book details">&times;</button>
+        <div id="book-modal-content">
+          <div id="book-modal-cover-wrap">
+            <img id="book-modal-cover" class="hidden-cover" alt="" />
+            <div id="book-modal-no-cover">no image</div>
+          </div>
+          <div id="book-modal-info">
+            <div id="book-modal-title"></div>
+            <div id="book-modal-author"></div>
+            <div id="book-modal-meta"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+  const screenAdd = document.getElementById("screen-add");
+  const screenOCR = document.getElementById("screen-ocr");
+  const screenResults = document.getElementById("screen-results");
+  const imageInput = document.getElementById("imageInput");
+  const ocrBg = document.getElementById("ocr-bg");
+  const ocrProgress = document.getElementById("ocr-progress");
+  const searchInput = document.getElementById("searchInput");
+  const autosuggestEl = document.getElementById("autosuggest");
+  const catalogingOverlay = document.getElementById("cataloging-overlay");
+  const catalogingStatus = document.getElementById("cataloging-status");
+  const catalogingEta = document.getElementById("cataloging-eta");
+  const catalogStats = document.getElementById("catalog-stats");
+  const searchCatalogStats = document.getElementById("search-catalog-stats");
+  const catalogingBar = document.getElementById("cataloging-bar");
+
+  const resultsImage = document.getElementById("results-image");
+  const recognizedTitleWrap = document.getElementById("recognized-title-wrap");
+  const recognizedTitle = document.getElementById("recognized-title");
+  const btnNewImage = document.getElementById("btn-new-image");
+  const btnNewSearch = document.getElementById("new-search-btn");
+  const utilityNewImage = document.getElementById("utility-new-image");
+  const utilityNewSearch = document.getElementById("utility-new-search");
+  const utilityData = document.getElementById("utility-data");
+  const pillLeft = document.getElementById("pill-left");
+  const pillRight = document.getElementById("pill-right");
+  const pillMainLabel = document.getElementById("pill-main-label");
+  const pillBadge = document.getElementById("pill-badge");
+  const resultsImageInner = document.getElementById("results-image-inner");
+  const highlightsLayer = document.getElementById("highlightsLayer");
+
+  const scanWordEl = document.getElementById("scan-word");
+  const scanAngleEl = document.getElementById("scan-angle");
+  const scanGradient = document.getElementById("scan-gradient");
+  const scanBand = document.getElementById("scan-band");
+  const scanWordOverlay = document.getElementById("scan-word-overlay");
+
+  const hitPrevBtn = document.getElementById("hit-prev");
+  const hitNextBtn = document.getElementById("hit-next");
+  const hitPrevInline = document.getElementById("hit-prev-inline");
+  const hitNextInline = document.getElementById("hit-next-inline");
+
+  const termModal = document.getElementById("term-modal");
+  const termModalBackdrop = document.getElementById("term-modal-backdrop");
+  const termModalClose = document.getElementById("term-modal-close");
+  const termModalCanvas = document.getElementById("term-modal-canvas");
+  const termModalConfidence = document.getElementById("term-modal-confidence");
+
+  const bookModal = document.getElementById("book-modal");
+  const bookModalBackdrop = document.getElementById("book-modal-backdrop");
+  const bookModalClose = document.getElementById("book-modal-close");
+  const bookModalCover = document.getElementById("book-modal-cover");
+  const bookModalNoCover = document.getElementById("book-modal-no-cover");
+  const bookModalTitle = document.getElementById("book-modal-title");
+  const bookModalAuthor = document.getElementById("book-modal-author");
+  const bookModalMeta = document.getElementById("book-modal-meta");
+
+  let ocrWords = [];
+  let imageDataUrl = "";
+  let sourceCanvas = null; // normalized, color-correct source used for display + bbox coord space
+  let sourceDataUrl = "";
+
+  let termList = [];
+  let currentTermIndex = -1;
+  let currentTerm = "";
+
+  let currentMatches = [];
+  let currentMatchIndex = 0;
+
+  // AI-assisted book recognition test.
+  // After deploying the Supabase Edge Function included with this build, paste its URL here.
+  // Example: https://YOUR_PROJECT.supabase.co/functions/v1/identify-book
+  const BOOK_ID_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/identify-book";
+  const BOOK_ID_ENABLED = false; // OCR-only comparison build: never call AI book identification
+  console.info("Spineless OCR-only comparison build (v29-ocr-only)");
+  const bookRecognitionCache = new Map();
+  let recognitionRequestSerial = 0;
+  let bookCatalog = [];
+  let aiSpineWords = [];
+  const catalogTerms = new Set();
+  let catalogingRunSerial = 0;
+  let catalogingActive = false;
+  let diagnosticRawEntries = [];
+  let diagnosticDetectedSpines = [];
+  let diagnosticLastElapsed = 0;
+
+
+  // Dictionary + whitelist sets
+  let DICT = null;
+  let WHITELIST = null;
+  let dictLoaded = false;
+  let whitelistLoaded = false;
+
+  const SHORT_COMMON_WORDS = new Set([
+    "a","an","as","at","be","by","do","go","he","if","in","is","it","me","my",
+    "no","of","on","or","so","to","up","us","we"
+  ]);
+
+  function showScreen(el) {
+    [screenAdd, screenOCR, screenResults].forEach((s) => s.classList.remove("active"));
+    el.classList.add("active");
+  }
+
+  async function loadWordLists() {
+    try {
+      const dictResp = await fetch("dictionary.json");
+      if (dictResp.ok) {
+        const dictData = await dictResp.json();
+        DICT = new Set((dictData || []).map(w => String(w).toLowerCase()));
+        dictLoaded = true;
+      }
+    } catch (e) {
+      console.warn("dictionary.json could not be loaded:", e);
+    }
+
+    try {
+      const wlResp = await fetch("whitelist.json");
+      if (wlResp.ok) {
+        const wlData = await wlResp.json();
+        WHITELIST = new Set((wlData || []).map(w => String(w).toLowerCase()));
+        whitelistLoaded = true;
+      }
+    } catch (e) {
+      console.warn("whitelist.json could not be loaded:", e);
+    }
+  }
+
+  function isCarouselWord(word) {
+    if (!word) return false;
+    const w = word.toLowerCase();
+
+    if (catalogTerms.has(w)) return true;
+
+    if ((dictLoaded && DICT && DICT.has(w)) ||
+        (whitelistLoaded && WHITELIST && WHITELIST.has(w))) {
+      return true;
+    }
+
+    if (!dictLoaded && !whitelistLoaded) {
+      if (SHORT_COMMON_WORDS.has(w)) return true;
+      if (!/^[a-z]+$/.test(w)) return false;
+      if (w.length < 3) return false;
+      if (!/[aeiouy]/.test(w)) return false;
+      return true;
+    }
+    return false;
+  }
+
+  function findPrevDictIndex(startIndex) {
+    if (!termList.length) return -1;
+    let idx = startIndex;
+    for (let steps = 0; steps < termList.length; steps++) {
+      idx = (idx - 1 + termList.length) % termList.length;
+      if (isCarouselWord(termList[idx])) return idx;
+    }
+    return -1;
+  }
+
+  function findNextDictIndex(startIndex) {
+    if (!termList.length) return -1;
+    let idx = startIndex;
+    for (let steps = 0; steps < termList.length; steps++) {
+      idx = (idx + 1) % termList.length;
+      if (isCarouselWord(termList[idx])) return idx;
+    }
+    return -1;
+  }
+
+  // *** FIXED MAPPING FUNCTION ***
+  function mapBboxToOriginal(bbox, kind, W, H) {
+    let { x0, y0, x1, y1 } = bbox;
+
+    const corners = [
+      [x0, y0], [x1, y0], [x1, y1], [x0, y1],
+    ];
+
+    function fromBase(u, v) { return { x: u, y: v }; }
+    function fromCW(u, v) { return { x: v, y: H - u }; }   // rotated -> original (CW)
+    function fromCCW(u, v) { return { x: W - v, y: u }; }  // rotated -> original (CCW)
+
+    const mapped = corners.map(([u, v]) => {
+      if (kind === "base") return fromBase(u, v);
+      if (kind === "cw")   return fromCW(u, v);
+      return fromCCW(u, v);
+    });
+
+    const xs = mapped.map(p => p.x);
+    const ys = mapped.map(p => p.y);
+
+    let nx0 = Math.min(...xs), ny0 = Math.min(...ys);
+    let nx1 = Math.max(...xs), ny1 = Math.max(...ys);
+
+    nx0 = Math.max(0, Math.min(W, nx0));
+    nx1 = Math.max(0, Math.min(W, nx1));
+    ny0 = Math.max(0, Math.min(H, ny0));
+    ny1 = Math.max(0, Math.min(H, ny1));
+
+    return { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
+  }
+
+  /* ==========================
+     SCANNING WORD PULSES
+     ========================== */
+
+  let scanPulseTimer = null;
+  let scanPulseActive = false;
+  let scanPulsePool = [];
+  let scanPulseDims = { W: 0, H: 0 };
+
+  function clearScanWordOverlay() {
+    if (!scanWordOverlay) return;
+    while (scanWordOverlay.firstChild) scanWordOverlay.removeChild(scanWordOverlay.firstChild);
+  }
+
+  function sanitizePulseText(raw) {
+    const clean = String(raw || "")
+      .trim()
+      .replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "")
+      .trim();
+    if (!clean) return "";
+    if (clean.length < 3) return "";
+    if (clean.length > 18) return "";
+    if (!/^[a-z0-9]+$/i.test(clean)) return "";
+    return clean.toLowerCase();
+  }
+
+  function showFloatingWord(wordObj) {
+    if (!scanWordOverlay) return;
+    if (!wordObj || !wordObj.text || !wordObj.bbox) return;
+    if (!screenOCR.classList.contains("active")) return;
+    if (screenOCR.classList.contains("mode-search")) return;
+
+    const text = sanitizePulseText(wordObj.text);
+    if (!text) return;
+
+    const { W, H } = scanPulseDims;
+    if (!W || !H) return;
+
+    const bbox = wordObj.bbox;
+    const cx = ((bbox.x0 + bbox.x1) / 2) / W;
+    const cy = ((bbox.y0 + bbox.y1) / 2) / H;
+
+    const px = Math.max(0.06, Math.min(0.94, cx)) * 100;
+    const py = Math.max(0.10, Math.min(0.90, cy)) * 100;
+
+    const el = document.createElement("div");
+    el.className = "scan-float-word";
+    el.textContent = text;
+
+    // font size scales a bit with word length
+    const len = text.length;
+    const vh = Math.max(9, Math.min(16, 14 + (10 - Math.min(len, 10)) * 0.6));
+    el.style.fontSize = `min(${vh}vh, 96px)`;
+
+    el.style.left = `${px}%`;
+    el.style.top  = `${py}%`;
+
+    scanWordOverlay.appendChild(el);
+    setTimeout(() => { if (el && el.parentNode) el.parentNode.removeChild(el); }, 1200);
+  }
+
+  function pickPulseCandidate() {
+    if (!scanPulsePool.length) return null;
+
+    // random tries for a solid candidate
+    for (let tries = 0; tries < 14; tries++) {
+      const w = scanPulsePool[(Math.random() * scanPulsePool.length) | 0];
+      if (!w || !w.text) continue;
+      if (typeof w.confidence === "number" && w.confidence < 35) continue;
+      if (!sanitizePulseText(w.text)) continue;
+      return w;
+    }
+    return scanPulsePool[(Math.random() * scanPulsePool.length) | 0] || null;
+  }
+
+  function scheduleNextPulse() {
+    if (!scanPulseActive) return;
+
+    // SHORTER interval so it’s visible even on fast devices
+    const delay = 600 + Math.random() * 800; // 0.6s – 1.4s
+
+    scanPulseTimer = setTimeout(() => {
+      if (!scanPulseActive) return;
+      if (screenOCR.classList.contains("mode-search")) return;
+
+      const candidate = pickPulseCandidate();
+      if (candidate) showFloatingWord(candidate);
+
+      scheduleNextPulse();
+    }, delay);
+  }
+
+  function startScanPulses(W, H) {
+    stopScanPulses();
+    scanPulseActive = true;
+    scanPulsePool = [];
+    scanPulseDims = { W, H };
+    clearScanWordOverlay();
+
+    // kick one early (it’ll no-op until pool has words)
+    scheduleNextPulse();
+  }
+
+  function stopScanPulses() {
+    scanPulseActive = false;
+    if (scanPulseTimer) {
+      clearTimeout(scanPulseTimer);
+      scanPulseTimer = null;
+    }
+    clearScanWordOverlay();
+    scanPulsePool = [];
+  }
+
+  /* ========================== */
+
+  imageInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      imageDataUrl = ev.target.result;
+      startOCR(imageDataUrl);
+    };
+    reader.readAsDataURL(file);
+  });
+
+  function extractCatalogTokens(textValue) {
+    return String(textValue || "")
+      .toLowerCase()
+      .replace(/['’]/g, "")
+      .split(/[^a-z0-9]+/g)
+      .map(t => t.trim())
+      .filter(t => t.length >= 3 && /[a-z]/.test(t));
+  }
+
+  function rebuildCatalogTerms() {
+    catalogTerms.clear();
+    for (const entry of bookCatalog) {
+      if (!entry || !entry.result) continue;
+      const tokens = [
+        ...extractCatalogTokens(entry.result.title),
+        ...extractCatalogTokens(entry.result.author)
+      ];
+      for (const token of tokens) catalogTerms.add(token);
+    }
+  }
+
+  function buildTermList() {
+    const cleaned = ocrWords
+      .map(w => (w.text || "").trim())
+      .filter(Boolean)
+      .map(t => t.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "").trim())
+      .filter(t => t.length > 1);
+
+    const aiCleaned = aiSpineWords
+      .map(w => normalizeToken(w.text))
+      .filter(t => t.length > 1);
+
+    rebuildCatalogTerms();
+    termList = Array.from(new Set([...cleaned, ...aiCleaned, ...catalogTerms])).sort((a, b) => a.localeCompare(b));
+  }
+
+  function setScanMode(angleLabel, modeClass) {
+    screenOCR.classList.add("scanning");
+    scanGradient.style.opacity = "1";
+    scanGradient.classList.remove("mode-0", "mode-90", "mode-neg90");
+    if (modeClass) scanGradient.classList.add(modeClass);
+
+    screenOCR.classList.remove("angle-0", "angle-90", "angle-neg90");
+    if (modeClass === "mode-0") screenOCR.classList.add("angle-0");
+    else if (modeClass === "mode-90") screenOCR.classList.add("angle-90");
+    else if (modeClass === "mode-neg90") screenOCR.classList.add("angle-neg90");
+
+    scanWordEl.textContent = "reading";
+    scanAngleEl.textContent = angleLabel;
+    updateScanProgress(0);
+  }
+
+  function updateScanProgress(progress) {
+    const p = Math.max(0, Math.min(1, progress || 0));
+
+    if (scanGradient.classList.contains("mode-0")) {
+      scanBand.style.width = "100%";
+      scanBand.style.height = (p * 100) + "%";
+      scanBand.style.top = "0";
+      scanBand.style.left = "0";
+      scanBand.style.right = "auto";
+    } else if (scanGradient.classList.contains("mode-90")) {
+      scanBand.style.height = "100%";
+      scanBand.style.width = (p * 100) + "%";
+      scanBand.style.left = "0";
+      scanBand.style.right = "auto";
+    } else if (scanGradient.classList.contains("mode-neg90")) {
+      scanBand.style.height = "100%";
+      scanBand.style.width = (p * 100) + "%";
+      scanBand.style.right = "0";
+      scanBand.style.left = "auto";
+    }
+  }
+
+  function applyGrayscaleAndContrast(canvas, contrastValue = 20) {
+    const ctx = canvas.getContext("2d");
+    const { width, height } = canvas;
+    if (!width || !height) return;
+
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    const c = contrastValue;
+    const factor = (259 * (c + 255)) / (255 * (259 - c));
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+      gray = factor * (gray - 128) + 128;
+      gray = Math.max(0, Math.min(255, gray));
+      data[i] = gray; data[i + 1] = gray; data[i + 2] = gray;
+    }
+    ctx.putImageData(imageData, 0, 0);
+  }
+
+  async function startOCR(dataUrl) {
+    showScreen(screenOCR);
+    screenOCR.classList.remove("mode-search");
+    ocrBg.style.backgroundImage = `url(${dataUrl})`;
+    ocrProgress.classList.remove("hidden");
+    ocrProgress.textContent = "scanning…";
+
+    ocrWords = [];
+    termList = [];
+    currentTermIndex = -1;
+    currentTerm = "";
+    currentMatches = [];
+    currentMatchIndex = 0;
+    clearHighlights();
+    pillMainLabel.textContent = "";
+    pillLeft.textContent = "";
+    pillRight.textContent = "";
+    pillLeft.classList.add("disabled");
+    pillRight.classList.add("disabled");
+    pillBadge.classList.add("hidden");
+    pillBadge.innerHTML = "";
+    hitPrevInline.disabled = true;
+    hitNextInline.disabled = true;
+    hitPrevInline.classList.add("hidden");
+    hitNextInline.classList.add("hidden");
+    setRecognizedTitle("");
+    bookRecognitionCache.clear();
+    bookCatalog = [];
+    aiSpineWords = [];
+    diagnosticRawEntries = [];
+    diagnosticDetectedSpines = [];
+    diagnosticLastElapsed = 0;
+    if (catalogStats) catalogStats.classList.remove("visible");
+    if (searchCatalogStats) searchCatalogStats.classList.remove("visible");
+    recognitionRequestSerial++;
+    catalogingRunSerial++;
+    catalogingActive = false;
+    if (catalogingOverlay) catalogingOverlay.classList.remove("visible");
+    if (catalogingBar) catalogingBar.style.width = "0%";
+
+    stopScanPulses();
+
+    try {
+      const img = new Image();
+      img.src = dataUrl;
+
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Could not load image for OCR"));
+      });
+
+      // Normalize into a single, stable pixel coordinate space.
+      // We use this same normalized canvas for:
+      //  - results display (so what you *see* matches what OCR analyzed)
+      //  - bbox coordinates (so mapping never depends on EXIF/canvas quirks)
+      const W0 = img.naturalWidth;
+      const H0 = img.naturalHeight;
+
+      const MAX_DIM = 2200; // keep OCR fast/stable on mobile
+      const scale = Math.min(1, MAX_DIM / Math.max(W0, H0));
+      const W = Math.max(1, Math.round(W0 * scale));
+      const H = Math.max(1, Math.round(H0 * scale));
+
+      // Source canvas (color) used for display + cropping.
+      sourceCanvas = document.createElement("canvas");
+      sourceCanvas.width = W;
+      sourceCanvas.height = H;
+      sourceCanvas.getContext("2d").drawImage(img, 0, 0, W, H);
+
+      // Use the normalized image everywhere in the UI.
+      sourceDataUrl = sourceCanvas.toDataURL("image/jpeg", 0.92);
+      imageDataUrl = sourceDataUrl;
+      ocrBg.style.backgroundImage = `url(${sourceDataUrl})`;
+
+// start pulse loop immediately (words will start once pool fills)
+      startScanPulses(W, H);
+
+      const baseCanvas = document.createElement("canvas");
+      baseCanvas.width = W;
+      baseCanvas.height = H;
+      baseCanvas.getContext("2d").drawImage(sourceCanvas, 0, 0);
+
+      const cwCanvas = document.createElement("canvas");
+      cwCanvas.width = H;
+      cwCanvas.height = W;
+      const ctxCW = cwCanvas.getContext("2d");
+      ctxCW.translate(H, 0);
+      ctxCW.rotate(Math.PI / 2);
+      ctxCW.drawImage(sourceCanvas, 0, 0);
+
+      const ccwCanvas = document.createElement("canvas");
+      ccwCanvas.width = H;
+      ccwCanvas.height = W;
+      const ctxCCW = ccwCanvas.getContext("2d");
+      ctxCCW.translate(0, W);
+      ctxCCW.rotate(-Math.PI / 2);
+      ctxCCW.drawImage(sourceCanvas, 0, 0);
+
+      applyGrayscaleAndContrast(baseCanvas, 20);
+      applyGrayscaleAndContrast(cwCanvas, 20);
+      applyGrayscaleAndContrast(ccwCanvas, 20);
+
+      const passes = [
+        { kind: "base", canvas: baseCanvas, label: "0°",   modeClass: "mode-0" },
+        { kind: "cw",   canvas: cwCanvas,   label: "90°",  modeClass: "mode-90" },
+        { kind: "ccw",  canvas: ccwCanvas,  label: "-90°", modeClass: "mode-neg90" },
+      ];
+
+      let allWords = [];
+
+      for (let i = 0; i < passes.length; i++) {
+        const { kind, canvas, label, modeClass } = passes[i];
+        const passIndex = i + 1;
+        const passTotal = passes.length;
+
+        setScanMode(label, modeClass);
+
+        const result = await Tesseract.recognize(canvas, "eng", {
+          logger: (m) => {
+            if (m.status === "recognizing text") {
+              const pct = Math.round((m.progress || 0) * 100);
+              ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}… ${pct}%`;
+              updateScanProgress(m.progress || 0);
+            } else {
+              ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}…`;
+            }
+          },
+        });
+
+        updateScanProgress(1);
+
+        const words = result.data.words || [];
+
+        const mapped = words
+          .map((w) => {
+            if (!w.text || !w.text.trim().length) return null;
+
+            const confidence =
+              typeof w.confidence === "number"
+                ? w.confidence
+                : typeof w.conf === "number"
+                ? w.conf
+                : null;
+
+            if (typeof confidence === "number" && confidence < 10) return null;
+
+            return {
+              text: w.text.trim(),
+              bbox: mapBboxToOriginal(w.bbox, kind, W, H),
+              confidence,
+            };
+          })
+          .filter(Boolean);
+
+        allWords = allWords.concat(mapped);
+
+        // feed pulse pool as each pass completes (bounded)
+        scanPulsePool = scanPulsePool.concat(mapped).slice(-1200);
+
+        // IMPORTANT: guaranteed visible pulse right now (so you see it even if OCR is fast)
+        const immediate = pickPulseCandidate();
+        if (immediate) showFloatingWord(immediate);
+      }
+
+      scanGradient.style.opacity = "0";
+
+      ocrWords = allWords;
+      buildTermList();
+      ocrProgress.classList.add("hidden");
+
+      // stop pulses once search UI appears
+      stopScanPulses();
+
+      // OCR-only comparison build: skip AI/Gemini cataloging entirely.
+      screenOCR.classList.add("mode-search");
+      setTimeout(() => searchInput.focus(), 450);
+    } catch (err) {
+      console.error(err);
+      stopScanPulses();
+      alert(
+        "There was a problem reading the image.\n\n" +
+          (err && err.message ? err.message : String(err))
+      );
+      scanGradient.style.opacity = "0";
+      showScreen(screenAdd);
+    }
+  }
+
+  function updateAutosuggest(query) {
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.length < 3) {
+      autosuggestEl.classList.remove("visible");
+      autosuggestEl.innerHTML = "";
+      return;
+    }
+
+    const q = trimmed.toLowerCase();
+    const suggestions = termList.filter(t => t.startsWith(q)).slice(0, 20);
+
+    if (!suggestions.length) {
+      autosuggestEl.classList.remove("visible");
+      autosuggestEl.innerHTML = "";
+      return;
+    }
+
+    autosuggestEl.innerHTML = suggestions
+      .map(s => `<div class="autosuggest-item" data-value="${s}">${s}</div>`)
+      .join("");
+    autosuggestEl.classList.add("visible");
+  }
+
+  searchInput.addEventListener("input", (e) => updateAutosuggest(e.target.value));
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const term = e.target.value.trim();
+      if (term) runSearch(term);
+    }
+  });
+
+  autosuggestEl.addEventListener("click", (e) => {
+    const item = e.target.closest(".autosuggest-item");
+    if (!item) return;
+    const value = item.dataset.value;
+    searchInput.value = value;
+    autosuggestEl.classList.remove("visible");
+    runSearch(value);
+  });
+
+  function normalizeToken(t) {
+    return (t || "").toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, "").trim();
+  }
+
+  function getMatchesForTerm(term) {
+    const q = normalizeToken(term);
+    if (!q) return [];
+
+    const matches = [];
+    const seen = new Set();
+
+    // Original OCR-derived matches.
+    for (const w of ocrWords) {
+      const token = normalizeToken(w.text);
+      const hit = q.length <= 2 ? token === q : token.includes(q);
+      if (!hit || !w.bbox) continue;
+      const key = `${Math.round(w.bbox.x0)}|${Math.round(w.bbox.y0)}|${Math.round(w.bbox.x1)}|${Math.round(w.bbox.y1)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        matches.push(w);
+      }
+    }
+
+    // AI-read literal spine text, including books the model could not identify.
+    for (const w of aiSpineWords) {
+      const token = normalizeToken(w.text);
+      const hit = q.length <= 2 ? token === q : token.includes(q);
+      if (!hit || !w.bbox) continue;
+      const key = `${Math.round(w.bbox.x0)}|${Math.round(w.bbox.y0)}|${Math.round(w.bbox.x1)}|${Math.round(w.bbox.y1)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        matches.push(w);
+      }
+    }
+
+    // Catalog-derived title/author terms. These let Spineless find words Tesseract never read.
+    for (const entry of bookCatalog) {
+      if (!entry || !entry.match || !entry.match.bbox || !entry.result) continue;
+      const tokens = [
+        ...extractCatalogTokens(entry.result.title),
+        ...extractCatalogTokens(entry.result.author)
+      ];
+      if (!tokens.includes(q)) continue;
+
+      const b = entry.match.bbox;
+      const key = `${Math.round(b.x0)}|${Math.round(b.y0)}|${Math.round(b.x1)}|${Math.round(b.y1)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        matches.push({
+          ...entry.match,
+          text: q,
+          catalogEntry: entry,
+          confidence: Math.max(Number(entry.result.confidence || 0) * 100, Number(entry.match.confidence || 0))
+        });
+      }
+    }
+
+    return matches;
+  }
+
+  function runSearch(term) {
+    if (!ocrWords.length || !termList.length) return;
+
+    const raw = term.trim();
+    if (!raw) return;
+
+    const q = normalizeToken(raw);
+    if (!q) { alert(`No matches found for “${raw}”`); return; }
+
+    let idx = termList.findIndex(t => t === q);
+    if (idx === -1) idx = termList.findIndex(t => t.startsWith(q));
+    if (idx === -1 && q.length >= 3) idx = termList.findIndex(t => t.includes(q));
+
+    if (idx === -1) { alert(`No matches found for “${raw}”`); return; }
+
+    currentTermIndex = idx;
+    currentTerm = termList[currentTermIndex];
+
+    currentMatches = getMatchesForTerm(currentTerm);
+    currentMatchIndex = 0;
+
+    setupResultsScreen();
+    showScreen(screenResults);
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  function truncateLabel(text, maxLen) {
+    if (!text) return "";
+    if (text.length <= maxLen) return text;
+    return text.slice(0, maxLen - 1) + "…";
+  }
+
+  function updateInstanceNav() {
+    if (!currentMatches || currentMatches.length <= 1) {
+      pillBadge.classList.add("hidden");
+      pillBadge.innerHTML = "";
+      hitPrevInline.disabled = true;
+      hitNextInline.disabled = true;
+      hitPrevInline.classList.add("hidden");
+      hitNextInline.classList.add("hidden");
+      return;
+    }
+    const current = currentMatchIndex + 1;
+    const total = currentMatches.length;
+    pillBadge.classList.remove("hidden");
+    pillBadge.innerHTML =
+      `<span class="pill-badge-current">${current}</span>` +
+      `<span class="pill-badge-total">${total}</span>`;
+    hitPrevInline.disabled = false;
+    hitNextInline.disabled = false;
+    hitPrevInline.classList.remove("hidden");
+    hitNextInline.classList.remove("hidden");
+  }
+
+  function setRecognizedTitle(text, state = "") {
+    if (!recognizedTitle || !recognizedTitleWrap) return;
+    recognizedTitle.classList.remove("is-loading", "is-uncertain");
+    if (!text) {
+      recognizedTitle.textContent = "";
+      recognizedTitleWrap.classList.add("hidden");
+      return;
+    }
+    recognizedTitle.textContent = text;
+    if (state) recognizedTitle.classList.add(state);
+    recognizedTitleWrap.classList.remove("hidden");
+  }
+
+  function bboxCenter(b) {
+    return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
+  }
+
+  function buildRecognitionContext(match) {
+    if (!sourceCanvas || !match || !match.bbox) return null;
+    const b = match.bbox;
+    const W = sourceCanvas.width, H = sourceCanvas.height;
+    const c = bboxCenter(b);
+
+    // Send the whole shelf image so the vision model can infer the actual book boundaries.
+    // We draw a conspicuous marker around the OCR hit so the model knows exactly which
+    // word/spine the user selected without relying only on coordinate math.
+    const maxDim = 1600;
+    const scale = Math.min(1, maxDim / Math.max(W, H));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(W * scale));
+    canvas.height = Math.max(1, Math.round(H * scale));
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+
+    const sx = canvas.width / W;
+    const sy = canvas.height / H;
+    const x = b.x0 * sx;
+    const y = b.y0 * sy;
+    const bw = Math.max(2, (b.x1 - b.x0) * sx);
+    const bh = Math.max(2, (b.y1 - b.y0) * sy);
+    const pad = Math.max(8, Math.min(24, Math.max(bw, bh) * 0.35));
+
+    ctx.save();
+    ctx.strokeStyle = "#ff2d2d";
+    ctx.lineWidth = Math.max(5, Math.round(Math.min(canvas.width, canvas.height) / 180));
+    ctx.shadowColor = "rgba(0,0,0,0.8)";
+    ctx.shadowBlur = 8;
+    ctx.strokeRect(
+      Math.max(1, x - pad),
+      Math.max(1, y - pad),
+      Math.min(canvas.width - x + pad - 1, bw + pad * 2),
+      Math.min(canvas.height - y + pad - 1, bh + pad * 2)
+    );
+    ctx.restore();
+
+    // Gather OCR context primarily by physical proximity to the selected word.
+    // This is only a hint; the model gets the full image and can read the rest itself.
+    const nearby = ocrWords
+      .filter(w => w && w.bbox)
+      .map(w => ({
+        text: normalizeToken(w.text),
+        confidence: typeof w.confidence === "number" ? w.confidence : 0,
+        d: Math.hypot(bboxCenter(w.bbox).x - c.x, bboxCenter(w.bbox).y - c.y)
+      }))
+      .filter(w => w.text && w.text.length > 1)
+      .sort((a,b) => (a.d - b.d) || (b.confidence - a.confidence));
+
+    const contextWords = [];
+    for (const w of nearby) {
+      if (!contextWords.includes(w.text)) contextWords.push(w.text);
+      if (contextWords.length >= 12) break;
+    }
+
+    return {
+      image: canvas.toDataURL("image/jpeg", 0.90),
+      contextWords,
+      target: {
+        x0: b.x0 / W,
+        y0: b.y0 / H,
+        x1: b.x1 / W,
+        y1: b.y1 / H,
+        centerX: c.x / W,
+        centerY: c.y / H
+      }
+    };
+  }
+
+  async function searchOpenLibraryCandidates(searchTerm, contextWords) {
+    const queries = [];
+    const strongContext = (contextWords || []).filter(w => w.length >= 3 && w !== searchTerm).slice(0, 4);
+    if (strongContext.length) queries.push([searchTerm, ...strongContext].join(" "));
+    queries.push(searchTerm);
+
+    const merged = new Map();
+    for (const q of queries) {
+      try {
+        const params = new URLSearchParams({
+          q,
+          fields: "key,title,author_name,first_publish_year,edition_key,cover_i,isbn,publisher",
+          limit: "12"
+        });
+        const resp = await fetch(`https://openlibrary.org/search.json?${params.toString()}`);
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        for (const doc of (data.docs || [])) {
+          if (!doc.title) continue;
+          const key = doc.key || `${doc.title}|${(doc.author_name || [""])[0]}`;
+          if (merged.has(key)) continue;
+          merged.set(key, {
+            key: doc.key || null,
+            title: doc.title,
+            author: (doc.author_name || []).slice(0, 3).join(", "),
+            year: doc.first_publish_year || null,
+            cover_i: doc.cover_i || null,
+            isbn: (doc.isbn || []).slice(0, 4),
+            publisher: (doc.publisher || []).slice(0, 3),
+            edition_key: (doc.edition_key || []).slice(0, 4)
+          });
+          if (merged.size >= 12) break;
+        }
+      } catch (err) {
+        console.warn("Open Library candidate lookup failed:", err);
+      }
+      if (merged.size >= 12) break;
+    }
+    return Array.from(merged.values()).slice(0, 12);
+  }
+
+  function recognitionCacheKey(match, term = currentTerm) {
+    if (!match || !match.bbox) return "";
+    const b = match.bbox;
+    return [term || "", Math.round(b.x0), Math.round(b.y0), Math.round(b.x1), Math.round(b.y1)].join("|");
+  }
+
+  function normalizedDistanceBetweenMatches(a, b) {
+    if (!sourceCanvas || !a || !b || !a.bbox || !b.bbox) return Infinity;
+    const ca = bboxCenter(a.bbox), cb = bboxCenter(b.bbox);
+    const dx = (ca.x - cb.x) / sourceCanvas.width;
+    const dy = (ca.y - cb.y) / sourceCanvas.height;
+    return Math.hypot(dx, dy);
+  }
+
+  function findCatalogEntryForMatch(match) {
+    if (!match || !bookCatalog.length) return null;
+    let best = null, bestD = Infinity;
+    for (const entry of bookCatalog) {
+      const d = normalizedDistanceBetweenMatches(match, entry.match);
+      if (d < bestD) { bestD = d; best = entry; }
+    }
+    // Tight enough to usually mean the same physical book, but forgiving of different OCR words on it.
+    return bestD <= 0.045 ? best : null;
+  }
+
+  async function identifyMatch(match, searchTerm, options = {}) {
+    if (!BOOK_ID_ENABLED || !match || !sourceCanvas) return null;
+    const { updateUI = false, serial = null } = options;
+
+    const existingCatalog = findCatalogEntryForMatch(match);
+    if (existingCatalog && existingCatalog.result && existingCatalog.result.title !== "Unknown title") {
+      return existingCatalog.result;
+    }
+
+    const cacheKey = recognitionCacheKey(match, searchTerm);
+    if (bookRecognitionCache.has(cacheKey)) return bookRecognitionCache.get(cacheKey);
+
+    if (updateUI) setRecognizedTitle("identifying…", "is-loading");
+    const recognitionContext = buildRecognitionContext(match);
+    if (!recognitionContext) return null;
+
+    const candidates = await searchOpenLibraryCandidates(searchTerm, recognitionContext.contextWords);
+    if (serial !== null && serial !== recognitionRequestSerial) return null;
+
+    try {
+      const resp = await fetch(BOOK_ID_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image: recognitionContext.image,
+          searchTerm,
+          ocrWords: recognitionContext.contextWords,
+          target: recognitionContext.target,
+          candidates
+        })
+      });
+      if (!resp.ok) {
+        let detail = "";
+        try { detail = JSON.stringify(await resp.json()); } catch (_) { detail = await resp.text(); }
+        throw new Error(`Book identification failed (${resp.status}) ${detail}`);
+      }
+      const result = await resp.json();
+      const candidateIndex = Number.isFinite(Number(result && result.candidateIndex)) ? Number(result.candidateIndex) : -1;
+      const matchedCandidate = candidateIndex >= 0 && candidateIndex < candidates.length ? candidates[candidateIndex] : null;
+      const clean = {
+        title: result && result.title ? String(result.title) : "Unknown title",
+        author: result && result.author ? String(result.author) : "",
+        confidence: Number.isFinite(Number(result && result.confidence)) ? Number(result.confidence) : 0,
+        candidateIndex,
+        year: matchedCandidate ? matchedCandidate.year : null,
+        publisher: matchedCandidate && matchedCandidate.publisher ? matchedCandidate.publisher : [],
+        isbn: matchedCandidate && matchedCandidate.isbn ? matchedCandidate.isbn : [],
+        cover_i: matchedCandidate ? matchedCandidate.cover_i : null,
+        openLibraryKey: matchedCandidate ? matchedCandidate.key : null
+      };
+      bookRecognitionCache.set(cacheKey, clean);
+      return clean;
+    } catch (err) {
+      console.warn(err);
+      return { title: "AI recognition error", author: "", confidence: 0, candidateIndex: -1, error: true };
+    }
+  }
+
+  function formatDuration(seconds) {
+    seconds = Math.max(0, Math.round(Number(seconds) || 0));
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  function normalizeBookField(value) {
+    const s = String(value == null ? "" : value).trim();
+    if (!s) return "";
+    if (/^(unknown|null|none|n\/a|undefined|untitled|unidentified(?: book)?|unknown title)$/i.test(s)) return "";
+    return s;
+  }
+
+  function normalizedBookText(value) {
+    return normalizeBookField(value)
+      .toLowerCase()
+      .replace(/&/g, " and ")
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function meaningfulTitleTokens(title) {
+    const stop = new Set(["a","an","the","of","and","or","to","in","on","for","by"]);
+    return normalizedBookText(title)
+      .split(" ")
+      .filter(t => t && !stop.has(t));
+  }
+
+  function entryConfidence(entry) {
+    const n = Number(entry && entry.result && entry.result.confidence);
+    return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0;
+  }
+
+  function entryHasMetadata(entry) {
+    const r = entry && entry.result;
+    if (!r) return false;
+    return Boolean(
+      r.openLibraryKey ||
+      r.cover_i ||
+      (Array.isArray(r.isbn) && r.isbn.length) ||
+      r.year ||
+      (Array.isArray(r.publisher) && r.publisher.length)
+    );
+  }
+
+
+  function normalizedEvidence(entry) {
+    const raw = entry && entry.result && entry.result.visualEvidence;
+    return Array.isArray(raw) ? raw.map(v => String(v == null ? "" : v).trim()).filter(Boolean) : [];
+  }
+
+  function titleHasVisualEvidence(entry) {
+    const title = normalizeBookField(entry && entry.result && entry.result.title);
+    if (!title) return false;
+    const titleTokens = meaningfulTitleTokens(title);
+    if (!titleTokens.length) return false;
+    const evidence = normalizedEvidence(entry).map(normalizedBookText).filter(Boolean);
+    if (!evidence.length) return false;
+    const evidenceText = evidence.join(" ");
+    const matched = titleTokens.filter(t => t.length >= 3 && evidenceText.includes(t));
+    return titleTokens.length <= 2
+      ? matched.length >= 1
+      : matched.length >= 2 || matched.length / titleTokens.length >= 0.5;
+  }
+
+  function credibilityScore(entry) {
+    if (!entry || !entry.result) return -99;
+    const title = normalizeBookField(entry.result.title);
+    const author = normalizeBookField(entry.result.author);
+    const nt = normalizedBookText(title);
+    const na = normalizedBookText(author);
+    const tokens = meaningfulTitleTokens(title);
+    const confidence = entryConfidence(entry);
+    const hasEvidence = titleHasVisualEvidence(entry);
+
+    if (!title) return -99;
+    if (["the","a","an","nine"].includes(nt)) return -8;
+
+    let score = 0;
+    if (tokens.length >= 3) score += 3;
+    else if (tokens.length === 2) score += 2.5;
+    else if (tokens.length === 1 && tokens[0].length >= 5) score += 1.5;
+    else score -= 1.5;
+
+    if (author) score += 1.0;
+    if (author && nt && nt === na) score -= 4;
+    if (confidence >= 0.80) score += 1.25;
+    else if (confidence >= 0.65) score += 0.75;
+    else if (confidence >= 0.50) score += 0.25;
+    else if (confidence < 0.35) score -= 1.0;
+    if (entryHasMetadata(entry)) score += 0.75;
+
+    // v25: no visually supported title, no verified book.
+    if (hasEvidence) score += 4;
+    else score -= 4;
+    return score;
+  }
+
+  function bboxVerticalOverlap(a, b) {
+    if (!a || !b) return 0;
+    const overlap = Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+    const minH = Math.max(1, Math.min(a.y1 - a.y0, b.y1 - b.y0));
+    return overlap / minH;
+  }
+
+  function samePhysicalBookDiagnostic(a, b) {
+    if (!a || !b || !a.match || !b.match || !a.match.bbox || !b.match.bbox) return false;
+
+    const A = a.match.bbox;
+    const B = b.match.bbox;
+    const iou = bboxIoU(A, B);
+    if (iou >= 0.58) return true;
+
+    const ac = bboxCenter(A);
+    const bc = bboxCenter(B);
+    const aw = Math.max(1, A.x1 - A.x0);
+    const bw = Math.max(1, B.x1 - B.x0);
+    const ah = Math.max(1, A.y1 - A.y0);
+    const bh = Math.max(1, B.y1 - B.y0);
+
+    const closeX = Math.abs(ac.x - bc.x) <= Math.max(5, Math.min(aw, bw) * 0.24);
+    const closeY = Math.abs(ac.y - bc.y) <= Math.max(12, Math.min(ah, bh) * 0.12);
+    const strongVerticalOverlap = bboxVerticalOverlap(A, B) >= 0.84;
+
+    return closeX && closeY && strongVerticalOverlap;
+  }
+
+  function catalogEntryVisualPosition(entry) {
+    const b = entry && entry.match && entry.match.bbox;
+    if (!b) return { x: 0, y: 0 };
+    return {
+      x: (Number(b.x0 || 0) + Number(b.x1 || 0)) / 2,
+      y: (Number(b.y0 || 0) + Number(b.y1 || 0)) / 2
+    };
+  }
+
+  function visualBookSort(a, b) {
+    const pa = catalogEntryVisualPosition(a);
+    const pb = catalogEntryVisualPosition(b);
+    const rowThreshold = sourceCanvas ? sourceCanvas.height * 0.06 : 80;
+    if (Math.abs(pa.y - pb.y) > rowThreshold) return pa.y - pb.y;
+    return pa.x - pb.x;
+  }
+
+
+  function sameCanonicalDetectedSpine(a, b) {
+    if (!a || !b || !a.bbox || !b.bbox) return false;
+    const A = a.bbox, B = b.bbox;
+    const iou = bboxIoU(A, B);
+
+    // v28: detected spines are the unit of truth. Only collapse detector
+    // boxes when they are virtually the same geometric detection.
+    if (iou >= 0.82) return true;
+
+    const ac = bboxCenter(A), bc = bboxCenter(B);
+    const aw = Math.max(1, A.x1-A.x0), bw = Math.max(1, B.x1-B.x0);
+    const ah = Math.max(1, A.y1-A.y0), bh = Math.max(1, B.y1-B.y0);
+    const centerX = Math.abs(ac.x-bc.x) / Math.max(aw,bw);
+    const centerY = Math.abs(ac.y-bc.y) / Math.max(ah,bh);
+    const widthRatio = Math.min(aw,bw) / Math.max(aw,bw);
+    const heightRatio = Math.min(ah,bh) / Math.max(ah,bh);
+
+    return centerX <= 0.10 &&
+           centerY <= 0.05 &&
+           widthRatio >= 0.84 &&
+           heightRatio >= 0.90 &&
+           bboxVerticalOverlap(A,B) >= 0.94;
+  }
+
+  function canonicalizeDetectedSpines(spines) {
+    const groups = [];
+    for (const spine of (spines || [])) {
+      if (!spine || !spine.bbox) continue;
+      let group = groups.find(g =>
+        g.members.some(existing => sameCanonicalDetectedSpine(existing, spine))
+      );
+      if (!group) {
+        group = { members: [], spine: null };
+        groups.push(group);
+      }
+      group.members.push(spine);
+      group.spine = group.members
+        .slice()
+        .sort((a,b) => (b.confidence||0)-(a.confidence||0))[0];
+    }
+    return groups.map((g,index) => ({
+      ...g.spine,
+      canonicalIndex:index,
+      members:g.members
+    }));
+  }
+
+  function bestSpineForEntryFromList(entry, spineList) {
+    const b = entry && entry.match && entry.match.bbox;
+    if (!b || !spineList || !spineList.length) return null;
+
+    const ec = bboxCenter(b);
+    let best = null, bestScore = -Infinity;
+
+    for (let i=0; i<spineList.length; i++) {
+      const spine = spineList[i];
+      if (!spine || !spine.bbox) continue;
+
+      const sb = spine.bbox;
+      const sc = bboxCenter(sb);
+      const iou = bboxIoU(b, sb);
+      const vo = bboxVerticalOverlap(b, sb);
+      const sw = Math.max(1, sb.x1-sb.x0);
+      const sh = Math.max(1, sb.y1-sb.y0);
+      const dx = Math.abs(ec.x-sc.x)/sw;
+      const dy = Math.abs(ec.y-sc.y)/sh;
+
+      // Strongly reward real overlap and same-center geometry.
+      const score = iou*12 + vo*3.5 - dx*3.0 - dy*1.6;
+      if (score > bestScore) {
+        bestScore = score;
+        best = {spine,index:i,score,iou,vo,dx,dy};
+      }
+    }
+
+    if (!best) return null;
+
+    // v28: never force a loose broad-region read onto the nearest detected
+    // spine. If geometry is not convincing, leave it unassigned and let it
+    // survive as an independent candidate rather than erasing a neighboring book.
+    const strongOverlap = best.iou >= 0.16 && best.vo >= 0.62;
+    const strongCenter = best.dx <= 0.48 && best.dy <= 0.22 && best.vo >= 0.78;
+    if (!strongOverlap && !strongCenter) return null;
+
+    return best;
+  }
+
+  function titleTokenSimilarity(a, b) {
+    const A = new Set(meaningfulTitleTokens(a));
+    const B = new Set(meaningfulTitleTokens(b));
+    if (!A.size || !B.size) return 0;
+    let inter=0;
+    for (const t of A) if (B.has(t)) inter++;
+    return inter / Math.max(A.size, B.size);
+  }
+
+  function sameVerifiedPhysicalBook(a, b) {
+    if (!a || !b || !a.match || !b.match) return false;
+    const sim = titleTokenSimilarity(a.result && a.result.title, b.result && b.result.title);
+    if (sim < 0.72) return false;
+    const A=a.match.bbox, B=b.match.bbox;
+    if (bboxIoU(A,B) >= 0.30) return true;
+    const ac=bboxCenter(A), bc=bboxCenter(B);
+    const aw=Math.max(1,A.x1-A.x0), bw=Math.max(1,B.x1-B.x0);
+    const ah=Math.max(1,A.y1-A.y0), bh=Math.max(1,B.y1-B.y0);
+    const xClose=Math.abs(ac.x-bc.x) <= Math.max(8, Math.max(aw,bw)*0.72);
+    const yClose=Math.abs(ac.y-bc.y) <= Math.max(12, Math.min(ah,bh)*0.12);
+    return xClose && yClose && bboxVerticalOverlap(A,B) >= 0.70;
+  }
+
+  function bestDetectedSpineForEntry(entry) {
+    const b = entry && entry.match && entry.match.bbox;
+    if (!b || !diagnosticDetectedSpines.length) return null;
+    const ec = bboxCenter(b);
+    let best = null;
+    let bestScore = -Infinity;
+    for (let i = 0; i < diagnosticDetectedSpines.length; i++) {
+      const spine = diagnosticDetectedSpines[i];
+      if (!spine || !spine.bbox) continue;
+      const sb = spine.bbox;
+      const sc = bboxCenter(sb);
+      const iou = bboxIoU(b, sb);
+      const vo = bboxVerticalOverlap(b, sb);
+      const sw = Math.max(1, sb.x1 - sb.x0);
+      const sh = Math.max(1, sb.y1 - sb.y0);
+      const dx = Math.abs(ec.x - sc.x) / sw;
+      const dy = Math.abs(ec.y - sc.y) / sh;
+      // Prefer actual overlap, but allow a nearby read whose box was slightly loose.
+      const score = iou * 8 + vo * 2.5 - dx * 1.6 - dy * 0.8;
+      if (score > bestScore) { bestScore = score; best = { spine, index: i, score, iou, vo, dx, dy }; }
+    }
+    if (!best) return null;
+    if (best.iou < 0.05 && (best.dx > 1.35 || best.dy > 0.55)) return null;
+    return best;
+  }
+
+  function reconcileCluster(cluster) {
+    const ranked = cluster.slice().sort((a, b) => {
+      const ae = titleHasVisualEvidence(a) ? 1 : 0;
+      const be = titleHasVisualEvidence(b) ? 1 : 0;
+      if (ae !== be) return be - ae;
+      const scoreDiff = credibilityScore(b) - credibilityScore(a);
+      if (Math.abs(scoreDiff) > 0.01) return scoreDiff;
+      return entryConfidence(b) - entryConfidence(a);
+    });
+
+    // v26: choose the best visually supported reading for this physical spine.
+    // Earlier weak reads remain diagnostic evidence but cannot create extra books.
+    const supported = ranked.filter(titleHasVisualEvidence);
+    const best = supported[0] || ranked[0];
+    return { best, ranked };
+  }
+
+
+  function isStrongProvisionalTitle(entry) {
+    if (!entry || !entry.result) return false;
+    const title = normalizeBookField(entry.result.title);
+    const author = normalizeBookField(entry.result.author);
+    if (!title) return false;
+
+    const nt = normalizedBookText(title);
+    const na = normalizedBookText(author);
+    if (!nt || (na && nt === na)) return false;
+    if (/^(unknown|unidentified|book|novel|the|a|an)$/i.test(nt)) return false;
+
+    const tokens = meaningfulTitleTokens(title);
+    const confidence = entryConfidence(entry);
+
+    // Broad-region reads can lack visualEvidence even when they were good.
+    // Retain only unusually strong, title-like reads as provisional candidates.
+    return confidence >= 0.90 &&
+           (tokens.length >= 2 || (tokens.length === 1 && tokens[0].length >= 7));
+  }
+
+  function getCatalogDiagnostics() {
+    const raw = diagnosticRawEntries
+      .filter(e => e && e.result && e.match && e.match.bbox)
+      .slice();
+
+    const canonicalSpines = canonicalizeDetectedSpines(diagnosticDetectedSpines);
+
+    // Every detected spine gets its own slot.
+    const slots = canonicalSpines.map((spine,index) => ({
+      spine,
+      index,
+      reads: []
+    }));
+
+    const unassignedClusters = [];
+
+    for (const entry of raw) {
+      const assignment = bestSpineForEntryFromList(entry, canonicalSpines);
+
+      if (assignment) {
+        slots[assignment.index].reads.push(entry);
+      } else {
+        // Do not throw away a plausible read just because the detector missed
+        // or poorly localized that physical spine.
+        let cluster = unassignedClusters.find(c =>
+          c.some(existing => samePhysicalBookDiagnostic(existing, entry))
+        );
+        if (!cluster) {
+          cluster = [];
+          unassignedClusters.push(cluster);
+        }
+        cluster.push(entry);
+      }
+    }
+
+    const credible = [];
+    const provisional = [];
+    const rejected = [];
+    const duplicates = [];
+    let unidentifiedSpines = 0;
+
+    // Resolve each physical detector slot independently.
+    for (const slot of slots) {
+      if (!slot.reads.length) {
+        unidentifiedSpines++;
+        continue;
+      }
+
+      const {best, ranked} = reconcileCluster(slot.reads);
+      const title = normalizeBookField(best && best.result && best.result.title);
+      const verified = title && titleHasVisualEvidence(best);
+      const score = credibilityScore(best);
+
+      if (verified && score >= 2.5) {
+        credible.push(best);
+      } else if (title && isStrongProvisionalTitle(best)) {
+        provisional.push(best);
+      } else {
+        rejected.push({
+          entry: best,
+          reason: title ? "unverified-title" : "unidentified-spine",
+          score
+        });
+      }
+
+      for (const entry of ranked) {
+        if (entry === best) continue;
+        duplicates.push({
+          entry,
+          reason: "alternate-read-same-spine",
+          score: credibilityScore(entry)
+        });
+      }
+    }
+
+    // Reads that could not be confidently assigned to any detector slot may
+    // represent spines the detector missed. Preserve good ones independently.
+    for (const cluster of unassignedClusters) {
+      const {best, ranked} = reconcileCluster(cluster);
+      const title = normalizeBookField(best && best.result && best.result.title);
+      const verified = title && titleHasVisualEvidence(best);
+      const score = credibilityScore(best);
+
+      if (verified && score >= 2.5) {
+        credible.push(best);
+      } else if (title && isStrongProvisionalTitle(best)) {
+        provisional.push(best);
+      } else {
+        rejected.push({
+          entry: best,
+          reason: title ? "unassigned-unverified" : "unassigned-unidentified",
+          score
+        });
+      }
+
+      for (const entry of ranked) {
+        if (entry === best) continue;
+        duplicates.push({
+          entry,
+          reason: "alternate-unassigned-read",
+          score: credibilityScore(entry)
+        });
+      }
+    }
+
+    // v28 deliberately does NOT merge two separate detector slots just because
+    // their titles/authors are similar. Separate physical locations stay separate.
+    credible.sort(visualBookSort);
+    provisional.sort(visualBookSort);
+
+    return {
+      credible,
+      provisional,
+      catalog: [...credible, ...provisional].sort(visualBookSort),
+      rejected,
+      duplicates,
+      rawCount: raw.length,
+      spineCount: canonicalSpines.length,
+      rawSpineCount: diagnosticDetectedSpines.length,
+      unidentifiedSpines
+    };
+  }
+
+  function updateCatalogStats(elapsedSeconds) {
+    diagnosticLastElapsed = elapsedSeconds;
+    const d = getCatalogDiagnostics();
+    const label =
+      `${d.credible.length} verified · ${d.provisional.length} candidates · ${d.spineCount} spines · ${formatDuration(elapsedSeconds)}`;
+
+    if (catalogStats) {
+      catalogStats.textContent = label;
+      catalogStats.classList.add("visible");
+    }
+    if (searchCatalogStats) {
+      searchCatalogStats.textContent = label;
+      searchCatalogStats.classList.add("visible");
+    }
+  }
+
+  function displayBookLine(entry, index) {
+    const title = normalizeBookField(entry && entry.result && entry.result.title) || "Unknown";
+    const author = normalizeBookField(entry && entry.result && entry.result.author);
+    const confidence = Math.round(entryConfidence(entry) * 100);
+    const evidence = normalizedEvidence(entry);
+    return `${index + 1}. ${title}${author ? " — " + author : ""} [${confidence}%]${evidence.length ? " · evidence: " + evidence.join(" | ") : ""}`;
+  }
+
+  function diagnosticRejectedLine(item, index) {
+    const e = item.entry;
+    const title = normalizeBookField(e && e.result && e.result.title) || "Unknown";
+    const author = normalizeBookField(e && e.result && e.result.author);
+    const confidence = Math.round(entryConfidence(e) * 100);
+    return `${index + 1}. ${title}${author ? " — " + author : ""} [${confidence}%] — ${item.reason}`;
+  }
+
+  function buildCopiedBookList() {
+    const d = getCatalogDiagnostics();
+
+    const credibleLines = d.credible.map(displayBookLine);
+    const provisionalLines = d.provisional.map(displayBookLine);
+    const rejectedItems = [...d.rejected, ...d.duplicates];
+    const rejectedLines = rejectedItems.map(diagnosticRejectedLine);
+
+    return [
+      `Spineless v28 diagnostic`,
+      `${d.credible.length} verified books · ${d.provisional.length} provisional candidates · ${d.rawCount} raw identifications · ${d.spineCount} detected spine slots · ${d.unidentifiedSpines} unidentified slots · ${formatDuration(diagnosticLastElapsed)}`,
+      "",
+      "VERIFIED BOOKS",
+      ...credibleLines,
+      "",
+      "PROVISIONAL HIGH-CONFIDENCE CANDIDATES",
+      ...provisionalLines,
+      "",
+      `REJECTED / ALTERNATE RAW READS (${rejectedItems.length})`,
+      ...rejectedLines
+    ].join("\n");
+  }
+
+  async function copyCatalogBookList(sourceEl) {
+    if (!diagnosticRawEntries.length && !bookCatalog.length) return;
+
+    const text = buildCopiedBookList();
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
+    }
+
+    const d = getCatalogDiagnostics();
+    const targets = [catalogStats, searchCatalogStats].filter(Boolean);
+    const originals = targets.map(el => el.textContent);
+
+    targets.forEach(el => {
+      if (el.classList.contains("visible")) {
+        el.textContent = `${d.credible.length} books · list copied`;
+      }
+    });
+
+    setTimeout(() => {
+      targets.forEach((el, i) => {
+        el.textContent = originals[i];
+      });
+    }, 1400);
+  }
+
+  if (catalogStats) {
+    catalogStats.title = "Tap to copy diagnostic book list";
+    catalogStats.addEventListener("click", () => copyCatalogBookList(catalogStats));
+  }
+
+  if (searchCatalogStats) {
+    searchCatalogStats.title = "Tap to copy diagnostic book list";
+    searchCatalogStats.addEventListener("click", () => copyCatalogBookList(searchCatalogStats));
+  }
+
+  async function enrichCatalogFromOpenLibrary(runSerial) {
+    const queue = bookCatalog.filter(e => e && e.result && e.result.title);
+    let cursor = 0;
+    const concurrency = 5;
+
+    async function worker() {
+      while (cursor < queue.length && runSerial === catalogingRunSerial) {
+        const entry = queue[cursor++];
+        try {
+          const params = new URLSearchParams({
+            title: entry.result.title,
+            author: entry.result.author || "",
+            fields: "key,title,author_name,first_publish_year,cover_i,isbn,publisher",
+            limit: "3"
+          });
+          const resp = await fetch(`https://openlibrary.org/search.json?${params.toString()}`);
+          if (!resp.ok) continue;
+          const data = await resp.json();
+          const doc = (data.docs || [])[0];
+          if (!doc) continue;
+
+          entry.result.year = doc.first_publish_year || entry.result.year || null;
+          entry.result.publisher = (doc.publisher || []).slice(0, 3);
+          entry.result.isbn = (doc.isbn || []).slice(0, 4);
+          entry.result.cover_i = doc.cover_i || null;
+          entry.result.openLibraryKey = doc.key || null;
+        } catch (err) {
+          console.warn("Open Library enrichment failed:", err);
+        }
+      }
+    }
+
+    await Promise.all(Array.from({length: Math.min(concurrency, queue.length || 1)}, () => worker()));
+  }
+
+  function makeShelfRegions() {
+    if (!sourceCanvas) return [];
+    const W = sourceCanvas.width, H = sourceCanvas.height;
+    const bands = 6;
+    const overlap = 0.12;
+    const regions = [];
+
+    for (let i = 0; i < bands; i++) {
+      const bandH = H / bands;
+      const y0 = Math.max(0, i * bandH - bandH * overlap);
+      const y1 = Math.min(H, (i + 1) * bandH + bandH * overlap);
+
+      const words = ocrWords
+        .filter(w => w && w.bbox)
+        .filter(w => {
+          const c = bboxCenter(w.bbox);
+          return c.y >= y0 && c.y <= y1;
+        })
+        .map(w => ({
+          text: normalizeToken(w.text),
+          confidence: Number(w.confidence || 0),
+          bbox: {
+            x0: w.bbox.x0 / W,
+            y0: (w.bbox.y0 - y0) / (y1 - y0),
+            x1: w.bbox.x1 / W,
+            y1: (w.bbox.y1 - y0) / (y1 - y0)
+          }
+        }))
+        .filter(w => w.text && w.text.length > 1)
+        .sort((a,b) => b.confidence - a.confidence)
+        .slice(0, 90);
+
+      regions.push({ index: i, x0: 0, y0, x1: W, y1, words });
+    }
+    return regions;
+  }
+
+  function renderRegionImage(region) {
+    const cropW = region.x1 - region.x0;
+    const cropH = region.y1 - region.y0;
+    const canvas = document.createElement("canvas");
+    const maxW = 1500;
+    const scale = Math.min(1, maxW / cropW);
+    canvas.width = Math.max(1, Math.round(cropW * scale));
+    canvas.height = Math.max(1, Math.round(cropH * scale));
+    canvas.getContext("2d").drawImage(
+      sourceCanvas,
+      region.x0, region.y0, cropW, cropH,
+      0, 0, canvas.width, canvas.height
+    );
+    return canvas.toDataURL("image/jpeg", 0.84);
+  }
+
+  function regionBookToCatalogEntry(book, region) {
+    if (!book || !book.title) return null;
+    const W = sourceCanvas.width;
+    const regionH = region.y1 - region.y0;
+    const rb = book.bbox || {};
+    const clamp = n => Math.max(0, Math.min(1, Number(n) || 0));
+    const x0 = clamp(rb.x0), y0 = clamp(rb.y0), x1 = clamp(rb.x1), y1 = clamp(rb.y1);
+
+    const bbox = {
+      x0: x0 * W,
+      y0: region.y0 + y0 * regionH,
+      x1: Math.max(x0 * W + 2, x1 * W),
+      y1: Math.max(region.y0 + y0 * regionH + 2, region.y0 + y1 * regionH)
+    };
+
+    return {
+      match: {
+        text: book.title,
+        bbox,
+        confidence: Math.round((Number(book.confidence) || 0) * 100)
+      },
+      term: extractCatalogTokens(book.title)[0] || "",
+      result: {
+        title: String(book.title),
+        author: book.author ? String(book.author) : "",
+        confidence: Number(book.confidence) || 0,
+        candidateIndex: -1,
+        year: book.year || null,
+        publisher: book.publisher ? [String(book.publisher)] : [],
+        isbn: book.isbn ? [String(book.isbn)] : [],
+        cover_i: null,
+        openLibraryKey: null
+      }
+    };
+  }
+
+  function regionSpineToGlobal(spine, region) {
+    if (!spine || !spine.bbox) return null;
+    const W = sourceCanvas.width;
+    const regionH = region.y1 - region.y0;
+    const rb = spine.bbox || {};
+    const clamp = n => Math.max(0, Math.min(1, Number(n) || 0));
+    const x0 = clamp(rb.x0), y0 = clamp(rb.y0), x1 = clamp(rb.x1), y1 = clamp(rb.y1);
+    if (x1 <= x0 || y1 <= y0) return null;
+    return {
+      confidence: Number(spine.confidence) || 0,
+      bbox: {
+        x0: x0 * W,
+        y0: region.y0 + y0 * regionH,
+        x1: Math.max(x0 * W + 2, x1 * W),
+        y1: Math.max(region.y0 + y0 * regionH + 2, region.y0 + y1 * regionH)
+      }
+    };
+  }
+
+  function regionWordToGlobal(word, region) {
+    if (!word || !word.text || !word.bbox) return null;
+    const W = sourceCanvas.width;
+    const regionH = region.y1 - region.y0;
+    const rb = word.bbox || {};
+    const clamp = n => Math.max(0, Math.min(1, Number(n) || 0));
+    const x0 = clamp(rb.x0), y0 = clamp(rb.y0), x1 = clamp(rb.x1), y1 = clamp(rb.y1);
+    const token = normalizeToken(word.text);
+    if (!token || token.length < 2) return null;
+
+    return {
+      text: token,
+      rawText: String(word.text),
+      confidence: Math.round((Number(word.confidence) || 0) * 100),
+      source: "ai-spine",
+      bbox: {
+        x0: x0 * W,
+        y0: region.y0 + y0 * regionH,
+        x1: Math.max(x0 * W + 2, x1 * W),
+        y1: Math.max(region.y0 + y0 * regionH + 2, region.y0 + y1 * regionH)
+      }
+    };
+  }
+
+  function sameAIWord(a, b) {
+    if (!a || !b || normalizeToken(a.text) !== normalizeToken(b.text)) return false;
+    const A = bboxCenter(a.bbox), B = bboxCenter(b.bbox);
+    return Math.hypot(A.x - B.x, A.y - B.y) < Math.max(35, sourceCanvas.width * 0.035);
+  }
+
+  function bboxIoU(a, b) {
+    const ix0 = Math.max(a.x0, b.x0), iy0 = Math.max(a.y0, b.y0);
+    const ix1 = Math.min(a.x1, b.x1), iy1 = Math.min(a.y1, b.y1);
+    const iw = Math.max(0, ix1 - ix0), ih = Math.max(0, iy1 - iy0);
+    const inter = iw * ih;
+    const aa = Math.max(1, (a.x1-a.x0)*(a.y1-a.y0));
+    const ba = Math.max(1, (b.x1-b.x0)*(b.y1-b.y0));
+    return inter / Math.max(1, aa + ba - inter);
+  }
+
+  function sameDetectedSpine(a, b) {
+    if (!a || !b) return false;
+    const A = bboxCenter(a.bbox), B = bboxCenter(b.bbox);
+    const aw = a.bbox.x1-a.bbox.x0, bw = b.bbox.x1-b.bbox.x0;
+    const ah = a.bbox.y1-a.bbox.y0, bh = b.bbox.y1-b.bbox.y0;
+    const centerDist = Math.hypot(A.x-B.x, A.y-B.y);
+    return bboxIoU(a.bbox,b.bbox) > 0.42 ||
+      (centerDist < Math.max(18, Math.min(aw,bw)*0.55) && Math.abs(ah-bh) < Math.max(60, Math.max(ah,bh)*0.45));
+  }
+
+  function renderSpineCrop(spine) {
+    const b = spine.bbox;
+    const W = sourceCanvas.width, H = sourceCanvas.height;
+    const bw = b.x1-b.x0, bh = b.y1-b.y0;
+    const padX = Math.max(8, bw * 0.28);
+    const padY = Math.max(8, bh * 0.05);
+    const x0 = Math.max(0, b.x0-padX), y0 = Math.max(0, b.y0-padY);
+    const x1 = Math.min(W, b.x1+padX), y1 = Math.min(H, b.y1+padY);
+    const cropW = x1-x0, cropH = y1-y0;
+    const canvas = document.createElement("canvas");
+    const maxDim = 900;
+    const scale = Math.min(1.5, maxDim / Math.max(cropW,cropH));
+    canvas.width = Math.max(1, Math.round(cropW*scale));
+    canvas.height = Math.max(1, Math.round(cropH*scale));
+    canvas.getContext("2d").drawImage(sourceCanvas, x0,y0,cropW,cropH, 0,0,canvas.width,canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.9);
+  }
+
+  function ocrHintsForSpine(spine) {
+    const b = spine.bbox;
+    const pad = Math.max(12, (b.x1-b.x0)*0.35);
+    return ocrWords
+      .filter(w => w && w.bbox)
+      .filter(w => {
+        const c = bboxCenter(w.bbox);
+        return c.x >= b.x0-pad && c.x <= b.x1+pad && c.y >= b.y0-20 && c.y <= b.y1+20;
+      })
+      .sort((a,b) => Number(b.confidence||0)-Number(a.confidence||0))
+      .slice(0,20)
+      .map(w => String(w.text||"").trim())
+      .filter(Boolean);
+  }
+
+  function spineResultToCatalogEntry(spine, result) {
+    if (!result || !result.title || result.title === "Unknown title") return null;
+    return {
+      match: {
+        text: result.title,
+        bbox: spine.bbox,
+        confidence: Math.round((Number(result.confidence)||0)*100)
+      },
+      term: extractCatalogTokens(result.title)[0] || "",
+      result: {
+        title: String(result.title),
+        author: result.author ? String(result.author) : "",
+        confidence: Number(result.confidence)||0,
+        candidateIndex: -1,
+        year: null,
+        publisher: [],
+        isbn: [],
+        cover_i: null,
+        openLibraryKey: null
+      }
+    };
+  }
+
+  function sameCatalogBook(a, b) {
+    if (!a || !b || !a.result || !b.result) return false;
+    const at = normalizeToken(a.result.title), bt = normalizeToken(b.result.title);
+    if (!at || at !== bt) return false;
+    const A = bboxCenter(a.match.bbox), B = bboxCenter(b.match.bbox);
+    return Math.hypot(A.x - B.x, A.y - B.y) < Math.max(100, sourceCanvas.width * 0.12);
+  }
+
+  async function identifyShelfRegion(region, runSerial, scanPass = 1) {
+    const resp = await fetch(BOOK_ID_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "region",
+        image: renderRegionImage(region),
+        regionIndex: region.index,
+        scanPass,
+        ocrWords: region.words
+      })
+    });
+    if (!resp.ok) {
+      let detail = "";
+      try { detail = JSON.stringify(await resp.json()); } catch (_) {}
+      throw new Error(`Region identification failed (${resp.status}) ${detail}`);
+    }
+    const data = await resp.json();
+    if (runSerial !== catalogingRunSerial) return { books: [], words: [] };
+    return {
+      books: (Array.isArray(data.books) ? data.books : [])
+        .map(book => regionBookToCatalogEntry(book, region))
+        .filter(Boolean),
+      words: (Array.isArray(data.visibleWords) ? data.visibleWords : [])
+        .map(word => regionWordToGlobal(word, region))
+        .filter(Boolean)
+    };
+  }
+
+
+  function spineCoveredByCatalog(spine) {
+    if (!spine || !spine.bbox) return false;
+    const sc = bboxCenter(spine.bbox);
+    for (const entry of bookCatalog) {
+      if (!entry || !entry.match || !entry.match.bbox) continue;
+      const b = entry.match.bbox;
+      const padX = Math.max(8, (b.x1 - b.x0) * 0.18);
+      const padY = Math.max(8, (b.y1 - b.y0) * 0.08);
+      const inside =
+        sc.x >= b.x0 - padX && sc.x <= b.x1 + padX &&
+        sc.y >= b.y0 - padY && sc.y <= b.y1 + padY;
+      if (inside || bboxIoU(spine.bbox, b) > 0.22) return true;
+    }
+    return false;
+  }
+
+  async function detectShelfRegion(region, runSerial) {
+    const resp = await fetch(BOOK_ID_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "detect-region",
+        image: renderRegionImage(region),
+        regionIndex: region.index,
+        ocrWords: region.words
+      })
+    });
+    if (!resp.ok) {
+      let detail = "";
+      try { detail = JSON.stringify(await resp.json()); } catch (_) {}
+      throw new Error(`Spine detection failed (${resp.status}) ${detail}`);
+    }
+    const data = await resp.json();
+    if (runSerial !== catalogingRunSerial) return { spines: [], words: [] };
+    return {
+      spines: (Array.isArray(data.spines) ? data.spines : []).map(s => regionSpineToGlobal(s,region)).filter(Boolean),
+      words: (Array.isArray(data.visibleWords) ? data.visibleWords : []).map(w => regionWordToGlobal(w,region)).filter(Boolean)
+    };
+  }
+
+  function expandedSalvageCrop(spine) {
+    if (!sourceCanvas || !spine || !spine.bbox) return null;
+    const W = sourceCanvas.width, H = sourceCanvas.height;
+    const b = spine.bbox;
+    const bw = Math.max(8, b.x1 - b.x0);
+    const bh = Math.max(24, b.y1 - b.y0);
+    const padX = Math.max(bw * 1.15, W * 0.018);
+    const padY = Math.max(bh * 0.08, H * 0.008);
+    const x0 = Math.max(0, b.x0 - padX), x1 = Math.min(W, b.x1 + padX);
+    const y0 = Math.max(0, b.y0 - padY), y1 = Math.min(H, b.y1 + padY);
+    const cropW = x1 - x0, cropH = y1 - y0;
+    const canvas = document.createElement("canvas");
+    const maxW = 900;
+    const scale = Math.min(1.6, maxW / Math.max(1, cropW));
+    canvas.width = Math.max(1, Math.round(cropW * scale));
+    canvas.height = Math.max(1, Math.round(cropH * scale));
+    canvas.getContext("2d").drawImage(sourceCanvas, x0, y0, cropW, cropH, 0, 0, canvas.width, canvas.height);
+    return {
+      image: canvas.toDataURL("image/jpeg", 0.92),
+      targetBBox: {
+        x0: (b.x0 - x0) / cropW, y0: (b.y0 - y0) / cropH,
+        x1: (b.x1 - x0) / cropW, y1: (b.y1 - y0) / cropH
+      }
+    };
+  }
+
+  function nearbyOCRForSpine(spine, limit = 18) {
+    if (!spine || !spine.bbox) return [];
+    const b = spine.bbox, cx = (b.x0+b.x1)/2, cy = (b.y0+b.y1)/2;
+    const rx = Math.max(60, (b.x1-b.x0)*2.5), ry = Math.max(90, (b.y1-b.y0)*0.45);
+    return ocrWords.filter(w => w && w.bbox).map(w => {
+      const c = bboxCenter(w.bbox);
+      return { w, score: Math.abs(c.x-cx)/rx + Math.abs(c.y-cy)/ry };
+    }).filter(x => x.score <= 2.2).sort((a,b)=>a.score-b.score).slice(0,limit)
+      .map(x => ({ text: String(x.w.text||"").trim(), confidence: Number(x.w.confidence||0) }))
+      .filter(x => x.text);
+  }
+
+  async function identifySalvageBatch(batch, runSerial) {
+    const items = batch.map(spine => {
+      const crop = expandedSalvageCrop(spine);
+      return { id: spine.id, image: crop ? crop.image : renderSpineImage(spine),
+        targetBBox: crop ? crop.targetBBox : {x0:0,y0:0,x1:1,y1:1},
+        nearbyOCR: nearbyOCRForSpine(spine) };
+    });
+    const resp = await fetch(BOOK_ID_ENDPOINT, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "salvage-batch", items })
+    });
+    if (!resp.ok) {
+      let detail = ""; try { detail = JSON.stringify(await resp.json()); } catch (_) {}
+      throw new Error(`Salvage identification failed (${resp.status}) ${detail}`);
+    }
+    const data = await resp.json();
+    if (runSerial !== catalogingRunSerial) return [];
+    return Array.isArray(data.results) ? data.results : [];
+  }
+
+  async function identifySpineBatch(batch, runSerial) {
+    const payload = batch.map((spine, i) => ({
+      id: String(spine.id),
+      image: renderSpineCrop(spine),
+      ocrWords: ocrHintsForSpine(spine)
+    }));
+    const resp = await fetch(BOOK_ID_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "spine-batch", spines: payload })
+    });
+    if (!resp.ok) {
+      let detail = "";
+      try { detail = JSON.stringify(await resp.json()); } catch (_) {}
+      throw new Error(`Spine identification failed (${resp.status}) ${detail}`);
+    }
+    const data = await resp.json();
+    if (runSerial !== catalogingRunSerial) return [];
+    return Array.isArray(data.results) ? data.results : [];
+  }
+
+
+  function renderVerificationCrop(spine) {
+    if (!sourceCanvas || !spine || !spine.bbox) return null;
+    const b = spine.bbox, W = sourceCanvas.width, H = sourceCanvas.height;
+    const bw = Math.max(8, b.x1-b.x0), bh = Math.max(24, b.y1-b.y0);
+    const padX = Math.max(bw*0.55, W*0.006), padY = Math.max(bh*0.08, H*0.006);
+    const x0=Math.max(0,b.x0-padX), x1=Math.min(W,b.x1+padX);
+    const y0=Math.max(0,b.y0-padY), y1=Math.min(H,b.y1+padY);
+    const cw=x1-x0, ch=y1-y0;
+    const canvas=document.createElement("canvas");
+    const targetW=Math.min(1000,Math.max(420,Math.round(cw*3.2)));
+    const scale=targetW/Math.max(1,cw);
+    canvas.width=targetW; canvas.height=Math.max(1,Math.round(ch*scale));
+    canvas.getContext("2d").drawImage(sourceCanvas,x0,y0,cw,ch,0,0,canvas.width,canvas.height);
+    return {
+      image:canvas.toDataURL("image/jpeg",0.95),
+      targetBBox:{x0:(b.x0-x0)/cw,y0:(b.y0-y0)/ch,x1:(b.x1-x0)/cw,y1:(b.y1-y0)/ch}
+    };
+  }
+
+  async function verifySpineBatch(batch, runSerial) {
+    const items=batch.map(spine=>{
+      const crop=renderVerificationCrop(spine);
+      return {
+        id:String(spine.id),
+        image:crop?crop.image:renderSpineImage(spine),
+        targetBBox:crop?crop.targetBBox:{x0:0,y0:0,x1:1,y1:1},
+        nearbyOCR:nearbyOCRForSpine(spine,18)
+      };
+    });
+    const resp=await fetch(BOOK_ID_ENDPOINT,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({mode:"verify-spine-batch",items})
+    });
+    if(!resp.ok) throw new Error(`Verification failed (${resp.status})`);
+    const data=await resp.json();
+    if(runSerial!==catalogingRunSerial) return [];
+    return Array.isArray(data.results)?data.results:[];
+  }
+
+  async function catalogBooks() {
+    if (!BOOK_ID_ENABLED || !sourceCanvas || !ocrWords.length) return;
+
+    const runSerial = ++catalogingRunSerial;
+    const startedAt = performance.now();
+    catalogingActive = true;
+    bookCatalog = [];
+    aiSpineWords = [];
+    catalogTerms.clear();
+    bookRecognitionCache.clear();
+    if (catalogStats) catalogStats.classList.remove("visible");
+
+    const regions = makeShelfRegions();
+    catalogingOverlay.classList.add("visible");
+    catalogingBar.style.width = "0%";
+
+    // PASSES 1–3: three complementary whole-region reads.
+    const passAdds = [];
+    const fastConcurrency = 3;
+
+    async function runBroadPass(passIndex) {
+      let fastCursor = 0;
+      let fastDone = 0;
+      const before = bookCatalog.length;
+
+      async function fastWorker() {
+        while (fastCursor < regions.length && runSerial === catalogingRunSerial) {
+          const region = regions[fastCursor++];
+          try {
+            const rr = await identifyShelfRegion(region, runSerial, passIndex);
+
+            for (const entry of rr.books) {
+              diagnosticRawEntries.push(entry);
+              const dupe = bookCatalog.find(existing => sameCatalogBook(existing, entry));
+              if (!dupe) bookCatalog.push(entry);
+              else if ((entry.result.confidence || 0) > (dupe.result.confidence || 0)) {
+                Object.assign(dupe, entry);
+              }
+            }
+
+            for (const word of rr.words) {
+              const dupe = aiSpineWords.find(existing => sameAIWord(existing, word));
+              if (!dupe) aiSpineWords.push(word);
+              else if ((word.confidence || 0) > (dupe.confidence || 0)) {
+                Object.assign(dupe, word);
+              }
+            }
+
+            buildTermList();
+          } catch (err) {
+            console.warn(`AI pass ${passIndex} region failed:`, err);
+          }
+
+          fastDone++;
+          const completedBroad =
+            ((passIndex - 1) * regions.length) + fastDone;
+          const totalBroad = regions.length * 3;
+
+          catalogingStatus.textContent =
+            `AI pass ${passIndex} of 3 · ${fastDone} of ${regions.length} regions · ${bookCatalog.length} books`;
+          catalogingBar.style.width =
+            `${Math.round((completedBroad / totalBroad) * 58)}%`;
+
+          if (catalogingEta) {
+            catalogingEta.textContent =
+              `Pass ${passIndex} added ${Math.max(0, bookCatalog.length - before)} unique books so far`;
+          }
+        }
+      }
+
+      await Promise.all(
+        Array.from(
+          { length: Math.min(fastConcurrency, regions.length) },
+          () => fastWorker()
+        )
+      );
+
+      passAdds.push(Math.max(0, bookCatalog.length - before));
+    }
+
+    for (let passIndex = 1; passIndex <= 3; passIndex++) {
+      await runBroadPass(passIndex);
+      if (runSerial !== catalogingRunSerial) return;
+    }
+
+    const initialBookCount = bookCatalog.length;
+
+    if (catalogingEta) {
+      catalogingEta.textContent =
+        `3-pass gains: +${passAdds[0] || 0} · +${passAdds[1] || 0} · +${passAdds[2] || 0}`;
+    }
+
+    // PASS 2: detect all physical spines, then recover only those not already covered.
+    catalogingStatus.textContent = `${initialBookCount} found · checking for missed books`;
+    if (catalogingEta) catalogingEta.textContent = "Detecting remaining spines…";
+
+    const detectedSpines = [];
+    let detectCursor = 0, detectDone = 0;
+    const detectConcurrency = 3;
+
+    async function detectWorker() {
+      while (detectCursor < regions.length && runSerial === catalogingRunSerial) {
+        const region = regions[detectCursor++];
+        try {
+          const rr = await detectShelfRegion(region, runSerial);
+          for (const spine of rr.spines) {
+            const dupe = detectedSpines.find(s => sameDetectedSpine(s, spine));
+            if (!dupe) detectedSpines.push(spine);
+            else if ((spine.confidence || 0) > (dupe.confidence || 0)) Object.assign(dupe, spine);
+          }
+          for (const word of rr.words) {
+            const dupe = aiSpineWords.find(existing => sameAIWord(existing, word));
+            if (!dupe) aiSpineWords.push(word);
+            else if ((word.confidence || 0) > (dupe.confidence || 0)) Object.assign(dupe, word);
+          }
+          buildTermList();
+        } catch (err) { console.warn(err); }
+        detectDone++;
+        catalogingStatus.textContent = `${initialBookCount} found · ${detectedSpines.length} spines detected`;
+        catalogingBar.style.width = `${58 + Math.round((detectDone / regions.length) * 15)}%`;
+      }
+    }
+
+    await Promise.all(Array.from({length: Math.min(detectConcurrency, regions.length)}, () => detectWorker()));
+    if (runSerial !== catalogingRunSerial) return;
+
+    detectedSpines.sort((a,b) => (a.bbox.y0-b.bbox.y0) || (a.bbox.x0-b.bbox.x0));
+    diagnosticDetectedSpines = detectedSpines.slice();
+    const recoverySpines = detectedSpines.filter(spine => !spineCoveredByCatalog(spine));
+    recoverySpines.forEach((s,i) => s.id = i + 1);
+
+    const salvageBatchSize = 3;
+    const salvageBatches = [];
+    for (let i = 0; i < recoverySpines.length; i += salvageBatchSize) salvageBatches.push(recoverySpines.slice(i, i + salvageBatchSize));
+
+    let salvageCursor = 0, salvageDone = 0;
+    const salvageConcurrency = 2;
+    if (catalogingEta) catalogingEta.textContent = `${detectedSpines.length} spines detected · ${recoverySpines.length} remaining`;
+
+    async function salvageWorker() {
+      while (salvageCursor < salvageBatches.length && runSerial === catalogingRunSerial) {
+        const batch = salvageBatches[salvageCursor++];
+        try {
+          const results = await identifySalvageBatch(batch, runSerial);
+          const byId = new Map(results.map(r => [String(r.id), r]));
+          for (const spine of batch) {
+            const result = byId.get(String(spine.id));
+            if (!result) continue;
+            if (result.status === "identified" && result.title) {
+              const entry = spineResultToCatalogEntry(spine, { title: result.title, author: result.author || "", confidence: Number(result.confidence || 0) });
+              if (entry) {
+                diagnosticRawEntries.push(entry);
+                const dupe = bookCatalog.find(existing => sameCatalogBook(existing, entry));
+                if (!dupe) bookCatalog.push(entry);
+                else if ((entry.result.confidence || 0) > (dupe.result.confidence || 0)) Object.assign(dupe, entry);
+              }
+            }
+            if (Array.isArray(result.partialText)) {
+              for (const raw of result.partialText) {
+                const text = normalizeToken(raw);
+                if (!text || text.length < 2) continue;
+                const word = { text, rawText: String(raw), confidence: Math.max(45, Math.round(Number(result.confidence || 0) * 100)), source: "ai-salvage", bbox: { ...spine.bbox } };
+                const dupeWord = aiSpineWords.find(existing => sameAIWord(existing, word));
+                if (!dupeWord) aiSpineWords.push(word);
+              }
+            }
+          }
+          buildTermList();
+        } catch (err) { console.warn(err); }
+        salvageDone++;
+        const recovered = Math.max(0, bookCatalog.length - initialBookCount);
+        const remaining = Math.max(0, recoverySpines.length - salvageDone * salvageBatchSize);
+        catalogingStatus.textContent = `${bookCatalog.length} identified · ${remaining} salvage candidates remaining`;
+        catalogingBar.style.width = `${73 + Math.round((salvageDone / Math.max(1, salvageBatches.length)) * 20)}%`;
+        if (catalogingEta) catalogingEta.textContent = `${recovered} recovered after broad scan · ${detectedSpines.length} spines detected`;
+      }
+    }
+
+    if (salvageBatches.length) await Promise.all(Array.from({length: Math.min(salvageConcurrency, salvageBatches.length)}, () => salvageWorker()));
+    if (runSerial !== catalogingRunSerial) return;
+
+
+    // v28: verify unresolved detected spines using enlarged tight crops.
+    const verifyCandidates=detectedSpines.filter(spine=>{
+      const overlapping=bookCatalog
+        .filter(e=>e&&e.match&&e.match.bbox&&bboxIoU(e.match.bbox,spine.bbox)>=0.28)
+        .sort((a,b)=>bboxIoU(b.match.bbox,spine.bbox)-bboxIoU(a.match.bbox,spine.bbox));
+      return !overlapping.length || !titleHasVisualEvidence(overlapping[0]);
+    });
+    verifyCandidates.forEach((s,i)=>s.id=`v28-${i+1}`);
+
+    const verifyBatchSize=4, verifyBatches=[];
+    for(let i=0;i<verifyCandidates.length;i+=verifyBatchSize) verifyBatches.push(verifyCandidates.slice(i,i+verifyBatchSize));
+    let verifyCursor=0, verifyDone=0;
+
+    if(catalogingEta&&verifyCandidates.length)
+      catalogingEta.textContent=`Verifying ${verifyCandidates.length} unresolved spines…`;
+
+    async function verificationWorker(){
+      while(verifyCursor<verifyBatches.length&&runSerial===catalogingRunSerial){
+        const batch=verifyBatches[verifyCursor++];
+        try{
+          const results=await verifySpineBatch(batch,runSerial);
+          const byId=new Map(results.map(r=>[String(r.id),r]));
+          for(const spine of batch){
+            const r=byId.get(String(spine.id));
+            if(!r||r.status!=="identified"||!normalizeBookField(r.title)) continue;
+            const entry=spineResultToCatalogEntry(spine,{
+              title:r.title,author:r.author||"",confidence:Number(r.confidence||0),
+              visualEvidence:Array.isArray(r.visualEvidence)?r.visualEvidence:[]
+            });
+            if(!entry) continue;
+            entry.result.visualEvidence=Array.isArray(r.visualEvidence)?r.visualEvidence:[];
+            diagnosticRawEntries.push(entry);
+            const dupe=bookCatalog.find(existing=>sameCatalogBook(existing,entry));
+            if(!dupe) bookCatalog.push(entry);
+            else if(credibilityScore(entry)>credibilityScore(dupe)) Object.assign(dupe,entry);
+          }
+        }catch(err){console.warn(err);}
+        verifyDone++;
+        const d=getCatalogDiagnostics();
+        const remaining=Math.max(0,verifyCandidates.length-verifyDone*verifyBatchSize);
+        catalogingStatus.textContent=`${d.credible.length} verified · ${remaining} spines to verify`;
+        catalogingBar.style.width=`${92+Math.round((verifyDone/Math.max(1,verifyBatches.length))*5)}%`;
+      }
+    }
+    if(verifyBatches.length)
+      await Promise.all(Array.from({length:Math.min(2,verifyBatches.length)},()=>verificationWorker()));
+    if(runSerial!==catalogingRunSerial) return;
+
+    if (catalogingEta) catalogingEta.textContent = "Adding book details…";
+    catalogingBar.style.width = "95%";
+    await enrichCatalogFromOpenLibrary(runSerial);
+    if (runSerial !== catalogingRunSerial) return;
+
+    catalogingActive = false;
+    const elapsed = (performance.now() - startedAt) / 1000;
+    const recovered = Math.max(0, bookCatalog.length - initialBookCount);
+    const finalDiagnostics = getCatalogDiagnostics();
+
+    // v28: the UI/search catalog now uses the reconciled physical-book list,
+    // not the noisier intermediate bookCatalog assembled during scanning.
+    bookCatalog = finalDiagnostics.catalog.slice();
+    buildTermList();
+    catalogingStatus.textContent =
+      `${finalDiagnostics.credible.length} verified · ${finalDiagnostics.provisional.length} candidates`;
+    if (catalogingEta) {
+      catalogingEta.textContent =
+        `3-pass ${initialBookCount} + ${recovered} recovered · ${detectedSpines.length} spines detected · ${formatDuration(elapsed)}`;
+    }
+    catalogingBar.style.width = "100%";
+    updateCatalogStats(elapsed);
+
+    await new Promise(resolve => setTimeout(resolve, 1100));
+    catalogingOverlay.classList.remove("visible");
+  }
+
+
+  async function identifyCurrentBook() {
+    if (!BOOK_ID_ENABLED || !currentMatches.length || !sourceCanvas) {
+      setRecognizedTitle("");
+      return;
+    }
+
+    const match = currentMatches[currentMatchIndex] || currentMatches[0];
+    const catalogEntry = findCatalogEntryForMatch(match);
+    if (catalogEntry && catalogEntry.result) {
+      const r = catalogEntry.result;
+      setRecognizedTitle(r.title || "Unknown title", r.confidence < 0.55 ? "is-uncertain" : "");
+      return;
+    }
+
+    const serial = ++recognitionRequestSerial;
+    const result = await identifyMatch(match, currentTerm, { updateUI: true, serial });
+    if (serial !== recognitionRequestSerial || !result) return;
+    if (result.error) {
+      setRecognizedTitle("AI recognition error", "is-uncertain");
+      return;
+    }
+    setRecognizedTitle(result.title || "Unknown title", result.confidence < 0.55 ? "is-uncertain" : "");
+    if (result.title && result.title !== "Unknown title") {
+      bookCatalog.push({ match, term: currentTerm, result });
+      buildTermList();
+    }
+  }
+
+  function setupResultsScreen() {
+    resultsImage.src = imageDataUrl;
+
+    if (currentTermIndex < 0 || !termList.length) {
+      pillMainLabel.textContent = "";
+      pillLeft.textContent = "";
+      pillRight.textContent = "";
+      pillLeft.classList.add("disabled");
+      pillRight.classList.add("disabled");
+      pillBadge.classList.add("hidden");
+      pillBadge.innerHTML = "";
+      hitPrevInline.disabled = true;
+      hitNextInline.disabled = true;
+      hitPrevInline.classList.add("hidden");
+      hitNextInline.classList.add("hidden");
+      return;
+    }
+
+    const foundTerm = termList[currentTermIndex];
+    pillMainLabel.textContent = truncateLabel(foundTerm, 10);
+
+    const prevIndex = findPrevDictIndex(currentTermIndex);
+    const nextIndex = findNextDictIndex(currentTermIndex);
+
+    if (prevIndex === -1 && nextIndex === -1) {
+      pillLeft.textContent = "";
+      pillRight.textContent = "";
+      pillLeft.classList.add("disabled");
+      pillRight.classList.add("disabled");
+    } else if (prevIndex === nextIndex || (prevIndex === -1 || nextIndex === -1)) {
+      const idx = prevIndex !== -1 ? prevIndex : nextIndex;
+      const label = truncateLabel(termList[idx], 10);
+      pillLeft.textContent = label;
+      pillRight.textContent = label;
+      pillLeft.classList.add("disabled");
+      pillRight.classList.add("disabled");
+    } else {
+      pillLeft.textContent = truncateLabel(termList[prevIndex], 10);
+      pillRight.textContent = truncateLabel(termList[nextIndex], 10);
+      pillLeft.classList.remove("disabled");
+      pillRight.classList.remove("disabled");
+    }
+    updateInstanceNav();
+  }
+
+  function clearHighlights() {
+    while (highlightsLayer.firstChild) highlightsLayer.removeChild(highlightsLayer.firstChild);
+  }
+
+  function drawHighlightsForTerm(term, matchIndex = 0) {
+    if (!term || !ocrWords.length || !resultsImage.src) return;
+
+    const matches = (currentMatches && currentMatches.length) ? currentMatches : getMatchesForTerm(term);
+    clearHighlights();
+
+    if (!matches.length) {
+      pillBadge.classList.add("hidden");
+      pillBadge.innerHTML = "";
+      hitPrevInline.disabled = true;
+      hitNextInline.disabled = true;
+      hitPrevInline.classList.add("hidden");
+      hitNextInline.classList.add("hidden");
+      return;
+    }
+
+    if (matchIndex < 0) matchIndex = 0;
+    if (matchIndex >= matches.length) matchIndex = matches.length - 1;
+
+    const img = resultsImage;
+    if (!img.naturalWidth || !img.naturalHeight) {
+      img.onload = () => drawHighlightsForTerm(term, matchIndex);
+      return;
+    }
+
+    const displayWidth = img.clientWidth;
+    const displayHeight = img.clientHeight;
+    if (!displayWidth || !displayHeight) return;
+
+    const scaleX = displayWidth / img.naturalWidth;
+    const scaleY = displayHeight / img.naturalHeight;
+
+    const imgRect = img.getBoundingClientRect();
+    const wrapRect = resultsImageInner.getBoundingClientRect();
+    const offsetLeft = imgRect.left - wrapRect.left;
+    const offsetTop = imgRect.top - wrapRect.top;
+
+    const imgLeft = offsetLeft;
+    const imgTop = offsetTop;
+    const imgRight = offsetLeft + displayWidth;
+    const imgBottom = offsetTop + displayHeight;
+
+    const target = matches[matchIndex];
+    const bbox = target.bbox;
+
+    const x = bbox.x0 * scaleX;
+    const y = bbox.y0 * scaleY;
+    const w = (bbox.x1 - bbox.x0) * scaleX;
+    const h = (bbox.y1 - bbox.y0) * scaleY;
+
+    const centerX = offsetLeft + x + w / 2;
+    const centerY = offsetTop + y + h / 2;
+
+    const gapPadding = 10;
+    const lineThickness = 4;
+    const gapX = w / 2 + gapPadding;
+    const gapY = h / 2 + gapPadding;
+
+    function addDiagonal(startX, startY, endX, endY) {
+      const line = document.createElement("div");
+      line.className = "crosshair-line";
+      const dx = endX - startX, dy = endY - startY;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+      line.style.width = length + "px";
+      line.style.height = lineThickness + "px";
+      line.style.left = startX + "px";
+      line.style.top = startY + "px";
+      line.style.transform = `rotate(${angle}deg)`;
+      line.style.transformOrigin = "0 50%";
+      highlightsLayer.appendChild(line);
+    }
+
+    addDiagonal(centerX - gapX, centerY - gapY, imgLeft, imgTop);
+    addDiagonal(centerX + gapX, centerY + gapY, imgRight, imgBottom);
+    addDiagonal(centerX + gapX, centerY - gapY, imgRight, imgTop);
+    addDiagonal(centerX - gapX, centerY + gapY, imgLeft, imgBottom);
+
+    currentMatches = matches;
+    currentMatchIndex = matchIndex;
+    updateInstanceNav();
+    identifyCurrentBook();
+  }
+
+  function goPrevTerm() {
+    if (!termList.length) return;
+    const newIndex = findPrevDictIndex(currentTermIndex);
+    if (newIndex === -1) return;
+    currentTermIndex = newIndex;
+    currentTerm = termList[currentTermIndex];
+    currentMatches = getMatchesForTerm(currentTerm);
+    currentMatchIndex = 0;
+    setupResultsScreen();
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  function goNextTerm() {
+    if (!termList.length) return;
+    const newIndex = findNextDictIndex(currentTermIndex);
+    if (newIndex === -1) return;
+    currentTermIndex = newIndex;
+    currentTerm = termList[currentTermIndex];
+    currentMatches = getMatchesForTerm(currentTerm);
+    currentMatchIndex = 0;
+    setupResultsScreen();
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  function goPrevInstance() {
+    if (!currentMatches.length) return;
+    currentMatchIndex = (currentMatchIndex - 1 + currentMatches.length) % currentMatches.length;
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  function goNextInstance() {
+    if (!currentMatches.length) return;
+    currentMatchIndex = (currentMatchIndex + 1) % currentMatches.length;
+    drawHighlightsForTerm(currentTerm, currentMatchIndex);
+  }
+
+  pillLeft.addEventListener("click", goPrevTerm);
+  pillRight.addEventListener("click", goNextTerm);
+
+  if (hitPrevBtn) hitPrevBtn.addEventListener("click", goPrevInstance);
+  if (hitNextBtn) hitNextBtn.addEventListener("click", goNextInstance);
+
+  hitPrevInline.addEventListener("click", (e) => { e.stopPropagation(); goPrevInstance(); });
+  hitNextInline.addEventListener("click", (e) => { e.stopPropagation(); goNextInstance(); });
+
+  let touchStartX = null;
+  resultsImageInner.addEventListener("touchstart", (e) => { touchStartX = e.touches[0].clientX; });
+  resultsImageInner.addEventListener("touchend", (e) => {
+    if (touchStartX == null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 40) {
+      if (dx < 0) goNextTerm();
+      else goPrevTerm();
+    }
+    touchStartX = null;
+  });
+
+  window.addEventListener("resize", () => {
+    if (screenResults.classList.contains("active") && currentTerm) {
+      drawHighlightsForTerm(currentTerm, currentMatchIndex);
+    }
+  });
+
+  btnNewImage.addEventListener("click", () => {
+    imageInput.value = "";
+    ocrWords = [];
+    termList = [];
+    currentTermIndex = -1;
+    currentTerm = "";
+    currentMatches = [];
+    currentMatchIndex = 0;
+    clearHighlights();
+    setRecognizedTitle("");
+    bookRecognitionCache.clear();
+    bookCatalog = [];
+    aiSpineWords = [];
+    if (catalogStats) catalogStats.classList.remove("visible");
+    if (searchCatalogStats) searchCatalogStats.classList.remove("visible");
+    recognitionRequestSerial++;
+    stopScanPulses();
+    showScreen(screenAdd);
+  });
+
+  btnNewSearch.addEventListener("click", () => {
+    showScreen(screenOCR);
+    screenOCR.classList.add("mode-search");
+    stopScanPulses();
+    searchInput.value = "";
+    autosuggestEl.classList.remove("visible");
+    setTimeout(() => searchInput.focus(), 200);
+  });
+
+  function openTermModal() {
+    // Use the normalized source canvas so the crop always matches the OCR coordinate space.
+    if (!currentMatches.length || !sourceCanvas) return;
+
+    const src = sourceCanvas;
+    const match = currentMatches[currentMatchIndex] || currentMatches[0];
+    const bbox = match.bbox;
+
+    const padding = 40;
+    let x0 = Math.max(0, bbox.x0 - padding);
+    let y0 = Math.max(0, bbox.y0 - padding);
+    let x1 = Math.min(src.width,  bbox.x1 + padding);
+    let y1 = Math.min(src.height, bbox.y1 + padding);
+
+const cropW = Math.max(1, x1 - x0);
+    const cropH = Math.max(1, y1 - y0);
+
+    const maxDim = 800;
+    const scale = Math.min(maxDim / cropW, maxDim / cropH, 1);
+    const outW = cropW * scale;
+    const outH = cropH * scale;
+
+    const canvas = termModalCanvas;
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+
+    ctx.clearRect(0, 0, outW, outH);
+    ctx.drawImage(src, x0, y0, cropW, cropH, 0, 0, outW, outH);
+
+    const localX0 = (bbox.x0 - x0) * scale;
+    const localY0 = (bbox.y0 - y0) * scale;
+    const localW  = (bbox.x1 - bbox.x0) * scale;
+    const localH  = (bbox.y1 - bbox.y0) * scale;
+
+    ctx.save();
+    ctx.fillStyle = "rgba(255,122,26,0.25)";
+    ctx.strokeStyle = "#ff7a1a";
+    ctx.lineWidth = Math.max(2, outW / 200);
+    ctx.shadowColor = "rgba(0,0,0,0.8)";
+    ctx.shadowBlur = 8;
+    ctx.fillRect(localX0, localY0, localW, localH);
+    ctx.strokeRect(localX0, localY0, localW, localH);
+    ctx.restore();
+
+    const conf = match.confidence;
+    const confRounded = typeof conf === "number" ? Math.round(conf) : null;
+    termModalConfidence.textContent = confRounded != null ? confRounded + "%" : "–%";
+    termModal.classList.add("visible");
+  }
+
+  function closeTermModal() { termModal.classList.remove("visible"); }
+
+  pillMainLabel.addEventListener("click", () => {
+    if (!currentTerm || !currentMatches.length) return;
+    openTermModal();
+  });
+
+  termModalBackdrop.addEventListener("click", closeTermModal);
+  termModalClose.addEventListener("click", closeTermModal);
+  termModal.addEventListener("click", (e) => { if (e.target === termModal) closeTermModal(); });
+
+  function getCurrentCatalogEntry() {
+    if (!currentMatches.length) return null;
+    const match = currentMatches[currentMatchIndex] || currentMatches[0];
+    return match.catalogEntry || findCatalogEntryForMatch(match);
+  }
+
+  function openBookModal() {
+    const entry = getCurrentCatalogEntry();
+    if (!entry || !entry.result || !entry.result.title || entry.result.title === "Unknown title") return;
+
+    const r = entry.result;
+    bookModalTitle.textContent = r.title || "";
+    bookModalAuthor.textContent = r.author || "";
+
+    const showNoCover = () => {
+      bookModalCover.removeAttribute("src");
+      bookModalCover.classList.add("hidden-cover");
+      bookModalNoCover.classList.remove("hidden");
+    };
+
+    if (r.cover_i) {
+      bookModalCover.src = `https://covers.openlibrary.org/b/id/${r.cover_i}-M.jpg`;
+      bookModalCover.alt = `Cover of ${r.title}`;
+      bookModalCover.onerror = showNoCover;
+      bookModalCover.classList.remove("hidden-cover");
+      bookModalNoCover.classList.add("hidden");
+    } else {
+      showNoCover();
+    }
+
+    const rows = [];
+    if (r.year) rows.push(["First published", String(r.year)]);
+    if (Array.isArray(r.publisher) && r.publisher.length) rows.push(["Publisher", r.publisher[0]]);
+    if (Array.isArray(r.isbn) && r.isbn.length) rows.push(["ISBN", r.isbn[0]]);
+    if (Number.isFinite(Number(r.confidence))) rows.push(["AI confidence", `${Math.round(Number(r.confidence) * 100)}%`]);
+
+    bookModalMeta.innerHTML = rows.map(([label, value]) =>
+      `<div class="book-meta-row"><div class="book-meta-label">${label}</div><div class="book-meta-value">${value}</div></div>`
+    ).join("");
+
+    bookModal.classList.add("visible");
+  }
+
+  function closeBookModal() { bookModal.classList.remove("visible"); }
+
+  recognizedTitle.addEventListener("click", () => {
+    if (recognizedTitle.classList.contains("is-loading")) return;
+    openBookModal();
+  });
+  bookModalBackdrop.addEventListener("click", closeBookModal);
+  if (utilityNewImage) utilityNewImage.addEventListener("click", () => btnNewImage.click());
+  if (utilityNewSearch) utilityNewSearch.addEventListener("click", () => btnNewSearch.click());
+  if (utilityData) utilityData.addEventListener("click", async () => {
+    await copyCatalogBookList(utilityData);
+    utilityData.classList.add("is-copied");
+    setTimeout(() => utilityData.classList.remove("is-copied"), 1200);
+  });
+
+  bookModalClose.addEventListener("click", closeBookModal);
+  bookModal.addEventListener("click", (e) => { if (e.target === bookModal) closeBookModal(); });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeTermModal();
+      closeBookModal();
+    }
+  });
+
+  document.addEventListener("gesturestart",  (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("gestureend",    (e) => e.preventDefault(), { passive: false });
+
+  window.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+
+  loadWordLists();
+</script>
+
+<!-- Spineless build version -->
+<div id="spineless-build-version" aria-label="Build version">v28</div>
+<style>
+  #spineless-build-version {
+    position: fixed;
+    left: 14px;
+    bottom: 12px;
+    z-index: 99999;
+    color: rgba(255,255,255,.55);
+    font: 500 11px/1 Arial, sans-serif;
+    letter-spacing: .04em;
+    pointer-events: none;
+    user-select: none;
+  }
+</style>
+
+</body>
+</html>
