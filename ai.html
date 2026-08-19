@@ -2104,55 +2104,115 @@
     return pa.x - pb.x;
   }
 
+  function bestDetectedSpineForEntry(entry) {
+    const b = entry && entry.match && entry.match.bbox;
+    if (!b || !diagnosticDetectedSpines.length) return null;
+    const ec = bboxCenter(b);
+    let best = null;
+    let bestScore = -Infinity;
+    for (let i = 0; i < diagnosticDetectedSpines.length; i++) {
+      const spine = diagnosticDetectedSpines[i];
+      if (!spine || !spine.bbox) continue;
+      const sb = spine.bbox;
+      const sc = bboxCenter(sb);
+      const iou = bboxIoU(b, sb);
+      const vo = bboxVerticalOverlap(b, sb);
+      const sw = Math.max(1, sb.x1 - sb.x0);
+      const sh = Math.max(1, sb.y1 - sb.y0);
+      const dx = Math.abs(ec.x - sc.x) / sw;
+      const dy = Math.abs(ec.y - sc.y) / sh;
+      // Prefer actual overlap, but allow a nearby read whose box was slightly loose.
+      const score = iou * 8 + vo * 2.5 - dx * 1.6 - dy * 0.8;
+      if (score > bestScore) { bestScore = score; best = { spine, index: i, score, iou, vo, dx, dy }; }
+    }
+    if (!best) return null;
+    if (best.iou < 0.05 && (best.dx > 1.35 || best.dy > 0.55)) return null;
+    return best;
+  }
+
+  function reconcileCluster(cluster) {
+    const ranked = cluster.slice().sort((a, b) => {
+      const ae = titleHasVisualEvidence(a) ? 1 : 0;
+      const be = titleHasVisualEvidence(b) ? 1 : 0;
+      if (ae !== be) return be - ae;
+      const scoreDiff = credibilityScore(b) - credibilityScore(a);
+      if (Math.abs(scoreDiff) > 0.01) return scoreDiff;
+      return entryConfidence(b) - entryConfidence(a);
+    });
+
+    // v26: choose the best visually supported reading for this physical spine.
+    // Earlier weak reads remain diagnostic evidence but cannot create extra books.
+    const supported = ranked.filter(titleHasVisualEvidence);
+    const best = supported[0] || ranked[0];
+    return { best, ranked };
+  }
+
   function getCatalogDiagnostics() {
     const raw = diagnosticRawEntries
       .filter(e => e && e.result && e.match && e.match.bbox)
       .slice();
 
-    // Cluster repeated reads of the same physical spine. We deliberately use
-    // spatial overlap rather than title alone so real duplicate volumes/copies
-    // are not collapsed merely because their titles resemble each other.
-    const clusters = [];
+    // v26 reconciliation: detected spines are the physical-book identity.
+    // Every raw AI/OCR reading is assigned to its best detected spine first.
+    // This prevents several slightly different boxes for one book from inflating
+    // the final count while preserving two real copies that occupy two spines.
+    const spineClusters = new Map();
+    const unassignedClusters = [];
+
     for (const entry of raw) {
-      let cluster = clusters.find(c => c.some(existing => samePhysicalBookDiagnostic(existing, entry)));
-      if (!cluster) {
-        cluster = [];
-        clusters.push(cluster);
+      const assignment = bestDetectedSpineForEntry(entry);
+      if (assignment) {
+        const key = `spine-${assignment.index}`;
+        if (!spineClusters.has(key)) spineClusters.set(key, []);
+        spineClusters.get(key).push(entry);
+      } else {
+        let cluster = unassignedClusters.find(c => c.some(existing => samePhysicalBookDiagnostic(existing, entry)));
+        if (!cluster) { cluster = []; unassignedClusters.push(cluster); }
+        cluster.push(entry);
       }
-      cluster.push(entry);
     }
 
+    const clusters = [...spineClusters.values(), ...unassignedClusters];
     const credible = [];
     const rejected = [];
     const duplicates = [];
 
     for (const cluster of clusters) {
-      const ranked = cluster
-        .slice()
-        .sort((a, b) => {
-          const scoreDiff = credibilityScore(b) - credibilityScore(a);
-          if (Math.abs(scoreDiff) > 0.01) return scoreDiff;
-          return entryConfidence(b) - entryConfidence(a);
-        });
-
-      const best = ranked[0];
+      const { best, ranked } = reconcileCluster(cluster);
       const bestScore = credibilityScore(best);
       const title = normalizeBookField(best && best.result && best.result.title);
+      const supported = titleHasVisualEvidence(best);
 
-      // Threshold is intentionally conservative enough to eliminate obvious
-      // fragments/Unknown/null reads while preserving well-supported one-word titles.
-      if (title && bestScore >= 2.5) credible.push(best);
-      else rejected.push({ entry: best, reason: "low-credibility", score: bestScore });
+      if (title && supported && bestScore >= 2.5) credible.push(best);
+      else rejected.push({ entry: best, reason: supported ? "low-credibility" : "unverified-title", score: bestScore });
 
-      for (let i = 1; i < ranked.length; i++) {
-        duplicates.push({ entry: ranked[i], reason: "duplicate-read", score: credibilityScore(ranked[i]) });
+      for (const entry of ranked) {
+        if (entry === best) continue;
+        duplicates.push({ entry, reason: "same-physical-spine", score: credibilityScore(entry) });
       }
     }
 
-    credible.sort(visualBookSort);
+    // A final safety merge only for entries that resolve to essentially the same
+    // physical position. Never merge title matches across distinct detected spines.
+    const finalCredible = [];
+    for (const entry of credible.sort(visualBookSort)) {
+      const same = finalCredible.find(existing =>
+        normalizedBookText(existing.result.title) === normalizedBookText(entry.result.title) &&
+        samePhysicalBookDiagnostic(existing, entry)
+      );
+      if (!same) finalCredible.push(entry);
+      else {
+        const keepEntry = credibilityScore(entry) > credibilityScore(same);
+        if (keepEntry) {
+          finalCredible[finalCredible.indexOf(same)] = entry;
+          duplicates.push({ entry: same, reason: "same-physical-spine", score: credibilityScore(same) });
+        } else duplicates.push({ entry, reason: "same-physical-spine", score: credibilityScore(entry) });
+      }
+    }
 
+    finalCredible.sort(visualBookSort);
     return {
-      credible,
+      credible: finalCredible,
       rejected,
       duplicates,
       rawCount: raw.length,
@@ -2200,7 +2260,7 @@
     const rejectedLines = rejectedItems.map(diagnosticRejectedLine);
 
     return [
-      `Spineless v25 diagnostic`,
+      `Spineless v26 diagnostic`,
       `${d.credible.length} verified unique books · ${d.rawCount} raw identifications · ${d.spineCount} detected spines · ${formatDuration(diagnosticLastElapsed)}`,
       "",
       "VERIFIED UNIQUE BOOKS",
@@ -3342,7 +3402,7 @@ const cropW = Math.max(1, x1 - x0);
 </script>
 
 <!-- Spineless build version -->
-<div id="spineless-build-version" aria-label="Build version">v25</div>
+<div id="spineless-build-version" aria-label="Build version">v26</div>
 <style>
   #spineless-build-version {
     position: fixed;
