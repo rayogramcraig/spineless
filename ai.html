@@ -408,7 +408,7 @@
       white-space: nowrap;
       pointer-events: none;
     }
-    #catalog-stats.visible { display: block; }
+    #catalog-stats.visible { display: none; }
     #catalog-stats.visible,
     #screen-ocr.mode-search #search-catalog-stats.visible {
       pointer-events: auto;
@@ -452,16 +452,18 @@
     .results-utility-icon {
       width: 52px;
       padding: 0;
-      border-radius: 999px;
-      background: rgba(143, 67, 21, 0.95);
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      color: var(--accent);
       display: flex;
       align-items: center;
       justify-content: center;
     }
 
     .results-utility-icon svg {
-      width: 24px;
-      height: 24px;
+      width: 28px;
+      height: 28px;
       stroke: currentColor;
       fill: none;
       stroke-width: 2.2;
@@ -480,7 +482,7 @@
     }
 
     #utility-data.is-copied {
-      background: var(--accent);
+      opacity: 0.55;
     }
 
     /* BOOK DETAIL MODAL */
@@ -501,7 +503,7 @@
       white-space: nowrap;
       pointer-events: none;
     }
-    #screen-ocr.mode-search #search-catalog-stats.visible { display: block; }
+    #screen-ocr.mode-search #search-catalog-stats.visible { display: none; }
 
     #book-modal-cover-wrap {
       width: 96px;
@@ -2184,48 +2186,86 @@
     if (!a || !b || !a.bbox || !b.bbox) return false;
     const A = a.bbox, B = b.bbox;
     const iou = bboxIoU(A, B);
-    if (iou >= 0.55) return true;
+
+    // v28: detected spines are the unit of truth. Only collapse detector
+    // boxes when they are virtually the same geometric detection.
+    if (iou >= 0.82) return true;
 
     const ac = bboxCenter(A), bc = bboxCenter(B);
     const aw = Math.max(1, A.x1-A.x0), bw = Math.max(1, B.x1-B.x0);
     const ah = Math.max(1, A.y1-A.y0), bh = Math.max(1, B.y1-B.y0);
-    const xClose = Math.abs(ac.x-bc.x) <= Math.max(4, Math.min(aw,bw)*0.32);
-    const yClose = Math.abs(ac.y-bc.y) <= Math.max(7, Math.min(ah,bh)*0.09);
-    return xClose && yClose && bboxVerticalOverlap(A,B) >= 0.86;
+    const centerX = Math.abs(ac.x-bc.x) / Math.max(aw,bw);
+    const centerY = Math.abs(ac.y-bc.y) / Math.max(ah,bh);
+    const widthRatio = Math.min(aw,bw) / Math.max(aw,bw);
+    const heightRatio = Math.min(ah,bh) / Math.max(ah,bh);
+
+    return centerX <= 0.10 &&
+           centerY <= 0.05 &&
+           widthRatio >= 0.84 &&
+           heightRatio >= 0.90 &&
+           bboxVerticalOverlap(A,B) >= 0.94;
   }
 
   function canonicalizeDetectedSpines(spines) {
     const groups = [];
     for (const spine of (spines || [])) {
       if (!spine || !spine.bbox) continue;
-      let group = groups.find(g => g.members.some(existing => sameCanonicalDetectedSpine(existing, spine)));
+      let group = groups.find(g =>
+        g.members.some(existing => sameCanonicalDetectedSpine(existing, spine))
+      );
       if (!group) {
         group = { members: [], spine: null };
         groups.push(group);
       }
       group.members.push(spine);
-      group.spine = group.members.slice().sort((a,b) => (b.confidence||0)-(a.confidence||0))[0];
+      group.spine = group.members
+        .slice()
+        .sort((a,b) => (b.confidence||0)-(a.confidence||0))[0];
     }
-    return groups.map((g,index) => ({ ...g.spine, canonicalIndex:index, members:g.members }));
+    return groups.map((g,index) => ({
+      ...g.spine,
+      canonicalIndex:index,
+      members:g.members
+    }));
   }
 
   function bestSpineForEntryFromList(entry, spineList) {
     const b = entry && entry.match && entry.match.bbox;
     if (!b || !spineList || !spineList.length) return null;
+
     const ec = bboxCenter(b);
     let best = null, bestScore = -Infinity;
-    for (let i=0;i<spineList.length;i++) {
+
+    for (let i=0; i<spineList.length; i++) {
       const spine = spineList[i];
       if (!spine || !spine.bbox) continue;
-      const sb=spine.bbox, sc=bboxCenter(sb);
-      const iou=bboxIoU(b,sb), vo=bboxVerticalOverlap(b,sb);
-      const sw=Math.max(1,sb.x1-sb.x0), sh=Math.max(1,sb.y1-sb.y0);
-      const dx=Math.abs(ec.x-sc.x)/sw, dy=Math.abs(ec.y-sc.y)/sh;
-      const score=iou*8 + vo*2.5 - dx*1.6 - dy*0.8;
-      if (score>bestScore) { bestScore=score; best={spine,index:i,score,iou,vo,dx,dy}; }
+
+      const sb = spine.bbox;
+      const sc = bboxCenter(sb);
+      const iou = bboxIoU(b, sb);
+      const vo = bboxVerticalOverlap(b, sb);
+      const sw = Math.max(1, sb.x1-sb.x0);
+      const sh = Math.max(1, sb.y1-sb.y0);
+      const dx = Math.abs(ec.x-sc.x)/sw;
+      const dy = Math.abs(ec.y-sc.y)/sh;
+
+      // Strongly reward real overlap and same-center geometry.
+      const score = iou*12 + vo*3.5 - dx*3.0 - dy*1.6;
+      if (score > bestScore) {
+        bestScore = score;
+        best = {spine,index:i,score,iou,vo,dx,dy};
+      }
     }
+
     if (!best) return null;
-    if (best.iou < 0.05 && (best.dx > 1.35 || best.dy > 0.55)) return null;
+
+    // v28: never force a loose broad-region read onto the nearest detected
+    // spine. If geometry is not convincing, leave it unassigned and let it
+    // survive as an independent candidate rather than erasing a neighboring book.
+    const strongOverlap = best.iou >= 0.16 && best.vo >= 0.62;
+    const strongCenter = best.dx <= 0.48 && best.dy <= 0.22 && best.vo >= 0.78;
+    if (!strongOverlap && !strongCenter) return null;
+
     return best;
   }
 
@@ -2295,71 +2335,147 @@
     return { best, ranked };
   }
 
+
+  function isStrongProvisionalTitle(entry) {
+    if (!entry || !entry.result) return false;
+    const title = normalizeBookField(entry.result.title);
+    const author = normalizeBookField(entry.result.author);
+    if (!title) return false;
+
+    const nt = normalizedBookText(title);
+    const na = normalizedBookText(author);
+    if (!nt || (na && nt === na)) return false;
+    if (/^(unknown|unidentified|book|novel|the|a|an)$/i.test(nt)) return false;
+
+    const tokens = meaningfulTitleTokens(title);
+    const confidence = entryConfidence(entry);
+
+    // Broad-region reads can lack visualEvidence even when they were good.
+    // Retain only unusually strong, title-like reads as provisional candidates.
+    return confidence >= 0.90 &&
+           (tokens.length >= 2 || (tokens.length === 1 && tokens[0].length >= 7));
+  }
+
   function getCatalogDiagnostics() {
     const raw = diagnosticRawEntries
       .filter(e => e && e.result && e.match && e.match.bbox)
       .slice();
 
-    // v27: first reconcile the detector itself. Overlapping detections from
-    // multiple region passes become one canonical physical spine.
     const canonicalSpines = canonicalizeDetectedSpines(diagnosticDetectedSpines);
-    const spineClusters = new Map();
+
+    // Every detected spine gets its own slot.
+    const slots = canonicalSpines.map((spine,index) => ({
+      spine,
+      index,
+      reads: []
+    }));
+
     const unassignedClusters = [];
 
     for (const entry of raw) {
       const assignment = bestSpineForEntryFromList(entry, canonicalSpines);
+
       if (assignment) {
-        const key = `spine-${assignment.index}`;
-        if (!spineClusters.has(key)) spineClusters.set(key, []);
-        spineClusters.get(key).push(entry);
+        slots[assignment.index].reads.push(entry);
       } else {
-        let cluster = unassignedClusters.find(c => c.some(existing => samePhysicalBookDiagnostic(existing, entry)));
-        if (!cluster) { cluster=[]; unassignedClusters.push(cluster); }
+        // Do not throw away a plausible read just because the detector missed
+        // or poorly localized that physical spine.
+        let cluster = unassignedClusters.find(c =>
+          c.some(existing => samePhysicalBookDiagnostic(existing, entry))
+        );
+        if (!cluster) {
+          cluster = [];
+          unassignedClusters.push(cluster);
+        }
         cluster.push(entry);
       }
     }
 
-    const clusters = [...spineClusters.values(), ...unassignedClusters];
-    const credible = [], rejected = [], duplicates = [];
+    const credible = [];
+    const provisional = [];
+    const rejected = [];
+    const duplicates = [];
+    let unidentifiedSpines = 0;
 
-    for (const cluster of clusters) {
-      const { best, ranked } = reconcileCluster(cluster);
-      const bestScore = credibilityScore(best);
+    // Resolve each physical detector slot independently.
+    for (const slot of slots) {
+      if (!slot.reads.length) {
+        unidentifiedSpines++;
+        continue;
+      }
+
+      const {best, ranked} = reconcileCluster(slot.reads);
       const title = normalizeBookField(best && best.result && best.result.title);
-      const supported = titleHasVisualEvidence(best);
-      if (title && supported && bestScore >= 2.5) credible.push(best);
-      else rejected.push({entry:best, reason:supported ? 'low-credibility' : 'unverified-title', score:bestScore});
+      const verified = title && titleHasVisualEvidence(best);
+      const score = credibilityScore(best);
+
+      if (verified && score >= 2.5) {
+        credible.push(best);
+      } else if (title && isStrongProvisionalTitle(best)) {
+        provisional.push(best);
+      } else {
+        rejected.push({
+          entry: best,
+          reason: title ? "unverified-title" : "unidentified-spine",
+          score
+        });
+      }
 
       for (const entry of ranked) {
         if (entry === best) continue;
-        duplicates.push({entry, reason:'same-physical-spine', score:credibilityScore(entry)});
+        duplicates.push({
+          entry,
+          reason: "alternate-read-same-spine",
+          score: credibilityScore(entry)
+        });
       }
     }
 
-    // Second reconciliation: occasionally Gemini's detector returns two slightly
-    // shifted canonical boxes for the same physical book. Merge only when BOTH
-    // title evidence and spatial proximity agree; never merge title matches that
-    // live in clearly different positions on the shelf.
-    const finalCredible=[];
-    for (const entry of credible.sort(visualBookSort)) {
-      const same = finalCredible.find(existing => sameVerifiedPhysicalBook(existing, entry));
-      if (!same) finalCredible.push(entry);
-      else if (credibilityScore(entry) > credibilityScore(same)) {
-        finalCredible[finalCredible.indexOf(same)] = entry;
-        duplicates.push({entry:same, reason:'reconciled-duplicate-spine', score:credibilityScore(same)});
+    // Reads that could not be confidently assigned to any detector slot may
+    // represent spines the detector missed. Preserve good ones independently.
+    for (const cluster of unassignedClusters) {
+      const {best, ranked} = reconcileCluster(cluster);
+      const title = normalizeBookField(best && best.result && best.result.title);
+      const verified = title && titleHasVisualEvidence(best);
+      const score = credibilityScore(best);
+
+      if (verified && score >= 2.5) {
+        credible.push(best);
+      } else if (title && isStrongProvisionalTitle(best)) {
+        provisional.push(best);
       } else {
-        duplicates.push({entry, reason:'reconciled-duplicate-spine', score:credibilityScore(entry)});
+        rejected.push({
+          entry: best,
+          reason: title ? "unassigned-unverified" : "unassigned-unidentified",
+          score
+        });
+      }
+
+      for (const entry of ranked) {
+        if (entry === best) continue;
+        duplicates.push({
+          entry,
+          reason: "alternate-unassigned-read",
+          score: credibilityScore(entry)
+        });
       }
     }
 
-    finalCredible.sort(visualBookSort);
+    // v28 deliberately does NOT merge two separate detector slots just because
+    // their titles/authors are similar. Separate physical locations stay separate.
+    credible.sort(visualBookSort);
+    provisional.sort(visualBookSort);
+
     return {
-      credible: finalCredible,
+      credible,
+      provisional,
+      catalog: [...credible, ...provisional].sort(visualBookSort),
       rejected,
       duplicates,
       rawCount: raw.length,
       spineCount: canonicalSpines.length,
-      rawSpineCount: diagnosticDetectedSpines.length
+      rawSpineCount: diagnosticDetectedSpines.length,
+      unidentifiedSpines
     };
   }
 
@@ -2367,7 +2483,7 @@
     diagnosticLastElapsed = elapsedSeconds;
     const d = getCatalogDiagnostics();
     const label =
-      `${d.credible.length} verified · ${d.rawCount} raw · ${d.spineCount} spines · ${formatDuration(elapsedSeconds)}`;
+      `${d.credible.length} verified · ${d.provisional.length} candidates · ${d.spineCount} spines · ${formatDuration(elapsedSeconds)}`;
 
     if (catalogStats) {
       catalogStats.textContent = label;
@@ -2399,17 +2515,21 @@
     const d = getCatalogDiagnostics();
 
     const credibleLines = d.credible.map(displayBookLine);
+    const provisionalLines = d.provisional.map(displayBookLine);
     const rejectedItems = [...d.rejected, ...d.duplicates];
     const rejectedLines = rejectedItems.map(diagnosticRejectedLine);
 
     return [
-      `Spineless v27 diagnostic`,
-      `${d.credible.length} verified unique books · ${d.rawCount} raw identifications · ${d.spineCount} reconciled spines (${d.rawSpineCount} raw detections) · ${formatDuration(diagnosticLastElapsed)}`,
+      `Spineless v28 diagnostic`,
+      `${d.credible.length} verified books · ${d.provisional.length} provisional candidates · ${d.rawCount} raw identifications · ${d.spineCount} detected spine slots · ${d.unidentifiedSpines} unidentified slots · ${formatDuration(diagnosticLastElapsed)}`,
       "",
-      "VERIFIED UNIQUE BOOKS",
+      "VERIFIED BOOKS",
       ...credibleLines,
       "",
-      `REJECTED / DUPLICATE RAW READS (${rejectedItems.length})`,
+      "PROVISIONAL HIGH-CONFIDENCE CANDIDATES",
+      ...provisionalLines,
+      "",
+      `REJECTED / ALTERNATE RAW READS (${rejectedItems.length})`,
       ...rejectedLines
     ].join("\n");
   }
@@ -3088,14 +3208,14 @@
     if (runSerial !== catalogingRunSerial) return;
 
 
-    // v27: verify unresolved detected spines using enlarged tight crops.
+    // v28: verify unresolved detected spines using enlarged tight crops.
     const verifyCandidates=detectedSpines.filter(spine=>{
       const overlapping=bookCatalog
         .filter(e=>e&&e.match&&e.match.bbox&&bboxIoU(e.match.bbox,spine.bbox)>=0.28)
         .sort((a,b)=>bboxIoU(b.match.bbox,spine.bbox)-bboxIoU(a.match.bbox,spine.bbox));
       return !overlapping.length || !titleHasVisualEvidence(overlapping[0]);
     });
-    verifyCandidates.forEach((s,i)=>s.id=`v27-${i+1}`);
+    verifyCandidates.forEach((s,i)=>s.id=`v28-${i+1}`);
 
     const verifyBatchSize=4, verifyBatches=[];
     for(let i=0;i<verifyCandidates.length;i+=verifyBatchSize) verifyBatches.push(verifyCandidates.slice(i,i+verifyBatchSize));
@@ -3146,12 +3266,12 @@
     const recovered = Math.max(0, bookCatalog.length - initialBookCount);
     const finalDiagnostics = getCatalogDiagnostics();
 
-    // v27: the UI/search catalog now uses the reconciled physical-book list,
+    // v28: the UI/search catalog now uses the reconciled physical-book list,
     // not the noisier intermediate bookCatalog assembled during scanning.
-    bookCatalog = finalDiagnostics.credible.slice();
+    bookCatalog = finalDiagnostics.catalog.slice();
     buildTermList();
     catalogingStatus.textContent =
-      `${finalDiagnostics.credible.length} verified books · ${finalDiagnostics.rawCount} raw identifications`;
+      `${finalDiagnostics.credible.length} verified · ${finalDiagnostics.provisional.length} candidates`;
     if (catalogingEta) {
       catalogingEta.textContent =
         `3-pass ${initialBookCount} + ${recovered} recovered · ${detectedSpines.length} spines detected · ${formatDuration(elapsed)}`;
@@ -3557,7 +3677,7 @@ const cropW = Math.max(1, x1 - x0);
 </script>
 
 <!-- Spineless build version -->
-<div id="spineless-build-version" aria-label="Build version">v27</div>
+<div id="spineless-build-version" aria-label="Build version">v28</div>
 <style>
   #spineless-build-version {
     position: fixed;
