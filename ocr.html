@@ -1017,7 +1017,7 @@
           </svg>
         </button>
         <button id="utility-new-search">new search</button>
-        <button id="utility-data" class="results-utility-icon" aria-label="Copy catalog data" title="Copy catalog data">
+        <button id="utility-data" class="results-utility-icon" aria-label="Copy OCR data" title="Copy OCR data">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="9"/>
             <path d="M12 11v6"/>
@@ -1136,7 +1136,7 @@
   // Example: https://YOUR_PROJECT.supabase.co/functions/v1/identify-book
   const BOOK_ID_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/identify-book";
   const BOOK_ID_ENABLED = false; // OCR-only comparison build: never call AI book identification
-  console.info("Spineless OCR-only comparison build (v29-ocr-only)");
+  console.info("Spineless OCR-only comparison build (ocr.html diagnostic fix)");
   const bookRecognitionCache = new Map();
   let recognitionRequestSerial = 0;
   let bookCatalog = [];
@@ -1633,6 +1633,8 @@
               text: w.text.trim(),
               bbox: mapBboxToOriginal(w.bbox, kind, W, H),
               confidence,
+              ocrPass: label,
+              ocrPassKind: kind,
             };
           })
           .filter(Boolean);
@@ -2496,89 +2498,90 @@
     }
   }
 
-  function displayBookLine(entry, index) {
-    const title = normalizeBookField(entry && entry.result && entry.result.title) || "Unknown";
-    const author = normalizeBookField(entry && entry.result && entry.result.author);
-    const confidence = Math.round(entryConfidence(entry) * 100);
-    const evidence = normalizedEvidence(entry);
-    return `${index + 1}. ${title}${author ? " — " + author : ""} [${confidence}%]${evidence.length ? " · evidence: " + evidence.join(" | ") : ""}`;
-  }
-
-  function diagnosticRejectedLine(item, index) {
-    const e = item.entry;
-    const title = normalizeBookField(e && e.result && e.result.title) || "Unknown";
-    const author = normalizeBookField(e && e.result && e.result.author);
-    const confidence = Math.round(entryConfidence(e) * 100);
-    return `${index + 1}. ${title}${author ? " — " + author : ""} [${confidence}%] — ${item.reason}`;
-  }
-
-  function buildCopiedBookList() {
-    const d = getCatalogDiagnostics();
-
-    const credibleLines = d.credible.map(displayBookLine);
-    const provisionalLines = d.provisional.map(displayBookLine);
-    const rejectedItems = [...d.rejected, ...d.duplicates];
-    const rejectedLines = rejectedItems.map(diagnosticRejectedLine);
-
-    return [
-      `Spineless v28 diagnostic`,
-      `${d.credible.length} verified books · ${d.provisional.length} provisional candidates · ${d.rawCount} raw identifications · ${d.spineCount} detected spine slots · ${d.unidentifiedSpines} unidentified slots · ${formatDuration(diagnosticLastElapsed)}`,
-      "",
-      "VERIFIED BOOKS",
-      ...credibleLines,
-      "",
-      "PROVISIONAL HIGH-CONFIDENCE CANDIDATES",
-      ...provisionalLines,
-      "",
-      `REJECTED / ALTERNATE RAW READS (${rejectedItems.length})`,
-      ...rejectedLines
-    ].join("\n");
-  }
-
-  async function copyCatalogBookList(sourceEl) {
-    if (!diagnosticRawEntries.length && !bookCatalog.length) return;
-
-    const text = buildCopiedBookList();
-
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (_) {
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.setAttribute("readonly", "");
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      textarea.remove();
+  function buildCopiedOCRData() {
+    const words = (ocrWords || []).filter(w => w && w.text);
+    const byPass = { "0°": 0, "90°": 0, "-90°": 0, "other": 0 };
+    for (const w of words) {
+      const key = Object.prototype.hasOwnProperty.call(byPass, w.ocrPass) ? w.ocrPass : "other";
+      byPass[key]++;
     }
 
-    const d = getCatalogDiagnostics();
-    const targets = [catalogStats, searchCatalogStats].filter(Boolean);
-    const originals = targets.map(el => el.textContent);
+    const uniqueTerms = Array.isArray(termList) ? termList.length : 0;
+    const avgConfidence = words.length
+      ? words.reduce((sum, w) => sum + (Number.isFinite(Number(w.confidence)) ? Number(w.confidence) : 0), 0) / words.length
+      : 0;
 
-    targets.forEach(el => {
-      if (el.classList.contains("visible")) {
-        el.textContent = `${d.credible.length} books · list copied`;
-      }
+    const ordered = words.slice().sort((a, b) => {
+      const ay = a?.bbox?.y0 ?? a?.bbox?.top ?? 0;
+      const by = b?.bbox?.y0 ?? b?.bbox?.top ?? 0;
+      const ax = a?.bbox?.x0 ?? a?.bbox?.left ?? 0;
+      const bx = b?.bbox?.x0 ?? b?.bbox?.left ?? 0;
+      return ay - by || ax - bx;
     });
 
-    setTimeout(() => {
-      targets.forEach((el, i) => {
-        el.textContent = originals[i];
-      });
-    }, 1400);
+    const lines = ordered.map((w, i) => {
+      const b = w.bbox || {};
+      const x0 = Math.round(b.x0 ?? b.left ?? 0);
+      const y0 = Math.round(b.y0 ?? b.top ?? 0);
+      const x1 = Math.round(b.x1 ?? b.right ?? 0);
+      const y1 = Math.round(b.y1 ?? b.bottom ?? 0);
+      const conf = Number.isFinite(Number(w.confidence)) ? Math.round(Number(w.confidence)) : "–";
+      return `${i + 1}. ${w.text} [${conf}%] · ${w.ocrPass || "?"} · bbox ${x0},${y0},${x1},${y1}`;
+    });
+
+    return [
+      "Spineless OCR-only diagnostic",
+      `${words.length} OCR words · ${uniqueTerms} unique search terms · average confidence ${Math.round(avgConfidence)}%`,
+      `passes: 0° ${byPass["0°"]} · 90° ${byPass["90°"]} · -90° ${byPass["-90°"]}`,
+      sourceCanvas ? `image: ${sourceCanvas.width} × ${sourceCanvas.height}px` : "",
+      "",
+      "OCR WORDS",
+      ...lines,
+      "",
+      "SEARCH TERMS",
+      ...(Array.isArray(termList) ? termList : [])
+    ].filter((line, idx, arr) => line !== "" || idx === 4 || idx > 4).join("\n");
   }
 
-  if (catalogStats) {
-    catalogStats.title = "Tap to copy diagnostic book list";
-    catalogStats.addEventListener("click", () => copyCatalogBookList(catalogStats));
-  }
+  async function copyOCRData(sourceEl) {
+    if (!ocrWords.length) {
+      if (sourceEl === utilityData) {
+        const oldTitle = utilityData.title;
+        utilityData.title = "No OCR data yet";
+        setTimeout(() => { utilityData.title = oldTitle; }, 1200);
+      }
+      return;
+    }
 
-  if (searchCatalogStats) {
-    searchCatalogStats.title = "Tap to copy diagnostic book list";
-    searchCatalogStats.addEventListener("click", () => copyCatalogBookList(searchCatalogStats));
+    const text = buildCopiedOCRData();
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch (_) {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        copied = document.execCommand("copy");
+        textarea.remove();
+      } catch (_) {}
+    }
+
+    if (sourceEl === utilityData) {
+      utilityData.classList.add("is-copied");
+      const oldTitle = utilityData.title;
+      utilityData.title = copied ? "OCR data copied" : "Could not copy OCR data";
+      setTimeout(() => {
+        utilityData.classList.remove("is-copied");
+        utilityData.title = oldTitle;
+      }, 1200);
+    }
   }
 
   async function enrichCatalogFromOpenLibrary(runSerial) {
@@ -3653,9 +3656,7 @@ const cropW = Math.max(1, x1 - x0);
   if (utilityNewImage) utilityNewImage.addEventListener("click", () => btnNewImage.click());
   if (utilityNewSearch) utilityNewSearch.addEventListener("click", () => btnNewSearch.click());
   if (utilityData) utilityData.addEventListener("click", async () => {
-    await copyCatalogBookList(utilityData);
-    utilityData.classList.add("is-copied");
-    setTimeout(() => utilityData.classList.remove("is-copied"), 1200);
+    await copyOCRData(utilityData);
   });
 
   bookModalClose.addEventListener("click", closeBookModal);
@@ -3678,7 +3679,7 @@ const cropW = Math.max(1, x1 - x0);
 </script>
 
 <!-- Spineless build version -->
-<div id="spineless-build-version" aria-label="Build version">v28</div>
+<div id="spineless-build-version" aria-label="Build version">ocr</div>
 <style>
   #spineless-build-version {
     position: fixed;
