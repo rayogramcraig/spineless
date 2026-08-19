@@ -1066,6 +1066,10 @@
   const catalogTerms = new Set();
   let catalogingRunSerial = 0;
   let catalogingActive = false;
+  let diagnosticRawEntries = [];
+  let diagnosticDetectedSpines = [];
+  let diagnosticLastElapsed = 0;
+
 
   // Dictionary + whitelist sets
   let DICT = null;
@@ -1430,6 +1434,9 @@
     bookRecognitionCache.clear();
     bookCatalog = [];
     aiSpineWords = [];
+    diagnosticRawEntries = [];
+    diagnosticDetectedSpines = [];
+    diagnosticLastElapsed = 0;
     if (catalogStats) catalogStats.classList.remove("visible");
     if (searchCatalogStats) searchCatalogStats.classList.remove("visible");
     recognitionRequestSerial++;
@@ -1958,18 +1965,111 @@
     return `${m}:${String(s).padStart(2, "0")}`;
   }
 
-  function updateCatalogStats(elapsedSeconds) {
-    const label = `${bookCatalog.length} books · ${termList.length} terms · ${formatDuration(elapsedSeconds)}`;
-    if (catalogStats) {
-      catalogStats.textContent = label;
-      catalogStats.classList.add("visible");
-    }
-    if (searchCatalogStats) {
-      searchCatalogStats.textContent = label;
-      searchCatalogStats.classList.add("visible");
-    }
+  function normalizeBookField(value) {
+    const s = String(value == null ? "" : value).trim();
+    if (!s) return "";
+    if (/^(unknown|null|none|n\/a|undefined|untitled)$/i.test(s)) return "";
+    return s;
   }
 
+  function normalizedBookText(value) {
+    return normalizeBookField(value)
+      .toLowerCase()
+      .replace(/&/g, " and ")
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function meaningfulTitleTokens(title) {
+    const stop = new Set(["a","an","the","of","and","or","to","in","on","for","by"]);
+    return normalizedBookText(title)
+      .split(" ")
+      .filter(t => t && !stop.has(t));
+  }
+
+  function entryConfidence(entry) {
+    const n = Number(entry && entry.result && entry.result.confidence);
+    return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0;
+  }
+
+  function entryHasMetadata(entry) {
+    const r = entry && entry.result;
+    if (!r) return false;
+    return Boolean(
+      r.openLibraryKey ||
+      r.cover_i ||
+      (Array.isArray(r.isbn) && r.isbn.length) ||
+      r.year ||
+      (Array.isArray(r.publisher) && r.publisher.length)
+    );
+  }
+
+  function credibilityScore(entry) {
+    if (!entry || !entry.result) return -99;
+
+    const title = normalizeBookField(entry.result.title);
+    const author = normalizeBookField(entry.result.author);
+    const nt = normalizedBookText(title);
+    const na = normalizedBookText(author);
+    const tokens = meaningfulTitleTokens(title);
+    const confidence = entryConfidence(entry);
+
+    if (!title) return -99;
+    if (["the","a","an","nine"].includes(nt)) return -8;
+
+    let score = 0;
+
+    // Title evidence.
+    if (tokens.length >= 3) score += 3;
+    else if (tokens.length === 2) score += 2.5;
+    else if (tokens.length === 1 && tokens[0].length >= 5) score += 1.5;
+    else score -= 1.5;
+
+    // Author evidence.
+    if (author) score += 1.25;
+    if (author && nt && nt === na) score -= 3;
+
+    // Model confidence.
+    if (confidence >= 0.80) score += 1.5;
+    else if (confidence >= 0.65) score += 1.0;
+    else if (confidence >= 0.50) score += 0.5;
+    else if (confidence < 0.35) score -= 1.0;
+
+    // External bibliographic enrichment is especially useful corroboration.
+    if (entryHasMetadata(entry)) score += 1.5;
+
+    return score;
+  }
+
+  function bboxVerticalOverlap(a, b) {
+    if (!a || !b) return 0;
+    const overlap = Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+    const minH = Math.max(1, Math.min(a.y1 - a.y0, b.y1 - b.y0));
+    return overlap / minH;
+  }
+
+  function samePhysicalBookDiagnostic(a, b) {
+    if (!a || !b || !a.match || !b.match || !a.match.bbox || !b.match.bbox) return false;
+
+    const A = a.match.bbox;
+    const B = b.match.bbox;
+    const iou = bboxIoU(A, B);
+    if (iou >= 0.42) return true;
+
+    const ac = bboxCenter(A);
+    const bc = bboxCenter(B);
+    const aw = Math.max(1, A.x1 - A.x0);
+    const bw = Math.max(1, B.x1 - B.x0);
+    const ah = Math.max(1, A.y1 - A.y0);
+    const bh = Math.max(1, B.y1 - B.y0);
+
+    const closeX = Math.abs(ac.x - bc.x) <= Math.max(8, Math.min(aw, bw) * 0.38);
+    const closeY = Math.abs(ac.y - bc.y) <= Math.max(12, Math.min(ah, bh) * 0.12);
+    const strongVerticalOverlap = bboxVerticalOverlap(A, B) >= 0.72;
+
+    return closeX && closeY && strongVerticalOverlap;
+  }
 
   function catalogEntryVisualPosition(entry) {
     const b = entry && entry.match && entry.match.bbox;
@@ -1980,42 +2080,122 @@
     };
   }
 
+  function visualBookSort(a, b) {
+    const pa = catalogEntryVisualPosition(a);
+    const pb = catalogEntryVisualPosition(b);
+    const rowThreshold = sourceCanvas ? sourceCanvas.height * 0.06 : 80;
+    if (Math.abs(pa.y - pb.y) > rowThreshold) return pa.y - pb.y;
+    return pa.x - pb.x;
+  }
+
+  function getCatalogDiagnostics() {
+    const raw = diagnosticRawEntries
+      .filter(e => e && e.result && e.match && e.match.bbox)
+      .slice();
+
+    // Cluster repeated reads of the same physical spine. We deliberately use
+    // spatial overlap rather than title alone so real duplicate volumes/copies
+    // are not collapsed merely because their titles resemble each other.
+    const clusters = [];
+    for (const entry of raw) {
+      let cluster = clusters.find(c => c.some(existing => samePhysicalBookDiagnostic(existing, entry)));
+      if (!cluster) {
+        cluster = [];
+        clusters.push(cluster);
+      }
+      cluster.push(entry);
+    }
+
+    const credible = [];
+    const rejected = [];
+    const duplicates = [];
+
+    for (const cluster of clusters) {
+      const ranked = cluster
+        .slice()
+        .sort((a, b) => {
+          const scoreDiff = credibilityScore(b) - credibilityScore(a);
+          if (Math.abs(scoreDiff) > 0.01) return scoreDiff;
+          return entryConfidence(b) - entryConfidence(a);
+        });
+
+      const best = ranked[0];
+      const bestScore = credibilityScore(best);
+      const title = normalizeBookField(best && best.result && best.result.title);
+
+      // Threshold is intentionally conservative enough to eliminate obvious
+      // fragments/Unknown/null reads while preserving well-supported one-word titles.
+      if (title && bestScore >= 2.5) credible.push(best);
+      else rejected.push({ entry: best, reason: "low-credibility", score: bestScore });
+
+      for (let i = 1; i < ranked.length; i++) {
+        duplicates.push({ entry: ranked[i], reason: "duplicate-read", score: credibilityScore(ranked[i]) });
+      }
+    }
+
+    credible.sort(visualBookSort);
+
+    return {
+      credible,
+      rejected,
+      duplicates,
+      rawCount: raw.length,
+      spineCount: diagnosticDetectedSpines.length
+    };
+  }
+
+  function updateCatalogStats(elapsedSeconds) {
+    diagnosticLastElapsed = elapsedSeconds;
+    const d = getCatalogDiagnostics();
+    const label =
+      `${d.credible.length} books · ${d.rawCount} raw · ${d.spineCount} spines · ${formatDuration(elapsedSeconds)}`;
+
+    if (catalogStats) {
+      catalogStats.textContent = label;
+      catalogStats.classList.add("visible");
+    }
+    if (searchCatalogStats) {
+      searchCatalogStats.textContent = label;
+      searchCatalogStats.classList.add("visible");
+    }
+  }
+
+  function displayBookLine(entry, index) {
+    const title = normalizeBookField(entry && entry.result && entry.result.title) || "Unknown";
+    const author = normalizeBookField(entry && entry.result && entry.result.author);
+    const confidence = Math.round(entryConfidence(entry) * 100);
+    return `${index + 1}. ${title}${author ? " — " + author : ""} [${confidence}%]`;
+  }
+
+  function diagnosticRejectedLine(item, index) {
+    const e = item.entry;
+    const title = normalizeBookField(e && e.result && e.result.title) || "Unknown";
+    const author = normalizeBookField(e && e.result && e.result.author);
+    const confidence = Math.round(entryConfidence(e) * 100);
+    return `${index + 1}. ${title}${author ? " — " + author : ""} [${confidence}%] — ${item.reason}`;
+  }
+
   function buildCopiedBookList() {
-    const books = bookCatalog
-      .filter(entry =>
-        entry &&
-        entry.result &&
-        entry.result.title &&
-        entry.result.title !== "Unknown title" &&
-        entry.result.title !== "AI recognition error"
-      )
-      .slice()
-      .sort((a, b) => {
-        const pa = catalogEntryVisualPosition(a);
-        const pb = catalogEntryVisualPosition(b);
+    const d = getCatalogDiagnostics();
 
-        // Approximate visual reading order: top-to-bottom, then left-to-right.
-        // A generous row threshold keeps slightly tilted books on the same shelf.
-        const rowThreshold = sourceCanvas ? sourceCanvas.height * 0.06 : 80;
-        if (Math.abs(pa.y - pb.y) > rowThreshold) return pa.y - pb.y;
-        return pa.x - pb.x;
-      });
-
-    const lines = books.map((entry, index) => {
-      const title = String(entry.result.title || "").trim();
-      const author = String(entry.result.author || "").trim();
-      return `${index + 1}. ${title}${author ? " — " + author : ""}`;
-    });
+    const credibleLines = d.credible.map(displayBookLine);
+    const rejectedItems = [...d.rejected, ...d.duplicates];
+    const rejectedLines = rejectedItems.map(diagnosticRejectedLine);
 
     return [
-      `Spineless v23 — ${books.length} identified books`,
+      `Spineless v24 diagnostic`,
+      `${d.credible.length} credible unique books · ${d.rawCount} raw identifications · ${d.spineCount} detected spines · ${formatDuration(diagnosticLastElapsed)}`,
       "",
-      ...lines
+      "CREDIBLE UNIQUE BOOKS",
+      ...credibleLines,
+      "",
+      `REJECTED / DUPLICATE RAW READS (${rejectedItems.length})`,
+      ...rejectedLines
     ].join("\n");
   }
 
   async function copyCatalogBookList(sourceEl) {
-    if (!bookCatalog.length) return;
+    if (!diagnosticRawEntries.length && !bookCatalog.length) return;
 
     const text = buildCopiedBookList();
 
@@ -2033,12 +2213,13 @@
       textarea.remove();
     }
 
+    const d = getCatalogDiagnostics();
     const targets = [catalogStats, searchCatalogStats].filter(Boolean);
     const originals = targets.map(el => el.textContent);
 
     targets.forEach(el => {
       if (el.classList.contains("visible")) {
-        el.textContent = `${bookCatalog.length} books · copied`;
+        el.textContent = `${d.credible.length} books · list copied`;
       }
     });
 
@@ -2050,12 +2231,12 @@
   }
 
   if (catalogStats) {
-    catalogStats.title = "Tap to copy identified book list";
+    catalogStats.title = "Tap to copy diagnostic book list";
     catalogStats.addEventListener("click", () => copyCatalogBookList(catalogStats));
   }
 
   if (searchCatalogStats) {
-    searchCatalogStats.title = "Tap to copy identified book list";
+    searchCatalogStats.title = "Tap to copy diagnostic book list";
     searchCatalogStats.addEventListener("click", () => copyCatalogBookList(searchCatalogStats));
   }
 
@@ -2497,6 +2678,7 @@
             const rr = await identifyShelfRegion(region, runSerial, passIndex);
 
             for (const entry of rr.books) {
+              diagnosticRawEntries.push(entry);
               const dupe = bookCatalog.find(existing => sameCatalogBook(existing, entry));
               if (!dupe) bookCatalog.push(entry);
               else if ((entry.result.confidence || 0) > (dupe.result.confidence || 0)) {
@@ -2591,6 +2773,7 @@
     if (runSerial !== catalogingRunSerial) return;
 
     detectedSpines.sort((a,b) => (a.bbox.y0-b.bbox.y0) || (a.bbox.x0-b.bbox.x0));
+    diagnosticDetectedSpines = detectedSpines.slice();
     const recoverySpines = detectedSpines.filter(spine => !spineCoveredByCatalog(spine));
     recoverySpines.forEach((s,i) => s.id = i + 1);
 
@@ -2614,6 +2797,7 @@
             if (result.status === "identified" && result.title) {
               const entry = spineResultToCatalogEntry(spine, { title: result.title, author: result.author || "", confidence: Number(result.confidence || 0) });
               if (entry) {
+                diagnosticRawEntries.push(entry);
                 const dupe = bookCatalog.find(existing => sameCatalogBook(existing, entry));
                 if (!dupe) bookCatalog.push(entry);
                 else if ((entry.result.confidence || 0) > (dupe.result.confidence || 0)) Object.assign(dupe, entry);
@@ -2652,7 +2836,9 @@
     buildTermList();
     const elapsed = (performance.now() - startedAt) / 1000;
     const recovered = Math.max(0, bookCatalog.length - initialBookCount);
-    catalogingStatus.textContent = `${bookCatalog.length} books · ${termList.length} searchable terms`;
+    const finalDiagnostics = getCatalogDiagnostics();
+    catalogingStatus.textContent =
+      `${finalDiagnostics.credible.length} credible books · ${finalDiagnostics.rawCount} raw identifications`;
     if (catalogingEta) {
       catalogingEta.textContent =
         `3-pass ${initialBookCount} + ${recovered} recovered · ${detectedSpines.length} spines detected · ${formatDuration(elapsed)}`;
@@ -3050,7 +3236,7 @@ const cropW = Math.max(1, x1 - x0);
 </script>
 
 <!-- Spineless build version -->
-<div id="spineless-build-version" aria-label="Build version">v23</div>
+<div id="spineless-build-version" aria-label="Build version">v24</div>
 <style>
   #spineless-build-version {
     position: fixed;
