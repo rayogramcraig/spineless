@@ -1073,7 +1073,7 @@
       </div>
     </div>
 
-    <div id="build-version">ocr-v11</div>
+    <div id="build-version">ocr-v12</div>
   </div>
 
 <script>
@@ -1147,22 +1147,19 @@
     enabled: false,
     hintsBuilt: 0,
     wordsSent: 0,
+    cropsBuilt: 0,
+    cropPayloadChars: 0,
     existingTermsSent: 0,
-    requestStartedAt: 0,
-    elapsedMs: null,
-    httpStatus: null,
-    httpStatusText: "",
-    responseText: "",
-    responseJson: null,
     functionError: "",
-    model: "",
-    rawGeminiRescues: [],
-    serverAcceptedRescues: [],
+    stages: {
+      text: null,
+      visual: null
+    },
     browserAcceptedRescues: [],
     browserRejectedRescues: []
   };
 
-  // Lightweight text-only OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
+  // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
   const OCR_RESCUE_ENABLED = !OCR_RESCUE_ENDPOINT.includes("YOUR_SUPABASE_FUNCTION_URL");
   const OCR_RESCUE_KEY_STORAGE = "spineless_supabase_public_key";
@@ -1737,16 +1734,8 @@
       cropsBuilt: 0,
       cropPayloadChars: 0,
       existingTermsSent: Array.isArray(baseOCRTerms) ? baseOCRTerms.length : 0,
-      requestStartedAt: 0,
-      elapsedMs: null,
-      httpStatus: null,
-      httpStatusText: "",
-      responseText: "",
-      responseJson: null,
       functionError: "",
-      model: "",
-      rawGeminiRescues: [],
-      serverAcceptedRescues: [],
+      stages: { text: null, visual: null },
       browserAcceptedRescues: [],
       browserRejectedRescues: []
     };
@@ -1758,121 +1747,173 @@
     }
 
     const hints = buildOCRRescueHints();
+    const rescueCrops = buildOCRRescueCrops(hints);
     geminiRescueDebug.hintsBuilt = hints.length;
     geminiRescueDebug.wordsSent = hints.length;
-    const rescueCrops = buildOCRRescueCrops(hints);
     geminiRescueDebug.cropsBuilt = rescueCrops.length;
     geminiRescueDebug.cropPayloadChars = rescueCrops.reduce((n,c)=>n+String(c.image||'').length,0);
+
     if (!hints.length) {
       geminiRescueDebug.functionError = "No OCR hints survived client-side hint filtering";
       buildTermList();
       return;
     }
 
-    try {
-      geminiRescueDebug.requestStartedAt = Date.now();
-      const publicKey = getOCRRescuePublicKey();
-      if (!publicKey) {
-        geminiRescueDebug.functionError = "Supabase public key not supplied; Gemini rescue was not called";
-        buildTermList();
-        return;
-      }
-      const resp = await fetch(OCR_RESCUE_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "apikey": publicKey,
-          "Authorization": `Bearer ${publicKey}`
-        },
-        body: JSON.stringify({
-          imageWidth: sourceCanvas ? sourceCanvas.width : null,
-          imageHeight: sourceCanvas ? sourceCanvas.height : null,
-          existingTerms: baseOCRTerms,
-          ocrWords: hints,
-          crops: rescueCrops,
-          debug: true
-        })
-      });
-      geminiRescueDebug.elapsedMs = Date.now() - geminiRescueDebug.requestStartedAt;
-      geminiRescueDebug.httpStatus = resp.status;
-      geminiRescueDebug.httpStatusText = resp.statusText || "";
+    const publicKey = getOCRRescuePublicKey();
+    if (!publicKey) {
+      geminiRescueDebug.functionError = "Supabase public key not supplied; Gemini rescue was not called";
+      buildTermList();
+      return;
+    }
 
-      const responseText = await resp.text();
-      geminiRescueDebug.responseText = responseText;
-      let data = null;
-      try { data = responseText ? JSON.parse(responseText) : null; } catch (_) {}
-      geminiRescueDebug.responseJson = data;
+    const acceptedTerms = new Set();
+    const acceptedKeys = new Set();
 
-      if (!resp.ok) {
-        const detail = data ? JSON.stringify(data) : responseText;
-        throw new Error(`OCR rescue failed (${resp.status}) ${detail}`);
-      }
+    async function runStage(stageName, mode, crops, existingTerms) {
+      const debug = {
+        stage: stageName,
+        mode,
+        requestStartedAt: Date.now(),
+        elapsedMs: null,
+        httpStatus: null,
+        httpStatusText: "",
+        responseText: "",
+        responseJson: null,
+        functionError: "",
+        model: "",
+        rawGeminiRescues: [],
+        serverAcceptedRescues: [],
+        browserAcceptedRescues: [],
+        browserRejectedRescues: []
+      };
+      geminiRescueDebug.stages[stageName] = debug;
 
-      geminiRescueDebug.model = String(data?.model || data?.debug?.model || "");
-      geminiRescueDebug.functionError = String(data?.error || data?.debug?.error || "");
-      geminiRescueDebug.rawGeminiRescues = Array.isArray(data?.debug?.rawGeminiRescues)
-        ? data.debug.rawGeminiRescues
-        : [];
-      geminiRescueDebug.serverAcceptedRescues = Array.isArray(data?.rescues) ? data.rescues : [];
+      try {
+        const resp = await fetch(OCR_RESCUE_ENDPOINT, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": publicKey,
+            "Authorization": `Bearer ${publicKey}`
+          },
+          body: JSON.stringify({
+            mode,
+            imageWidth: sourceCanvas ? sourceCanvas.width : null,
+            imageHeight: sourceCanvas ? sourceCanvas.height : null,
+            existingTerms,
+            ocrWords: hints,
+            crops,
+            debug: true
+          })
+        });
+        debug.elapsedMs = Date.now() - debug.requestStartedAt;
+        debug.httpStatus = resp.status;
+        debug.httpStatusText = resp.statusText || "";
 
-      const records = Array.isArray(data?.rescues) ? data.rescues : [];
-      const rescued = new Set();
+        const responseText = await resp.text();
+        debug.responseText = responseText;
+        let data = null;
+        try { data = responseText ? JSON.parse(responseText) : null; } catch (_) {}
+        debug.responseJson = data;
 
-      for (const r of records) {
-        const rejectedReasons = [];
-        const confidence = Number(r?.confidence || 0);
-        if (confidence < 0.58) rejectedReasons.push(`confidence ${confidence} < 0.58`);
-        const sources = Array.isArray(r?.sources) ? r.sources.map(v => String(v)).filter(Boolean).slice(0,6) : [];
-        const terms = Array.isArray(r?.terms) ? r.terms : [];
-        const accepted = [];
-        const rejectedTerms = [];
-        for (const raw of terms) {
-          const term = normalizeRescueTerm(raw);
-          let reason = "";
-          if (!term || term.length < 3 || term.length > 30) reason = "bad length/empty";
-          else if (!/^[a-z0-9-]+$/.test(term)) reason = "invalid characters";
-          else if (baseOCRTerms.includes(term)) reason = "already in OCR terms";
-          if (reason) rejectedTerms.push({ raw: String(raw), normalized: term, reason });
-          else {
-            rescued.add(term);
-            accepted.push(term);
+        if (!resp.ok) {
+          const detail = data ? JSON.stringify(data) : responseText;
+          throw new Error(`OCR rescue failed (${resp.status}) ${detail}`);
+        }
+
+        debug.model = String(data?.model || data?.debug?.model || "");
+        debug.functionError = String(data?.error || data?.debug?.error || "");
+        debug.rawGeminiRescues = Array.isArray(data?.debug?.rawGeminiRescues)
+          ? data.debug.rawGeminiRescues
+          : [];
+        debug.serverAcceptedRescues = Array.isArray(data?.rescues) ? data.rescues : [];
+
+        const records = Array.isArray(data?.rescues) ? data.rescues : [];
+        for (const r of records) {
+          const rejectedReasons = [];
+          const confidence = Number(r?.confidence || 0);
+          if (confidence < 0.58) rejectedReasons.push(`confidence ${confidence} < 0.58`);
+          const sources = Array.isArray(r?.sources) ? r.sources.map(v => String(v)).filter(Boolean).slice(0,6) : [];
+          const terms = Array.isArray(r?.terms) ? r.terms : [];
+          const accepted = [];
+          const rejectedTerms = [];
+
+          for (const raw of terms) {
+            const term = normalizeRescueTerm(raw);
+            let reason = "";
+            if (!term || term.length < 3 || term.length > 30) reason = "bad length/empty";
+            else if (!/^[a-z0-9-]+$/.test(term)) reason = "invalid characters";
+            else if (baseOCRTerms.includes(term)) reason = "already in OCR terms";
+            if (reason) {
+              rejectedTerms.push({ raw: String(raw), normalized: term, reason });
+            } else {
+              acceptedTerms.add(term);
+              accepted.push(term);
+            }
+          }
+
+          if (confidence < 0.58 || !accepted.length) {
+            const rejected = {
+              stage: stageName, sources, terms, confidence,
+              reason: String(r?.reason || ""),
+              rejectedReasons,
+              rejectedTerms
+            };
+            debug.browserRejectedRescues.push(rejected);
+            geminiRescueDebug.browserRejectedRescues.push(rejected);
+            continue;
+          }
+
+          // Do not duplicate an identical rescue record across the two passes,
+          // but always union all accepted terms.
+          const key = accepted.slice().sort().join("|") + "::" + sources.slice().sort().join("|");
+          if (!acceptedKeys.has(key)) {
+            acceptedKeys.add(key);
+            const acceptedRecord = {
+              stage: stageName,
+              sources,
+              terms: accepted,
+              confidence,
+              reason: String(r?.reason || "").trim(),
+              anchors: accepted.map(term => {
+                const anchor = bestOCRAnchorForRescue(term, sources);
+                return anchor ? {
+                  term,
+                  sourceText: String(anchor.text || ""),
+                  confidence: Number(anchor.confidence || 0),
+                  ocrPass: anchor.ocrPass || "?",
+                  bbox: { ...anchor.bbox }
+                } : null;
+              }).filter(Boolean)
+            };
+            geminiRescueRecords.push(acceptedRecord);
+            debug.browserAcceptedRescues.push(acceptedRecord);
+            geminiRescueDebug.browserAcceptedRescues.push(acceptedRecord);
           }
         }
-        if (confidence < 0.58 || !accepted.length) {
-          geminiRescueDebug.browserRejectedRescues.push({
-            sources, terms, confidence,
-            reason: String(r?.reason || ""),
-            rejectedReasons,
-            rejectedTerms
-          });
-          continue;
-        }
-        const acceptedRecord = {
-          sources,
-          terms: accepted,
-          confidence,
-          reason: String(r?.reason || "").trim(),
-          anchors: accepted.map(term => {
-            const anchor = bestOCRAnchorForRescue(term, sources);
-            return anchor ? {
-              term,
-              sourceText: String(anchor.text || ""),
-              confidence: Number(anchor.confidence || 0),
-              ocrPass: anchor.ocrPass || "?",
-              bbox: { ...anchor.bbox }
-            } : null;
-          }).filter(Boolean)
-        };
-        geminiRescueRecords.push(acceptedRecord);
-        geminiRescueDebug.browserAcceptedRescues.push(acceptedRecord);
+      } catch (err) {
+        debug.elapsedMs = debug.elapsedMs ?? (Date.now() - debug.requestStartedAt);
+        debug.functionError = err instanceof Error ? err.message : String(err);
+        console.warn(`Gemini OCR ${stageName} rescue failed:`, err);
       }
-
-      geminiRescuedTerms = Array.from(rescued).sort((a,b)=>a.localeCompare(b));
-    } catch (err) {
-      geminiRescueDebug.elapsedMs = geminiRescueDebug.elapsedMs ?? (geminiRescueDebug.requestStartedAt ? Date.now() - geminiRescueDebug.requestStartedAt : null);
-      geminiRescueDebug.functionError = err instanceof Error ? err.message : String(err);
-      console.warn("Gemini OCR rescue failed:", err);
     }
+
+    // Stage 1: deterministic-ish text + spatial cleanup. No images.
+    await runStage("text", "text", [], baseOCRTerms);
+
+    // Stage 2: visual crop reading. Tell Gemini which terms stage 1 already added,
+    // then union the two responses in the browser.
+    const textStageTerms = Array.from(acceptedTerms);
+    await runStage("visual", "visual", rescueCrops, Array.from(new Set([...baseOCRTerms, ...textStageTerms])));
+
+    geminiRescuedTerms = Array.from(acceptedTerms).sort((a,b)=>a.localeCompare(b));
+
+    const stageErrors = Object.values(geminiRescueDebug.stages)
+      .filter(Boolean)
+      .map(s => s.functionError)
+      .filter(Boolean);
+    geminiRescueDebug.functionError = stageErrors.join(" | ");
+
     buildTermList();
   }
 
@@ -3009,7 +3050,7 @@
     });
 
     return [
-      "Spineless OCR v11 diagnostic",
+      "Spineless OCR v12 diagnostic",
       `${words.length} OCR words · ${baseOCRTerms.length} OCR search terms + ${geminiRescuedTerms.length} Gemini rescued = ${uniqueTerms} total · average confidence ${Math.round(avgConfidence)}%`,
       `passes: 0° ${byPass["0°"]} · 90° ${byPass["90°"]} · -90° ${byPass["-90°"]}`,
       sourceCanvas ? `image: ${sourceCanvas.width} × ${sourceCanvas.height}px` : "",
@@ -3019,7 +3060,7 @@
       "",
       "GEMINI RESCUES",
       ...(geminiRescueRecords.length
-        ? geminiRescueRecords.map(r => `${(r.sources || []).join(" + ")} → ${(r.terms || []).join(", ")} · confidence ${Math.round((r.confidence || 0) * 100)}%${r.reason ? " · " + r.reason : ""}`)
+        ? geminiRescueRecords.map(r => `[${r.stage || "?"}] ${(r.sources || []).join(" + ")} → ${(r.terms || []).join(", ")} · confidence ${Math.round((r.confidence || 0) * 100)}%${r.reason ? " · " + r.reason : ""}`)
         : ["(none)"]),
       "",
       "GEMINI RESCUE DEBUG",
@@ -3027,24 +3068,45 @@
       `enabled: ${geminiRescueDebug.enabled}`,
       `auth: Supabase public key ${localStorage.getItem(OCR_RESCUE_KEY_STORAGE) ? "stored" : "not stored"}`,
       `OCR hints built/sent: ${geminiRescueDebug.hintsBuilt} / ${geminiRescueDebug.wordsSent}`,
-      `spatial neighborhoods: ${geminiRescueDebug.responseJson?.debug?.neighborhoodCount ?? "(not reported)"}`,
-      `visual crops built/sent: ${geminiRescueDebug.cropsBuilt} / ${geminiRescueDebug.responseJson?.debug?.cropCount ?? "(not reported)"}`,
+      `visual crops built: ${geminiRescueDebug.cropsBuilt}`,
       `crop payload: ${geminiRescueDebug.cropPayloadChars ? Math.round(geminiRescueDebug.cropPayloadChars/1024) + " KB base64" : "0 KB"}`,
-      `existing OCR terms sent: ${geminiRescueDebug.existingTermsSent}`,
-      `HTTP: ${geminiRescueDebug.httpStatus ?? "no response"}${geminiRescueDebug.httpStatusText ? " " + geminiRescueDebug.httpStatusText : ""}`,
-      `elapsed: ${geminiRescueDebug.elapsedMs == null ? "n/a" : geminiRescueDebug.elapsedMs + " ms"}`,
-      `model: ${geminiRescueDebug.model || "(not reported)"}`,
+      `existing OCR terms: ${geminiRescueDebug.existingTermsSent}`,
+      `combined browser-accepted rescue groups: ${geminiRescueDebug.browserAcceptedRescues.length}`,
+      `combined browser-rejected rescue groups: ${geminiRescueDebug.browserRejectedRescues.length}`,
       `function/error: ${geminiRescueDebug.functionError || "(none)"}`,
-      `raw Gemini rescue groups: ${geminiRescueDebug.rawGeminiRescues.length}`,
-      `server-accepted rescue groups: ${geminiRescueDebug.serverAcceptedRescues.length}`,
-      `browser-accepted rescue groups: ${geminiRescueDebug.browserAcceptedRescues.length}`,
-      `browser-rejected rescue groups: ${geminiRescueDebug.browserRejectedRescues.length}`,
       "",
-      "RAW GEMINI RESCUES",
-      JSON.stringify(geminiRescueDebug.rawGeminiRescues, null, 2),
+      "TEXT/SPATIAL PASS",
+      `HTTP: ${geminiRescueDebug.stages?.text?.httpStatus ?? "no response"}${geminiRescueDebug.stages?.text?.httpStatusText ? " " + geminiRescueDebug.stages.text.httpStatusText : ""}`,
+      `elapsed: ${geminiRescueDebug.stages?.text?.elapsedMs == null ? "n/a" : geminiRescueDebug.stages.text.elapsedMs + " ms"}`,
+      `model: ${geminiRescueDebug.stages?.text?.model || "(not reported)"}`,
+      `neighborhoods: ${geminiRescueDebug.stages?.text?.responseJson?.debug?.neighborhoodCount ?? "(not reported)"}`,
+      `raw rescue groups: ${geminiRescueDebug.stages?.text?.rawGeminiRescues?.length ?? 0}`,
+      `server-accepted groups: ${geminiRescueDebug.stages?.text?.serverAcceptedRescues?.length ?? 0}`,
+      `browser-accepted groups: ${geminiRescueDebug.stages?.text?.browserAcceptedRescues?.length ?? 0}`,
+      `error: ${geminiRescueDebug.stages?.text?.functionError || "(none)"}`,
       "",
-      "SERVER RESPONSE JSON",
-      geminiRescueDebug.responseJson ? JSON.stringify(geminiRescueDebug.responseJson, null, 2) : (geminiRescueDebug.responseText || "(none)"),
+      "VISUAL CROP PASS",
+      `HTTP: ${geminiRescueDebug.stages?.visual?.httpStatus ?? "no response"}${geminiRescueDebug.stages?.visual?.httpStatusText ? " " + geminiRescueDebug.stages.visual.httpStatusText : ""}`,
+      `elapsed: ${geminiRescueDebug.stages?.visual?.elapsedMs == null ? "n/a" : geminiRescueDebug.stages.visual.elapsedMs + " ms"}`,
+      `model: ${geminiRescueDebug.stages?.visual?.model || "(not reported)"}`,
+      `neighborhoods: ${geminiRescueDebug.stages?.visual?.responseJson?.debug?.neighborhoodCount ?? "(not reported)"}`,
+      `visual crops sent: ${geminiRescueDebug.stages?.visual?.responseJson?.debug?.cropCount ?? "(not reported)"}`,
+      `raw rescue groups: ${geminiRescueDebug.stages?.visual?.rawGeminiRescues?.length ?? 0}`,
+      `server-accepted groups: ${geminiRescueDebug.stages?.visual?.serverAcceptedRescues?.length ?? 0}`,
+      `browser-accepted groups: ${geminiRescueDebug.stages?.visual?.browserAcceptedRescues?.length ?? 0}`,
+      `error: ${geminiRescueDebug.stages?.visual?.functionError || "(none)"}`,
+      "",
+      "RAW TEXT/SPATIAL RESCUES",
+      JSON.stringify(geminiRescueDebug.stages?.text?.rawGeminiRescues || [], null, 2),
+      "",
+      "RAW VISUAL RESCUES",
+      JSON.stringify(geminiRescueDebug.stages?.visual?.rawGeminiRescues || [], null, 2),
+      "",
+      "TEXT/SPATIAL SERVER RESPONSE JSON",
+      geminiRescueDebug.stages?.text?.responseJson ? JSON.stringify(geminiRescueDebug.stages.text.responseJson, null, 2) : (geminiRescueDebug.stages?.text?.responseText || "(none)"),
+      "",
+      "VISUAL SERVER RESPONSE JSON",
+      geminiRescueDebug.stages?.visual?.responseJson ? JSON.stringify(geminiRescueDebug.stages.visual.responseJson, null, 2) : (geminiRescueDebug.stages?.visual?.responseText || "(none)"),
       "",
       "BROWSER-REJECTED RESCUES",
       JSON.stringify(geminiRescueDebug.browserRejectedRescues, null, 2),
@@ -4190,7 +4252,7 @@ const cropW = Math.max(1, x1 - x0);
 </script>
 
 <!-- Spineless build version -->
-<div id="spineless-build-version" aria-label="Build version">ocr-v11</div>
+<div id="spineless-build-version" aria-label="Build version">ocr-v12</div>
 <style>
   #spineless-build-version {
     position: fixed;
