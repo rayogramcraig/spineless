@@ -1073,7 +1073,7 @@
       </div>
     </div>
 
-    <div id="build-version">ocr-v8</div>
+    <div id="build-version">ocr-v9</div>
   </div>
 
 <script>
@@ -1591,8 +1591,11 @@
       const raw = String(w.text).trim();
       const letters = raw.replace(/[^A-Za-z0-9]/g, "");
       const confidence = Number.isFinite(Number(w.confidence)) ? Number(w.confidence) : 0;
-      if (letters.length < 2 || letters.length > 28) continue;
-      if (confidence < 18) continue;
+      if (letters.length < 2 || letters.length > 40) continue;
+      // v9: keep more damaged/low-confidence fragments for Gemini salvage.
+      // The text-only rescue model is better than the dictionary at deciding
+      // whether these are useful names/title fragments versus OCR garbage.
+      if (confidence < 10) continue;
       hints.push({
         text: raw,
         confidence: Math.round(confidence),
@@ -1738,7 +1741,7 @@
       for (const r of records) {
         const rejectedReasons = [];
         const confidence = Number(r?.confidence || 0);
-        if (confidence < 0.62) rejectedReasons.push(`confidence ${confidence} < 0.62`);
+        if (confidence < 0.58) rejectedReasons.push(`confidence ${confidence} < 0.58`);
         const sources = Array.isArray(r?.sources) ? r.sources.map(v => String(v)).filter(Boolean).slice(0,6) : [];
         const terms = Array.isArray(r?.terms) ? r.terms : [];
         const accepted = [];
@@ -1755,7 +1758,7 @@
             accepted.push(term);
           }
         }
-        if (confidence < 0.62 || !accepted.length) {
+        if (confidence < 0.58 || !accepted.length) {
           geminiRescueDebug.browserRejectedRescues.push({
             sources, terms, confidence,
             reason: String(r?.reason || ""),
@@ -2926,7 +2929,7 @@
     });
 
     return [
-      "Spineless OCR v8 diagnostic",
+      "Spineless OCR v9 diagnostic",
       `${words.length} OCR words · ${baseOCRTerms.length} OCR search terms + ${geminiRescuedTerms.length} Gemini rescued = ${uniqueTerms} total · average confidence ${Math.round(avgConfidence)}%`,
       `passes: 0° ${byPass["0°"]} · 90° ${byPass["90°"]} · -90° ${byPass["-90°"]}`,
       sourceCanvas ? `image: ${sourceCanvas.width} × ${sourceCanvas.height}px` : "",
@@ -4104,7 +4107,7 @@ const cropW = Math.max(1, x1 - x0);
 </script>
 
 <!-- Spineless build version -->
-<div id="spineless-build-version" aria-label="Build version">ocr-v8</div>
+<div id="spineless-build-version" aria-label="Build version">ocr-v9</div>
 <style>
   #spineless-build-version {
     position: fixed;
