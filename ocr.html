@@ -1073,7 +1073,7 @@
       </div>
     </div>
 
-    <div id="build-version">ocr-v13</div>
+    <div id="build-version">ocr-v14</div>
   </div>
 
 <script>
@@ -1163,7 +1163,7 @@
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
   const OCR_RESCUE_ENABLED = !OCR_RESCUE_ENDPOINT.includes("YOUR_SUPABASE_FUNCTION_URL");
   // Supabase publishable key is safe to include in browser code. Never put a service-role key here.
-  const OCR_RESCUE_PUBLIC_KEY = "sb_publishable_5b4sobnsVuj0LdjKvh3xtg_0ZBIfFy";
+  const OCR_RESCUE_PUBLIC_KEY = "sb_publishable_5b4sobnsVujOLdjKvh3xtg_OZBIfFy_";
 
   function getOCRRescuePublicKey() {
     return OCR_RESCUE_PUBLIC_KEY;
@@ -3045,7 +3045,7 @@
     });
 
     return [
-      "Spineless OCR v13 diagnostic",
+      "Spineless OCR v14 diagnostic",
       `${words.length} OCR words · ${baseOCRTerms.length} OCR search terms + ${geminiRescuedTerms.length} Gemini rescued = ${uniqueTerms} total · average confidence ${Math.round(avgConfidence)}%`,
       `passes: 0° ${byPass["0°"]} · 90° ${byPass["90°"]} · -90° ${byPass["-90°"]}`,
       sourceCanvas ? `image: ${sourceCanvas.width} × ${sourceCanvas.height}px` : "",
