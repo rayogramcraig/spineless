@@ -1073,7 +1073,7 @@
       </div>
     </div>
 
-    <div id="build-version">ocr-v10</div>
+    <div id="build-version">ocr-v11</div>
   </div>
 
 <script>
@@ -1613,6 +1613,80 @@
     return hints.slice(0, 900);
   }
 
+  function buildOCRRescueCrops(hints) {
+    if (!sourceCanvas || !Array.isArray(hints) || !hints.length) return [];
+
+    // v11 crop-assisted salvage: deliberately generous for the experiment.
+    // Keep crops tiny so we can test visual recovery without approaching full-image cataloging cost.
+    const MAX_CROPS = 72;
+    const TARGET_LONG_EDGE = 240;
+    const JPEG_QUALITY = 0.62;
+
+    // Prefer damaged / low-confidence / long merged strings, then spread selections across the image.
+    const ranked = hints.map((h, i) => {
+      const raw = String(h.text || '');
+      const alnum = raw.replace(/[^A-Za-z0-9]/g, '');
+      const damage = (raw.match(/[^A-Za-z0-9'’-]/g) || []).length;
+      const merged = /[A-Z]{7,}/.test(raw) || alnum.length >= 9;
+      const conf = Number(h.confidence || 0);
+      return { h, i, score: damage * 3 + (merged ? 5 : 0) + Math.max(0, 58-conf)/8 + Math.min(5, alnum.length/5) };
+    }).sort((a,b)=>b.score-a.score || a.i-b.i);
+
+    // Grid-aware selection prevents all 72 crops from clustering in one noisy corner.
+    const picked = [];
+    const cellCounts = new Map();
+    const cols = 6, rows = 8;
+    for (const item of ranked) {
+      const b = item.h.bbox || {};
+      const cx = ((Number(b.x0)||0)+(Number(b.x1)||0))/2;
+      const cy = ((Number(b.y0)||0)+(Number(b.y1)||0))/2;
+      const gx = Math.max(0, Math.min(cols-1, Math.floor(cx / Math.max(1, sourceCanvas.width) * cols)));
+      const gy = Math.max(0, Math.min(rows-1, Math.floor(cy / Math.max(1, sourceCanvas.height) * rows)));
+      const key = `${gx},${gy}`;
+      const count = cellCounts.get(key) || 0;
+      if (count >= 3 && picked.length < 48) continue;
+      picked.push(item.h);
+      cellCounts.set(key, count+1);
+      if (picked.length >= MAX_CROPS) break;
+    }
+
+    const crops = [];
+    for (let idx=0; idx<picked.length; idx++) {
+      const h = picked[idx];
+      const b = h.bbox || {};
+      const x0 = Number(b.x0)||0, y0 = Number(b.y0)||0, x1 = Number(b.x1)||x0+1, y1 = Number(b.y1)||y0+1;
+      const bw = Math.max(1, x1-x0), bh = Math.max(1, y1-y0);
+      const vertical = h.pass === '90°' || h.pass === '-90°' || bh > bw*1.35;
+
+      // Include enough spine context to catch neighboring author/title words while staying small.
+      const padX = vertical ? Math.max(34, bw*1.25) : Math.max(28, bw*0.65);
+      const padY = vertical ? Math.max(70, bh*0.70) : Math.max(34, bh*1.10);
+      const sx0 = Math.max(0, Math.floor(x0-padX));
+      const sy0 = Math.max(0, Math.floor(y0-padY));
+      const sx1 = Math.min(sourceCanvas.width, Math.ceil(x1+padX));
+      const sy1 = Math.min(sourceCanvas.height, Math.ceil(y1+padY));
+      const sw = Math.max(1, sx1-sx0), sh = Math.max(1, sy1-sy0);
+      const scale = Math.min(1, TARGET_LONG_EDGE / Math.max(sw, sh));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(sw*scale));
+      c.height = Math.max(1, Math.round(sh*scale));
+      c.getContext('2d').drawImage(sourceCanvas, sx0,sy0,sw,sh, 0,0,c.width,c.height);
+      const dataUrl = c.toDataURL('image/jpeg', JPEG_QUALITY);
+      crops.push({
+        id: `crop-${idx+1}`,
+        sourceText: String(h.text || ''),
+        confidence: Number(h.confidence || 0),
+        pass: h.pass || '?',
+        bbox: { x0,y0,x1,y1 },
+        cropBbox: { x0:sx0,y0:sy0,x1:sx1,y1:sy1 },
+        width: c.width,
+        height: c.height,
+        image: dataUrl
+      });
+    }
+    return crops;
+  }
+
   function normalizeRescueTerm(value) {
     return String(value || "")
       .toLowerCase()
@@ -1660,6 +1734,8 @@
       enabled: OCR_RESCUE_ENABLED,
       hintsBuilt: 0,
       wordsSent: 0,
+      cropsBuilt: 0,
+      cropPayloadChars: 0,
       existingTermsSent: Array.isArray(baseOCRTerms) ? baseOCRTerms.length : 0,
       requestStartedAt: 0,
       elapsedMs: null,
@@ -1684,6 +1760,9 @@
     const hints = buildOCRRescueHints();
     geminiRescueDebug.hintsBuilt = hints.length;
     geminiRescueDebug.wordsSent = hints.length;
+    const rescueCrops = buildOCRRescueCrops(hints);
+    geminiRescueDebug.cropsBuilt = rescueCrops.length;
+    geminiRescueDebug.cropPayloadChars = rescueCrops.reduce((n,c)=>n+String(c.image||'').length,0);
     if (!hints.length) {
       geminiRescueDebug.functionError = "No OCR hints survived client-side hint filtering";
       buildTermList();
@@ -1710,6 +1789,7 @@
           imageHeight: sourceCanvas ? sourceCanvas.height : null,
           existingTerms: baseOCRTerms,
           ocrWords: hints,
+          crops: rescueCrops,
           debug: true
         })
       });
@@ -2929,7 +3009,7 @@
     });
 
     return [
-      "Spineless OCR v10 diagnostic",
+      "Spineless OCR v11 diagnostic",
       `${words.length} OCR words · ${baseOCRTerms.length} OCR search terms + ${geminiRescuedTerms.length} Gemini rescued = ${uniqueTerms} total · average confidence ${Math.round(avgConfidence)}%`,
       `passes: 0° ${byPass["0°"]} · 90° ${byPass["90°"]} · -90° ${byPass["-90°"]}`,
       sourceCanvas ? `image: ${sourceCanvas.width} × ${sourceCanvas.height}px` : "",
@@ -2948,6 +3028,8 @@
       `auth: Supabase public key ${localStorage.getItem(OCR_RESCUE_KEY_STORAGE) ? "stored" : "not stored"}`,
       `OCR hints built/sent: ${geminiRescueDebug.hintsBuilt} / ${geminiRescueDebug.wordsSent}`,
       `spatial neighborhoods: ${geminiRescueDebug.responseJson?.debug?.neighborhoodCount ?? "(not reported)"}`,
+      `visual crops built/sent: ${geminiRescueDebug.cropsBuilt} / ${geminiRescueDebug.responseJson?.debug?.cropCount ?? "(not reported)"}`,
+      `crop payload: ${geminiRescueDebug.cropPayloadChars ? Math.round(geminiRescueDebug.cropPayloadChars/1024) + " KB base64" : "0 KB"}`,
       `existing OCR terms sent: ${geminiRescueDebug.existingTermsSent}`,
       `HTTP: ${geminiRescueDebug.httpStatus ?? "no response"}${geminiRescueDebug.httpStatusText ? " " + geminiRescueDebug.httpStatusText : ""}`,
       `elapsed: ${geminiRescueDebug.elapsedMs == null ? "n/a" : geminiRescueDebug.elapsedMs + " ms"}`,
@@ -4108,7 +4190,7 @@ const cropW = Math.max(1, x1 - x0);
 </script>
 
 <!-- Spineless build version -->
-<div id="spineless-build-version" aria-label="Build version">ocr-v10</div>
+<div id="spineless-build-version" aria-label="Build version">ocr-v11</div>
 <style>
   #spineless-build-version {
     position: fixed;
