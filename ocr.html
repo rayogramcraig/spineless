@@ -121,9 +121,9 @@
       top: 50%;
       transform: translate(-50%, -50%);
       transform-origin: center;
-      font-weight: 800;
+      font-weight: 200;
       letter-spacing: 0.01em;
-      color: var(--scan-yellow);
+      color: #ffffff;
       opacity: 0;
       white-space: nowrap;
       filter: drop-shadow(0 0 16px rgba(0,0,0,0.85));
@@ -169,6 +169,52 @@
       background: linear-gradient(to left, rgba(232, 255, 41, 0) 0%, rgba(232, 255, 41, 1) 100%);
     }
 
+    /* ANALYZING: center-origin rotating radar sweep */
+    #scan-gradient.mode-radar {
+      opacity: 1;
+      mix-blend-mode: screen;
+    }
+
+    #scan-gradient.mode-radar #scan-band {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 180vmax;
+      height: 180vmax;
+      inset: auto;
+      border-radius: 50%;
+      transform: translate(-50%, -50%) rotate(0deg);
+      transform-origin: 50% 50%;
+      background: conic-gradient(
+        from 0deg,
+        rgba(232,255,41,0) 0deg,
+        rgba(232,255,41,0) 300deg,
+        rgba(232,255,41,0.08) 322deg,
+        rgba(232,255,41,0.42) 346deg,
+        rgba(232,255,41,0.95) 359deg,
+        rgba(232,255,41,0) 360deg
+      );
+      animation: radarSweep 2.6s linear infinite;
+    }
+
+    #scan-gradient.mode-radar::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(232,255,41,0.88);
+      box-shadow: 0 0 18px rgba(232,255,41,0.7);
+    }
+
+    @keyframes radarSweep {
+      from { transform: translate(-50%, -50%) rotate(0deg); }
+      to   { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+
     #ocr-overlay {
       position: absolute;
       inset: 0;
@@ -199,6 +245,7 @@
     #screen-ocr.angle-0 .scanning-label { transform: translateX(-50%) rotate(0deg); }
     #screen-ocr.angle-90 .scanning-label { transform: translateX(-50%) rotate(-90deg); }
     #screen-ocr.angle-neg90 .scanning-label { transform: translateX(-50%) rotate(90deg); }
+    #screen-ocr.analyzing .scanning-label { transform: translateX(-50%) rotate(0deg); }
 
     #scan-word {
       font-size: 3rem;
@@ -1073,7 +1120,7 @@
       </div>
     </div>
 
-    <div id="build-version">ocr-v14</div>
+    <div id="build-version">ocr-v15</div>
   </div>
 
 <script>
@@ -1383,8 +1430,8 @@
   function scheduleNextPulse() {
     if (!scanPulseActive) return;
 
-    // SHORTER interval so it’s visible even on fast devices
-    const delay = 600 + Math.random() * 800; // 0.6s – 1.4s
+    // Dense discovery stream: ~4x the previous pulse rate
+    const delay = 150 + Math.random() * 200; // 0.15s – 0.35s
 
     scanPulseTimer = setTimeout(() => {
       if (!scanPulseActive) return;
@@ -1914,8 +1961,9 @@
 
   function setScanMode(angleLabel, modeClass) {
     screenOCR.classList.add("scanning");
+    screenOCR.classList.remove("analyzing");
     scanGradient.style.opacity = "1";
-    scanGradient.classList.remove("mode-0", "mode-90", "mode-neg90");
+    scanGradient.classList.remove("mode-0", "mode-90", "mode-neg90", "mode-radar");
     if (modeClass) scanGradient.classList.add(modeClass);
 
     screenOCR.classList.remove("angle-0", "angle-90", "angle-neg90");
@@ -1926,6 +1974,16 @@
     scanWordEl.textContent = "reading";
     scanAngleEl.textContent = angleLabel;
     updateScanProgress(0);
+  }
+
+  function setAnalyzingMode() {
+    screenOCR.classList.add("analyzing");
+    screenOCR.classList.remove("angle-0", "angle-90", "angle-neg90");
+    scanGradient.classList.remove("mode-0", "mode-90", "mode-neg90");
+    scanGradient.classList.add("mode-radar");
+    scanGradient.style.opacity = "1";
+    scanWordEl.textContent = "analyzing";
+    scanAngleEl.textContent = "";
   }
 
   function updateScanProgress(progress) {
@@ -1973,7 +2031,7 @@
 
   async function startOCR(dataUrl) {
     showScreen(screenOCR);
-    screenOCR.classList.remove("mode-search");
+    screenOCR.classList.remove("mode-search", "analyzing");
     ocrBg.style.backgroundImage = `url(${dataUrl})`;
     ocrProgress.classList.remove("hidden");
     ocrProgress.textContent = "scanning…";
@@ -2140,11 +2198,12 @@
         if (immediate) showFloatingWord(immediate);
       }
 
-      scanGradient.style.opacity = "0";
+      // OCR scanning is complete; move into the upright AI analysis phase.
+      setAnalyzingMode();
 
       ocrWords = allWords;
       buildTermList();
-      ocrProgress.textContent = "cleaning OCR with Gemini…";
+      ocrProgress.textContent = "analyzing…";
       await rescueTermsWithGemini();
       ocrProgress.classList.add("hidden");
 
@@ -2152,6 +2211,9 @@
       stopScanPulses();
 
       // OCR-only comparison build: skip AI/Gemini cataloging entirely.
+      screenOCR.classList.remove("analyzing");
+      scanGradient.classList.remove("mode-radar");
+      scanGradient.style.opacity = "0";
       screenOCR.classList.add("mode-search");
       setTimeout(() => searchInput.focus(), 450);
     } catch (err) {
