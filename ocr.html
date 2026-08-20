@@ -1073,7 +1073,7 @@
       </div>
     </div>
 
-    <div id="build-version">ocr-v5</div>
+    <div id="build-version">ocr-v6</div>
   </div>
 
 <script>
@@ -1142,6 +1142,25 @@
   let baseOCRTerms = [];
   let geminiRescuedTerms = [];
   let geminiRescueRecords = [];
+  let geminiRescueDebug = {
+    endpoint: "",
+    enabled: false,
+    hintsBuilt: 0,
+    wordsSent: 0,
+    existingTermsSent: 0,
+    requestStartedAt: 0,
+    elapsedMs: null,
+    httpStatus: null,
+    httpStatusText: "",
+    responseText: "",
+    responseJson: null,
+    functionError: "",
+    model: "",
+    rawGeminiRescues: [],
+    serverAcceptedRescues: [],
+    browserAcceptedRescues: [],
+    browserRejectedRescues: []
+  };
 
   // Lightweight text-only OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -1591,12 +1610,43 @@
   async function rescueTermsWithGemini() {
     geminiRescuedTerms = [];
     geminiRescueRecords = [];
-    if (!OCR_RESCUE_ENABLED) { buildTermList(); return; }
+    geminiRescueDebug = {
+      endpoint: OCR_RESCUE_ENDPOINT,
+      enabled: OCR_RESCUE_ENABLED,
+      hintsBuilt: 0,
+      wordsSent: 0,
+      existingTermsSent: Array.isArray(baseOCRTerms) ? baseOCRTerms.length : 0,
+      requestStartedAt: 0,
+      elapsedMs: null,
+      httpStatus: null,
+      httpStatusText: "",
+      responseText: "",
+      responseJson: null,
+      functionError: "",
+      model: "",
+      rawGeminiRescues: [],
+      serverAcceptedRescues: [],
+      browserAcceptedRescues: [],
+      browserRejectedRescues: []
+    };
+
+    if (!OCR_RESCUE_ENABLED) {
+      geminiRescueDebug.functionError = "OCR rescue endpoint disabled";
+      buildTermList();
+      return;
+    }
 
     const hints = buildOCRRescueHints();
-    if (!hints.length) { buildTermList(); return; }
+    geminiRescueDebug.hintsBuilt = hints.length;
+    geminiRescueDebug.wordsSent = hints.length;
+    if (!hints.length) {
+      geminiRescueDebug.functionError = "No OCR hints survived client-side hint filtering";
+      buildTermList();
+      return;
+    }
 
     try {
+      geminiRescueDebug.requestStartedAt = Date.now();
       const resp = await fetch(OCR_RESCUE_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1604,44 +1654,78 @@
           imageWidth: sourceCanvas ? sourceCanvas.width : null,
           imageHeight: sourceCanvas ? sourceCanvas.height : null,
           existingTerms: baseOCRTerms,
-          ocrWords: hints
+          ocrWords: hints,
+          debug: true
         })
       });
+      geminiRescueDebug.elapsedMs = Date.now() - geminiRescueDebug.requestStartedAt;
+      geminiRescueDebug.httpStatus = resp.status;
+      geminiRescueDebug.httpStatusText = resp.statusText || "";
+
+      const responseText = await resp.text();
+      geminiRescueDebug.responseText = responseText;
+      let data = null;
+      try { data = responseText ? JSON.parse(responseText) : null; } catch (_) {}
+      geminiRescueDebug.responseJson = data;
+
       if (!resp.ok) {
-        let detail = "";
-        try { detail = JSON.stringify(await resp.json()); } catch (_) { try { detail = await resp.text(); } catch (_) {} }
+        const detail = data ? JSON.stringify(data) : responseText;
         throw new Error(`OCR rescue failed (${resp.status}) ${detail}`);
       }
 
-      const data = await resp.json();
+      geminiRescueDebug.model = String(data?.model || data?.debug?.model || "");
+      geminiRescueDebug.functionError = String(data?.error || data?.debug?.error || "");
+      geminiRescueDebug.rawGeminiRescues = Array.isArray(data?.debug?.rawGeminiRescues)
+        ? data.debug.rawGeminiRescues
+        : [];
+      geminiRescueDebug.serverAcceptedRescues = Array.isArray(data?.rescues) ? data.rescues : [];
+
       const records = Array.isArray(data?.rescues) ? data.rescues : [];
       const rescued = new Set();
 
       for (const r of records) {
+        const rejectedReasons = [];
         const confidence = Number(r?.confidence || 0);
-        if (confidence < 0.70) continue;
+        if (confidence < 0.70) rejectedReasons.push(`confidence ${confidence} < 0.70`);
         const sources = Array.isArray(r?.sources) ? r.sources.map(v => String(v)).filter(Boolean).slice(0,6) : [];
         const terms = Array.isArray(r?.terms) ? r.terms : [];
         const accepted = [];
+        const rejectedTerms = [];
         for (const raw of terms) {
           const term = normalizeRescueTerm(raw);
-          if (!term || term.length < 3 || term.length > 30) continue;
-          if (!/^[a-z0-9-]+$/.test(term)) continue;
-          if (baseOCRTerms.includes(term)) continue;
-          rescued.add(term);
-          accepted.push(term);
+          let reason = "";
+          if (!term || term.length < 3 || term.length > 30) reason = "bad length/empty";
+          else if (!/^[a-z0-9-]+$/.test(term)) reason = "invalid characters";
+          else if (baseOCRTerms.includes(term)) reason = "already in OCR terms";
+          if (reason) rejectedTerms.push({ raw: String(raw), normalized: term, reason });
+          else {
+            rescued.add(term);
+            accepted.push(term);
+          }
         }
-        if (!accepted.length) continue;
-        geminiRescueRecords.push({
+        if (confidence < 0.70 || !accepted.length) {
+          geminiRescueDebug.browserRejectedRescues.push({
+            sources, terms, confidence,
+            reason: String(r?.reason || ""),
+            rejectedReasons,
+            rejectedTerms
+          });
+          continue;
+        }
+        const acceptedRecord = {
           sources,
           terms: accepted,
           confidence,
           reason: String(r?.reason || "").trim()
-        });
+        };
+        geminiRescueRecords.push(acceptedRecord);
+        geminiRescueDebug.browserAcceptedRescues.push(acceptedRecord);
       }
 
       geminiRescuedTerms = Array.from(rescued).sort((a,b)=>a.localeCompare(b));
     } catch (err) {
+      geminiRescueDebug.elapsedMs = geminiRescueDebug.elapsedMs ?? (geminiRescueDebug.requestStartedAt ? Date.now() - geminiRescueDebug.requestStartedAt : null);
+      geminiRescueDebug.functionError = err instanceof Error ? err.message : String(err);
       console.warn("Gemini OCR rescue failed:", err);
     }
     buildTermList();
@@ -2770,6 +2854,29 @@
       ...(geminiRescueRecords.length
         ? geminiRescueRecords.map(r => `${(r.sources || []).join(" + ")} → ${(r.terms || []).join(", ")} · confidence ${Math.round((r.confidence || 0) * 100)}%${r.reason ? " · " + r.reason : ""}`)
         : ["(none)"]),
+      "",
+      "GEMINI RESCUE DEBUG",
+      `endpoint: ${geminiRescueDebug.endpoint || OCR_RESCUE_ENDPOINT}`,
+      `enabled: ${geminiRescueDebug.enabled}`,
+      `OCR hints built/sent: ${geminiRescueDebug.hintsBuilt} / ${geminiRescueDebug.wordsSent}`,
+      `existing OCR terms sent: ${geminiRescueDebug.existingTermsSent}`,
+      `HTTP: ${geminiRescueDebug.httpStatus ?? "no response"}${geminiRescueDebug.httpStatusText ? " " + geminiRescueDebug.httpStatusText : ""}`,
+      `elapsed: ${geminiRescueDebug.elapsedMs == null ? "n/a" : geminiRescueDebug.elapsedMs + " ms"}`,
+      `model: ${geminiRescueDebug.model || "(not reported)"}`,
+      `function/error: ${geminiRescueDebug.functionError || "(none)"}`,
+      `raw Gemini rescue groups: ${geminiRescueDebug.rawGeminiRescues.length}`,
+      `server-accepted rescue groups: ${geminiRescueDebug.serverAcceptedRescues.length}`,
+      `browser-accepted rescue groups: ${geminiRescueDebug.browserAcceptedRescues.length}`,
+      `browser-rejected rescue groups: ${geminiRescueDebug.browserRejectedRescues.length}`,
+      "",
+      "RAW GEMINI RESCUES",
+      JSON.stringify(geminiRescueDebug.rawGeminiRescues, null, 2),
+      "",
+      "SERVER RESPONSE JSON",
+      geminiRescueDebug.responseJson ? JSON.stringify(geminiRescueDebug.responseJson, null, 2) : (geminiRescueDebug.responseText || "(none)"),
+      "",
+      "BROWSER-REJECTED RESCUES",
+      JSON.stringify(geminiRescueDebug.browserRejectedRescues, null, 2),
       "",
       "SEARCH TERMS",
       ...(Array.isArray(termList) ? termList : [])
@@ -3912,7 +4019,7 @@ const cropW = Math.max(1, x1 - x0);
 </script>
 
 <!-- Spineless build version -->
-<div id="spineless-build-version" aria-label="Build version">ocr-v5</div>
+<div id="spineless-build-version" aria-label="Build version">ocr-v6</div>
 <style>
   #spineless-build-version {
     position: fixed;
