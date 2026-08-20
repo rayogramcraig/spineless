@@ -1073,7 +1073,7 @@
       </div>
     </div>
 
-    <div id="build-version">ocr-v7</div>
+    <div id="build-version">ocr-v8</div>
   </div>
 
 <script>
@@ -1618,6 +1618,37 @@
       .trim();
   }
 
+  function rescueEditDistance(a, b) {
+    a = String(a || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    b = String(b || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!a) return b.length;
+    if (!b) return a.length;
+    const prev = Array.from({length:b.length+1}, (_,i)=>i);
+    const cur = new Array(b.length+1);
+    for (let i=1;i<=a.length;i++) {
+      cur[0]=i;
+      for (let j=1;j<=b.length;j++) {
+        cur[j]=Math.min(cur[j-1]+1, prev[j]+1, prev[j-1] + (a[i-1]===b[j-1] ? 0 : 1));
+      }
+      for (let j=0;j<=b.length;j++) prev[j]=cur[j];
+    }
+    return prev[b.length];
+  }
+
+  function bestOCRAnchorForRescue(term, sources) {
+    const sourceSet = new Set((sources || []).map(v => String(v)));
+    const candidates = (ocrWords || []).filter(w => w && w.bbox && sourceSet.has(String(w.text)));
+    if (!candidates.length) return null;
+    const cleanTerm = normalizeRescueTerm(term);
+    candidates.sort((a,b) => {
+      const da = rescueEditDistance(cleanTerm, normalizeRescueTerm(a.text));
+      const db = rescueEditDistance(cleanTerm, normalizeRescueTerm(b.text));
+      if (da !== db) return da - db;
+      return Number(b.confidence || 0) - Number(a.confidence || 0);
+    });
+    return candidates[0];
+  }
+
   async function rescueTermsWithGemini() {
     geminiRescuedTerms = [];
     geminiRescueRecords = [];
@@ -1707,7 +1738,7 @@
       for (const r of records) {
         const rejectedReasons = [];
         const confidence = Number(r?.confidence || 0);
-        if (confidence < 0.70) rejectedReasons.push(`confidence ${confidence} < 0.70`);
+        if (confidence < 0.62) rejectedReasons.push(`confidence ${confidence} < 0.62`);
         const sources = Array.isArray(r?.sources) ? r.sources.map(v => String(v)).filter(Boolean).slice(0,6) : [];
         const terms = Array.isArray(r?.terms) ? r.terms : [];
         const accepted = [];
@@ -1724,7 +1755,7 @@
             accepted.push(term);
           }
         }
-        if (confidence < 0.70 || !accepted.length) {
+        if (confidence < 0.62 || !accepted.length) {
           geminiRescueDebug.browserRejectedRescues.push({
             sources, terms, confidence,
             reason: String(r?.reason || ""),
@@ -1737,7 +1768,17 @@
           sources,
           terms: accepted,
           confidence,
-          reason: String(r?.reason || "").trim()
+          reason: String(r?.reason || "").trim(),
+          anchors: accepted.map(term => {
+            const anchor = bestOCRAnchorForRescue(term, sources);
+            return anchor ? {
+              term,
+              sourceText: String(anchor.text || ""),
+              confidence: Number(anchor.confidence || 0),
+              ocrPass: anchor.ocrPass || "?",
+              bbox: { ...anchor.bbox }
+            } : null;
+          }).filter(Boolean)
         };
         geminiRescueRecords.push(acceptedRecord);
         geminiRescueDebug.browserAcceptedRescues.push(acceptedRecord);
@@ -2066,6 +2107,28 @@
       if (!seen.has(key)) {
         seen.add(key);
         matches.push(w);
+      }
+    }
+
+    // Gemini-rescued terms are anchored back to the OCR fragment that caused the rescue,
+    // so they get the same pointer/highlight/detail behavior as normal OCR terms.
+    for (const record of (geminiRescueRecords || [])) {
+      if (!record || !Array.isArray(record.anchors)) continue;
+      for (const anchor of record.anchors) {
+        if (!anchor || normalizeToken(anchor.term) !== q || !anchor.bbox) continue;
+        const key = `${Math.round(anchor.bbox.x0)}|${Math.round(anchor.bbox.y0)}|${Math.round(anchor.bbox.x1)}|${Math.round(anchor.bbox.y1)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          matches.push({
+            text: anchor.term,
+            confidence: Math.max(Number(record.confidence || 0) * 100, Number(anchor.confidence || 0)),
+            ocrPass: anchor.ocrPass || "?",
+            bbox: { ...anchor.bbox },
+            geminiRescue: true,
+            rescueSourceText: anchor.sourceText || "",
+            rescueReason: record.reason || ""
+          });
+        }
       }
     }
 
@@ -2863,7 +2926,7 @@
     });
 
     return [
-      "Spineless OCR v7 diagnostic",
+      "Spineless OCR v8 diagnostic",
       `${words.length} OCR words · ${baseOCRTerms.length} OCR search terms + ${geminiRescuedTerms.length} Gemini rescued = ${uniqueTerms} total · average confidence ${Math.round(avgConfidence)}%`,
       `passes: 0° ${byPass["0°"]} · 90° ${byPass["90°"]} · -90° ${byPass["-90°"]}`,
       sourceCanvas ? `image: ${sourceCanvas.width} × ${sourceCanvas.height}px` : "",
@@ -4041,7 +4104,7 @@ const cropW = Math.max(1, x1 - x0);
 </script>
 
 <!-- Spineless build version -->
-<div id="spineless-build-version" aria-label="Build version">ocr-v7</div>
+<div id="spineless-build-version" aria-label="Build version">ocr-v8</div>
 <style>
   #spineless-build-version {
     position: fixed;
