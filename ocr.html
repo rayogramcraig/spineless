@@ -1073,7 +1073,7 @@
       </div>
     </div>
 
-    <div id="build-version">ocr-v4</div>
+    <div id="build-version">ocr-v5</div>
   </div>
 
 <script>
@@ -1140,8 +1140,12 @@
 
   let termList = [];
   let baseOCRTerms = [];
-  let openLibraryRescuedTerms = [];
-  let openLibraryRescueRecords = [];
+  let geminiRescuedTerms = [];
+  let geminiRescueRecords = [];
+
+  // Lightweight text-only OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
+  const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
+  const OCR_RESCUE_ENABLED = !OCR_RESCUE_ENDPOINT.includes("YOUR_SUPABASE_FUNCTION_URL");
   let currentTermIndex = -1;
   let currentTerm = "";
 
@@ -1440,7 +1444,7 @@
       .filter(t => t.length > 1);
 
     rebuildCatalogTerms();
-    termList = Array.from(new Set([...baseOCRTerms, ...openLibraryRescuedTerms, ...aiCleaned, ...catalogTerms]))
+    termList = Array.from(new Set([...baseOCRTerms, ...geminiRescuedTerms, ...aiCleaned, ...catalogTerms]))
       .sort((a, b) => a.localeCompare(b));
   }
 
@@ -1548,74 +1552,97 @@
       .slice(0,24);
   }
 
-  async function rescueTermsWithOpenLibrary() {
-    openLibraryRescuedTerms = [];
-    openLibraryRescueRecords = [];
+  function buildOCRRescueHints() {
+    // Keep enough noisy context to let Gemini use spatial relationships, while avoiding
+    // thousands of punctuation-only Tesseract fragments.
+    const hints = [];
+    for (const w of (ocrWords || [])) {
+      if (!w || !w.text || !w.bbox) continue;
+      const raw = String(w.text).trim();
+      const letters = raw.replace(/[^A-Za-z0-9]/g, "");
+      const confidence = Number.isFinite(Number(w.confidence)) ? Number(w.confidence) : 0;
+      if (letters.length < 2 || letters.length > 28) continue;
+      if (confidence < 18) continue;
+      hints.push({
+        text: raw,
+        confidence: Math.round(confidence),
+        pass: w.ocrPass || "?",
+        bbox: {
+          x0: Math.round(w.bbox.x0 || 0),
+          y0: Math.round(w.bbox.y0 || 0),
+          x1: Math.round(w.bbox.x1 || 0),
+          y1: Math.round(w.bbox.y1 || 0)
+        }
+      });
+    }
+    // Preserve image order; the bbox remains available for vertical/horizontal grouping.
+    hints.sort((a,b) => a.bbox.y0-b.bbox.y0 || a.bbox.x0-b.bbox.x0);
+    return hints.slice(0, 900);
+  }
 
-    const clusters = makeSpatialOCRClusters();
-    if (!clusters.length) { buildTermList(); return; }
+  function normalizeRescueTerm(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[’']/g, "")
+      .replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, "")
+      .trim();
+  }
+
+  async function rescueTermsWithGemini() {
+    geminiRescuedTerms = [];
+    geminiRescueRecords = [];
+    if (!OCR_RESCUE_ENABLED) { buildTermList(); return; }
+
+    const hints = buildOCRRescueHints();
+    if (!hints.length) { buildTermList(); return; }
 
     try {
-      // One Open Library request for all spatial phrases. Quoted phrases preserve the local OCR context.
-      const q = clusters.map(c => `"${c.phrase}"`).join(" OR ");
-      const params = new URLSearchParams({
-        q,
-        fields: "key,title,author_name,publisher",
-        limit: "100"
+      const resp = await fetch(OCR_RESCUE_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageWidth: sourceCanvas ? sourceCanvas.width : null,
+          imageHeight: sourceCanvas ? sourceCanvas.height : null,
+          existingTerms: baseOCRTerms,
+          ocrWords: hints
+        })
       });
-      const resp = await fetch(`https://openlibrary.org/search.json?${params.toString()}`);
-      if (!resp.ok) throw new Error(`Open Library returned ${resp.status}`);
-      const data = await resp.json();
-      const docs = Array.isArray(data?.docs) ? data.docs : [];
-
-      const rescued = new Set();
-      for (const cluster of clusters) {
-        let bestDoc = null;
-        for (const doc of docs) {
-          const tokens = metadataTokens(doc);
-          if (!tokens.length) continue;
-          const matches = cluster.terms.map(source => {
-            let best = { token:"", score:0 };
-            for (const token of tokens) {
-              const score = similarity(source, token);
-              if (score > best.score) best = { token, score };
-            }
-            return { source, ...best };
-          });
-
-          // Context must corroborate the result: either two OCR components match metadata,
-          // or one is an exact/near-exact anchor and another is a plausible correction.
-          const strong = matches.filter(m => m.score >= (m.source.length <= 4 ? 0.72 : 0.66));
-          const anchor = matches.some(m => m.score >= 0.88);
-          const correction = matches.some(m => m.score >= 0.60 && m.token !== m.source);
-          if (strong.length < 2 && !(anchor && correction)) continue;
-
-          const score = matches.reduce((n,m)=>n+m.score,0) / matches.length + strong.length * 0.08;
-          if (!bestDoc || score > bestDoc.score) bestDoc = { doc, matches, score };
-        }
-
-        if (!bestDoc) continue;
-        for (const m of bestDoc.matches) {
-          if (!m.token || m.token === m.source) continue;
-          const threshold = m.source.length <= 4 ? 0.72 : 0.60;
-          if (m.score < threshold) continue;
-          if (baseOCRTerms.includes(m.token)) continue;
-          rescued.add(m.token);
-          openLibraryRescueRecords.push({
-            from: m.source,
-            to: m.token,
-            score: m.score,
-            confidence: cluster.confidence,
-            cluster: cluster.phrase,
-            title: bestDoc.doc?.title || "",
-            author: (bestDoc.doc?.author_name || []).slice(0,2).join(", ")
-          });
-        }
+      if (!resp.ok) {
+        let detail = "";
+        try { detail = JSON.stringify(await resp.json()); } catch (_) { try { detail = await resp.text(); } catch (_) {} }
+        throw new Error(`OCR rescue failed (${resp.status}) ${detail}`);
       }
 
-      openLibraryRescuedTerms = Array.from(rescued).sort((a,b)=>a.localeCompare(b));
+      const data = await resp.json();
+      const records = Array.isArray(data?.rescues) ? data.rescues : [];
+      const rescued = new Set();
+
+      for (const r of records) {
+        const confidence = Number(r?.confidence || 0);
+        if (confidence < 0.70) continue;
+        const sources = Array.isArray(r?.sources) ? r.sources.map(v => String(v)).filter(Boolean).slice(0,6) : [];
+        const terms = Array.isArray(r?.terms) ? r.terms : [];
+        const accepted = [];
+        for (const raw of terms) {
+          const term = normalizeRescueTerm(raw);
+          if (!term || term.length < 3 || term.length > 30) continue;
+          if (!/^[a-z0-9-]+$/.test(term)) continue;
+          if (baseOCRTerms.includes(term)) continue;
+          rescued.add(term);
+          accepted.push(term);
+        }
+        if (!accepted.length) continue;
+        geminiRescueRecords.push({
+          sources,
+          terms: accepted,
+          confidence,
+          reason: String(r?.reason || "").trim()
+        });
+      }
+
+      geminiRescuedTerms = Array.from(rescued).sort((a,b)=>a.localeCompare(b));
     } catch (err) {
-      console.warn("Open Library spatial OCR rescue failed:", err);
+      console.warn("Gemini OCR rescue failed:", err);
     }
     buildTermList();
   }
@@ -1689,8 +1716,8 @@
     ocrWords = [];
     termList = [];
     baseOCRTerms = [];
-    openLibraryRescuedTerms = [];
-    openLibraryRescueRecords = [];
+    geminiRescuedTerms = [];
+    geminiRescueRecords = [];
     currentTermIndex = -1;
     currentTerm = "";
     currentMatches = [];
@@ -1852,8 +1879,8 @@
 
       ocrWords = allWords;
       buildTermList();
-      ocrProgress.textContent = "checking Open Library…";
-      await rescueTermsWithOpenLibrary();
+      ocrProgress.textContent = "cleaning OCR with Gemini…";
+      await rescueTermsWithGemini();
       ocrProgress.classList.add("hidden");
 
       // stop pulses once search UI appears
@@ -2731,17 +2758,17 @@
     });
 
     return [
-      "Spineless OCR v4 diagnostic",
-      `${words.length} OCR words · ${baseOCRTerms.length} OCR search terms + ${openLibraryRescuedTerms.length} Open Library rescued = ${uniqueTerms} total · average confidence ${Math.round(avgConfidence)}%`,
+      "Spineless OCR v5 diagnostic",
+      `${words.length} OCR words · ${baseOCRTerms.length} OCR search terms + ${geminiRescuedTerms.length} Gemini rescued = ${uniqueTerms} total · average confidence ${Math.round(avgConfidence)}%`,
       `passes: 0° ${byPass["0°"]} · 90° ${byPass["90°"]} · -90° ${byPass["-90°"]}`,
       sourceCanvas ? `image: ${sourceCanvas.width} × ${sourceCanvas.height}px` : "",
       "",
       "OCR WORDS",
       ...lines,
       "",
-      "OPEN LIBRARY RESCUES",
-      ...(openLibraryRescueRecords.length
-        ? openLibraryRescueRecords.map(r => `${r.from} → ${r.to} · cluster: ${r.cluster || "?"} · similarity ${Math.round(r.score * 100)}% · OCR ${Math.round(r.confidence)}%${r.title ? ` · ${r.title}${r.author ? " — " + r.author : ""}` : ""}`)
+      "GEMINI RESCUES",
+      ...(geminiRescueRecords.length
+        ? geminiRescueRecords.map(r => `${(r.sources || []).join(" + ")} → ${(r.terms || []).join(", ")} · confidence ${Math.round((r.confidence || 0) * 100)}%${r.reason ? " · " + r.reason : ""}`)
         : ["(none)"]),
       "",
       "SEARCH TERMS",
@@ -3885,7 +3912,7 @@ const cropW = Math.max(1, x1 - x0);
 </script>
 
 <!-- Spineless build version -->
-<div id="spineless-build-version" aria-label="Build version">ocr</div>
+<div id="spineless-build-version" aria-label="Build version">ocr-v5</div>
 <style>
   #spineless-build-version {
     position: fixed;
