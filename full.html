@@ -1435,7 +1435,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4</div>
+    <div id="build-version">v4.1</div>
   </div>
 
 <script>
@@ -1661,6 +1661,101 @@
     };
   }
 
+  function findRememberedCatalogEnrichment(match) {
+    if (!match || !match.bbox || !onDemandCatalogEnrichments.length) return null;
+    let best = null;
+    let bestDistance = Infinity;
+    for (const remembered of onDemandCatalogEnrichments) {
+      const distance = normalizedDistanceBetweenMatches(match, remembered.match);
+      if (distance < bestDistance) {
+        best = remembered;
+        bestDistance = distance;
+      }
+    }
+    return bestDistance <= 0.055 ? best : null;
+  }
+
+  function rememberCatalogEnrichment(match, result) {
+    if (!match?.bbox || !result || result.error) return null;
+    let remembered = findRememberedCatalogEnrichment(match);
+    if (!remembered) {
+      remembered = {
+        match: { ...match, bbox: { ...match.bbox } },
+        result: { ...result },
+        persistentBookId: null,
+        persistencePending: false
+      };
+      onDemandCatalogEnrichments.push(remembered);
+    } else {
+      remembered.result = { ...remembered.result, ...result };
+    }
+    return remembered;
+  }
+
+  function mergeRememberedCatalogEnrichment(entry) {
+    const remembered = entry ? findRememberedCatalogEnrichment(entry.match) : null;
+    if (!remembered) return entry;
+    entry.result = {
+      ...entry.result,
+      ...remembered.result,
+      visualEvidence: entry.result.visualEvidence || remembered.result.visualEvidence || []
+    };
+    return entry;
+  }
+
+  async function persistRememberedCatalogEnrichment(remembered) {
+    if (!sb || !activeShelfId || !remembered || remembered.persistencePending || remembered.persistentBookId === "saved") return false;
+    remembered.persistencePending = true;
+    try {
+      const { data: rows, error: readError } = await sb
+        .from("shelf_books")
+        .select("id,bbox")
+        .eq("shelf_id", activeShelfId);
+      if (readError) throw readError;
+
+      let target = null;
+      let bestDistance = Infinity;
+      for (const row of rows || []) {
+        const rowMatch = { bbox: normalizeStoredBBox(row.bbox) };
+        const distance = normalizedDistanceBetweenMatches(remembered.match, rowMatch);
+        if (distance < bestDistance) {
+          target = row;
+          bestDistance = distance;
+        }
+      }
+      if (!target || bestDistance > 0.055) return false;
+
+      const result = remembered.result || {};
+      const coverId = Number.isFinite(Number(result.cover_i)) ? Number(result.cover_i) : null;
+      const payload = {
+        title: result.title || "Unknown title",
+        author: result.author || "",
+        year: Number.isFinite(Number(result.year)) ? Number(result.year) : null,
+        publisher: Array.isArray(result.publisher) ? (result.publisher[0] || null) : (result.publisher || null),
+        isbn: Array.isArray(result.isbn) ? (result.isbn[0] || null) : (result.isbn || null),
+        open_library_key: result.openLibraryKey || null,
+        cover_id: coverId,
+        cover_url: coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : null,
+        catalog_source: "openlibrary+ondemand",
+        catalog_confidence: Number.isFinite(Number(result.confidence)) ? Number(result.confidence) : null,
+        catalog_checked_at: new Date().toISOString()
+      };
+      const { error: updateError } = await sb
+        .from("shelf_books")
+        .update(payload)
+        .eq("id", target.id);
+      if (updateError) throw updateError;
+
+      remembered.persistentBookId = "saved";
+      return true;
+    } catch (err) {
+      console.warn("Could not persist on-demand book metadata", err);
+      return false;
+    } finally {
+      remembered.persistencePending = false;
+    }
+  }
+
   function serverWordToAIWord(word) {
     if (!word || !word.text || !word.bbox || !sourceCanvas) return null;
     return {
@@ -1717,11 +1812,23 @@
     if (booksRes.error) throw booksRes.error;
     if (wordsRes.error) throw wordsRes.error;
 
-    bookCatalog = (booksRes.data || []).map(serverBookToCatalogEntry).filter(Boolean);
+    bookCatalog = (booksRes.data || [])
+      .map(serverBookToCatalogEntry)
+      .filter(Boolean)
+      .map(mergeRememberedCatalogEnrichment);
     aiSpineWords = (wordsRes.data || []).map(serverWordToAIWord).filter(Boolean);
     rebuildCatalogTerms();
     buildTermList();
     applyPersistentShelfStatus(shelfRes.data);
+
+    // Interactive identification can finish before the worker has inserted
+    // the matching shelf_books row. Retry after every server refresh; a
+    // successful item marks itself saved and will not loop on realtime updates.
+    for (const remembered of onDemandCatalogEnrichments) {
+      if (remembered.persistentBookId !== "saved") {
+        persistRememberedCatalogEnrichment(remembered);
+      }
+    }
   }
 
   function subscribeToShelf(shelfId) {
@@ -1897,7 +2004,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.1 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -1921,6 +2028,7 @@
   const BOOK_ID_ENABLED = USE_BOOK_ID && !BOOK_ID_ENDPOINT.includes("YOUR_SUPABASE_FUNCTION_URL");
   console.info(`Spineless persistent build · mode=${PROCESSING_MODE}`);
   const bookRecognitionCache = new Map();
+  const onDemandCatalogEnrichments = [];
   let recognitionRequestSerial = 0;
   let bookCatalog = [];
   let aiSpineWords = [];
@@ -2905,6 +3013,7 @@
     hitNextInline.classList.add("hidden");
     setRecognizedTitle("");
     bookRecognitionCache.clear();
+    onDemandCatalogEnrichments.length = 0;
     bookCatalog = [];
     aiSpineWords = [];
     diagnosticRawEntries = [];
@@ -3453,7 +3562,7 @@
     const { updateUI = false, serial = null } = options;
 
     const existingCatalog = findCatalogEntryForMatch(match);
-    if (existingCatalog && existingCatalog.result && existingCatalog.result.title !== "Unknown title") {
+    if (existingCatalog?.result && (existingCatalog.result.cover_url || existingCatalog.result.cover_i)) {
       return existingCatalog.result;
     }
 
@@ -3499,6 +3608,8 @@
         openLibraryKey: matchedCandidate ? matchedCandidate.key : null
       };
       bookRecognitionCache.set(cacheKey, clean);
+      const remembered = rememberCatalogEnrichment(match, clean);
+      if (remembered) persistRememberedCatalogEnrichment(remembered);
       return clean;
     } catch (err) {
       console.warn(err);
@@ -4821,7 +4932,7 @@
 
     const match = currentMatches[currentMatchIndex] || currentMatches[0];
     const catalogEntry = findCatalogEntryForMatch(match);
-    if (catalogEntry && catalogEntry.result) {
+    if (catalogEntry?.result && (catalogEntry.result.cover_url || catalogEntry.result.cover_i)) {
       const r = catalogEntry.result;
       setRecognizedTitle(r.title || "Unknown title", r.confidence < 0.55 ? "is-uncertain" : "");
       return;
@@ -4836,7 +4947,12 @@
     }
     setRecognizedTitle(result.title || "Unknown title", result.confidence < 0.55 ? "is-uncertain" : "");
     if (result.title && result.title !== "Unknown title") {
-      bookCatalog.push({ match, term: currentTerm, result });
+      const existingEntry = findCatalogEntryForMatch(match);
+      if (existingEntry) {
+        existingEntry.result = { ...existingEntry.result, ...result };
+      } else {
+        bookCatalog.push({ match, term: currentTerm, result });
+      }
       buildTermList();
     }
   }
@@ -5051,6 +5167,7 @@
     clearHighlights();
     setRecognizedTitle("");
     bookRecognitionCache.clear();
+    onDemandCatalogEnrichments.length = 0;
     bookCatalog = [];
     aiSpineWords = [];
     if (catalogStats) catalogStats.classList.remove("visible");
