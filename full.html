@@ -1435,7 +1435,7 @@
       </div>
     </div>
 
-    <div id="build-version">integrated-v2</div>
+    <div id="build-version">v4</div>
   </div>
 
 <script>
@@ -1648,8 +1648,13 @@
         author: book.author || "",
         confidence: conf,
         year: book.year ?? null,
-        publisher: book.publisher ?? null,
-        isbn: book.isbn ?? null,
+        publisher: book.publisher ? [book.publisher] : [],
+        isbn: book.isbn ? [book.isbn] : [],
+        cover_i: book.cover_id ?? null,
+        cover_url: book.cover_url || null,
+        openLibraryKey: book.open_library_key || null,
+        catalogSource: book.catalog_source || null,
+        catalogConfidence: Number.isFinite(Number(book.catalog_confidence)) ? Number(book.catalog_confidence) : null,
         visualEvidence: Array.isArray(book.visual_evidence) ? book.visual_evidence : []
       },
       persistentBookId: book.id
@@ -1686,12 +1691,10 @@
       screenOCR.classList.add("id-background-active");
       if (backgroundIDHeadline) backgroundIDHeadline.textContent = "Your shelf is ready to explore.";
       if (backgroundIDDetail) backgroundIDDetail.textContent = "We’re still identifying books in the background. Search anything we’ve found so far.";
-      const step = Number(shelf.worker_step || 0);
       if (backgroundIDStage) backgroundIDStage.textContent = shelf.status === "queued"
-        ? "book identification queued…"
-        : `identifying books… ${Math.round(backgroundProcessPercent)}%`;
+        ? `${Number(shelf.identified_count || bookCatalog.length)} matched · book identification queued…`
+        : `${Number(shelf.identified_count || bookCatalog.length)} matched · identifying books… ${Math.round(backgroundProcessPercent)}% complete`;
       updateBackgroundIDMetric(Number(shelf.identified_count || bookCatalog.length));
-      if (!backgroundSpineCount) setBackgroundRingFill(backgroundProcessPercent);
       return;
     }
 
@@ -1894,7 +1897,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `integrated-v2 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -1929,8 +1932,9 @@
   let diagnosticLastElapsed = 0;
 
   // Background identification UI state. Before physical-spine detection finishes we
-  // show a simple "N found" count. Once there is a denominator, the same ring turns
-  // into an actual matched percentage.
+  // The ring always communicates job progress. Its center independently shows
+  // the number of books matched so far, so a partial ring never looks like a
+  // completed shelf with a low match rate.
   let backgroundSpineCount = 0;
   let backgroundProcessPercent = 0;
   let backgroundCompletionTimer = null;
@@ -1942,18 +1946,10 @@
 
   function updateBackgroundIDMetric(finalCredibleCount = null) {
     if (!USE_BOOK_ID || !backgroundIDValue || !backgroundIDLabel) return;
-
-    if (backgroundSpineCount > 0) {
-      const matchedCount = finalCredibleCount == null ? bookCatalog.length : Number(finalCredibleCount || 0);
-      const pct = Math.max(0, Math.min(100, Math.round((matchedCount / backgroundSpineCount) * 100)));
-      backgroundIDValue.textContent = `${pct}%`;
-      backgroundIDLabel.textContent = "matched";
-      setBackgroundRingFill(pct);
-    } else {
-      backgroundIDValue.textContent = String(bookCatalog.length || 0);
-      backgroundIDLabel.textContent = "found";
-      setBackgroundRingFill(backgroundProcessPercent);
-    }
+    const matchedCount = finalCredibleCount == null ? bookCatalog.length : Number(finalCredibleCount || 0);
+    backgroundIDValue.textContent = String(Math.max(0, matchedCount));
+    backgroundIDLabel.textContent = "matched";
+    setBackgroundRingFill(backgroundProcessPercent);
   }
 
   function showBackgroundIDBanner() {
@@ -1973,6 +1969,7 @@
 
   function completeBackgroundIDBanner(credibleCount, spineCount) {
     backgroundSpineCount = Math.max(0, Number(spineCount) || backgroundSpineCount || 0);
+    backgroundProcessPercent = 100;
     updateBackgroundIDMetric(credibleCount);
     if (backgroundIDHeadline) backgroundIDHeadline.textContent = "Your shelf is ready.";
     if (backgroundIDDetail) backgroundIDDetail.textContent = "Book identification is complete. Search titles, authors, or anything we read on the shelf.";
@@ -1988,7 +1985,7 @@
     new MutationObserver(() => {
       const pct = parseFloat(catalogingBar.style.width) || 0;
       backgroundProcessPercent = pct;
-      if (!backgroundSpineCount) setBackgroundRingFill(pct);
+      setBackgroundRingFill(pct);
     }).observe(catalogingBar, { attributes: true, attributeFilter: ["style"] });
   }
   if (catalogingStatus && backgroundIDStage && typeof MutationObserver !== "undefined") {
@@ -5154,8 +5151,8 @@ const cropW = Math.max(1, x1 - x0);
       bookModalNoCover.classList.remove("hidden");
     };
 
-    if (r.cover_i) {
-      bookModalCover.src = `https://covers.openlibrary.org/b/id/${r.cover_i}-M.jpg`;
+    if (r.cover_url || r.cover_i) {
+      bookModalCover.src = r.cover_url || `https://covers.openlibrary.org/b/id/${r.cover_i}-M.jpg`;
       bookModalCover.alt = `Cover of ${r.title}`;
       bookModalCover.onerror = showNoCover;
       bookModalCover.classList.remove("hidden-cover");
