@@ -719,6 +719,88 @@
     #recognized-title.is-loading { opacity: 0.72; }
     #recognized-title.is-uncertain { opacity: 0.78; font-weight: 600; }
 
+    #results-info-panel {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 14;
+      min-height: 142px;
+      padding: calc(22px + env(safe-area-inset-top)) 24px 22px;
+      background: rgba(132, 9, 12, 0.96);
+      color: #fff;
+      opacity: 0;
+      transform: translateY(-18px);
+      pointer-events: none;
+      transition: opacity 0.28s ease, transform 0.28s ease;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.3);
+    }
+
+    #screen-results.scan-info-visible #results-info-panel {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    #screen-results.scan-info-visible #recognized-title-wrap { display: none !important; }
+
+    #results-info-status-title,
+    #results-scan-details-title {
+      font-size: clamp(1.25rem, 4.5vw, 1.85rem);
+      font-weight: 600;
+      line-height: 1.12;
+    }
+
+    #results-info-status-copy {
+      margin-top: 7px;
+      max-width: 650px;
+      font-size: clamp(0.96rem, 3.5vw, 1.15rem);
+      line-height: 1.28;
+    }
+
+    #results-info-status-stage {
+      margin-top: 9px;
+      font-size: 0.78rem;
+      opacity: 0.66;
+    }
+
+    #results-info-progress-track {
+      height: 5px;
+      margin-top: 13px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.2);
+    }
+
+    #results-info-progress-bar {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--scan-yellow);
+      transition: width 0.3s ease;
+    }
+
+    #results-scan-details-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 5px 18px;
+      margin-top: 10px;
+      color: #ff7a1a;
+      font-size: clamp(0.9rem, 3.2vw, 1.06rem);
+      line-height: 1.2;
+    }
+
+    #results-scan-details-grid strong { color: #fff; }
+    #results-scan-rotations,
+    #results-scan-image { grid-column: 1 / -1; }
+
+    @media (max-width: 430px) {
+      #results-info-panel { padding-left: 20px; padding-right: 20px; }
+      #results-scan-details-grid { grid-template-columns: 1fr; gap: 3px; }
+      #results-scan-rotations,
+      #results-scan-image { grid-column: auto; }
+    }
+
 
 
     #catalog-stats {
@@ -1343,6 +1425,27 @@
 
     <!-- RESULTS -->
     <div id="screen-results" class="screen">
+      <div id="results-info-panel" aria-live="polite">
+        <div id="results-info-status">
+          <div id="results-info-status-title">Identifying your books…</div>
+          <div id="results-info-status-copy">Full book identification is still running. Tap the highlighted search term to inspect the OCR text already found.</div>
+          <div id="results-info-status-stage">preparing…</div>
+          <div id="results-info-progress-track"><div id="results-info-progress-bar"></div></div>
+        </div>
+        <div id="results-scan-details" class="hidden">
+          <div id="results-scan-details-title">Scan Details</div>
+          <div id="results-scan-details-grid">
+            <div><span id="results-scan-ocr-words">0</span> OCR words</div>
+            <div><span id="results-scan-search-terms">0</span> OCR search terms</div>
+            <div><span id="results-scan-ai-rescued">0</span> AI rescued</div>
+            <div><strong><span id="results-scan-books">0</span> books identified</strong></div>
+            <div>average confidence <span id="results-scan-confidence">0%</span></div>
+            <div id="results-scan-rotations">0°:<span>0</span> · 90°:<span>0</span> · -90°:<span>0</span></div>
+            <div id="results-scan-image">image: <span>0 × 0px</span></div>
+          </div>
+        </div>
+      </div>
+
       <div id="results-top-row">
         <button id="btn-new-image">new image</button>
       </div>
@@ -1392,7 +1495,7 @@
           </svg>
         </button>
         <button id="utility-new-search">new search</button>
-        <button id="utility-data" class="results-utility-icon" aria-label="Copy OCR data" title="Copy OCR data">
+        <button id="utility-data" class="results-utility-icon" aria-label="Scan details" title="Scan details" aria-expanded="false">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="9"/>
             <path d="M12 11v6"/>
@@ -1435,7 +1538,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.1</div>
+    <div id="build-version">v4.2</div>
   </div>
 
 <script>
@@ -1460,6 +1563,20 @@
   const backgroundIDRing = document.getElementById("background-id-ring");
   const backgroundIDValue = document.getElementById("background-id-value");
   const backgroundIDLabel = document.getElementById("background-id-label");
+  const resultsInfoPanel = document.getElementById("results-info-panel");
+  const resultsInfoStatus = document.getElementById("results-info-status");
+  const resultsInfoStatusTitle = document.getElementById("results-info-status-title");
+  const resultsInfoStatusCopy = document.getElementById("results-info-status-copy");
+  const resultsInfoStatusStage = document.getElementById("results-info-status-stage");
+  const resultsInfoProgressBar = document.getElementById("results-info-progress-bar");
+  const resultsScanDetails = document.getElementById("results-scan-details");
+  const resultsScanOCRWords = document.getElementById("results-scan-ocr-words");
+  const resultsScanSearchTerms = document.getElementById("results-scan-search-terms");
+  const resultsScanAIRescued = document.getElementById("results-scan-ai-rescued");
+  const resultsScanBooks = document.getElementById("results-scan-books");
+  const resultsScanConfidence = document.getElementById("results-scan-confidence");
+  const resultsScanRotations = document.getElementById("results-scan-rotations");
+  const resultsScanImage = document.getElementById("results-scan-image");
   const buildVersion = document.getElementById("build-version");
   const sessionRecoveryNote = document.getElementById("session-recovery-note");
 
@@ -1774,22 +1891,25 @@
     backgroundProcessPercent = Math.max(0, Math.min(100, Number(shelf.processing_progress || 0)));
 
     if (shelf.status === "complete") {
-      screenOCR.classList.add("id-background-active");
+      screenOCR.classList.remove("id-background-active");
       if (backgroundIDHeadline) backgroundIDHeadline.textContent = "Your shelf is ready.";
       if (backgroundIDDetail) backgroundIDDetail.textContent = "Book identification is complete. Search titles, authors, or anything we read on the shelf.";
       if (backgroundIDStage) backgroundIDStage.textContent = `${Number(shelf.identified_count || bookCatalog.length)} books identified${backgroundSpineCount ? ` from about ${backgroundSpineCount} visible spines` : ""}.`;
       updateBackgroundIDMetric(Number(shelf.identified_count || bookCatalog.length));
+      updateResultsInfoPanel();
+      if (screenResults.classList.contains("active") && currentMatches.length) identifyCurrentBook();
       return;
     }
 
     if (["queued","processing"].includes(shelf.status)) {
       screenOCR.classList.add("id-background-active");
-      if (backgroundIDHeadline) backgroundIDHeadline.textContent = "Your shelf is ready to explore.";
-      if (backgroundIDDetail) backgroundIDDetail.textContent = "We’re still identifying books in the background. Search anything we’ve found so far.";
+      if (backgroundIDHeadline) backgroundIDHeadline.textContent = "Identifying your books…";
+      if (backgroundIDDetail) backgroundIDDetail.textContent = "OCR search is ready. Tap a search term to inspect the text found while full identification finishes.";
       if (backgroundIDStage) backgroundIDStage.textContent = shelf.status === "queued"
         ? `${Number(shelf.identified_count || bookCatalog.length)} matched · book identification queued…`
         : `${Number(shelf.identified_count || bookCatalog.length)} matched · identifying books… ${Math.round(backgroundProcessPercent)}% complete`;
       updateBackgroundIDMetric(Number(shelf.identified_count || bookCatalog.length));
+      updateResultsInfoPanel();
       return;
     }
 
@@ -1798,6 +1918,7 @@
       if (backgroundIDHeadline) backgroundIDHeadline.textContent = "Your shelf is ready to search.";
       if (backgroundIDDetail) backgroundIDDetail.textContent = "Book identification paused, but the OCR search is saved.";
       if (backgroundIDStage) backgroundIDStage.textContent = shelf.last_error || "We’ll retry when Spineless opens again.";
+      updateResultsInfoPanel();
     }
   }
 
@@ -2004,7 +2125,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.1 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.2 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -2046,6 +2167,78 @@
   let backgroundSpineCount = 0;
   let backgroundProcessPercent = 0;
   let backgroundCompletionTimer = null;
+  let scanInfoOpen = false;
+
+  function isFullIDComplete() {
+    if (!USE_BOOK_ID) return true;
+    if (activeShelfRecord) return activeShelfRecord.status === "complete";
+    return backgroundProcessPercent >= 100 && !catalogingActive;
+  }
+
+  function scanSummary() {
+    const words = (ocrWords || []).filter((word) => word?.text);
+    const rotations = { "0°": 0, "90°": 0, "-90°": 0 };
+    let confidenceTotal = 0;
+    for (const word of words) {
+      const raw = Number(word.confidence || 0);
+      confidenceTotal += raw <= 1 ? raw * 100 : raw;
+      if (Object.prototype.hasOwnProperty.call(rotations, word.ocrPass)) rotations[word.ocrPass]++;
+    }
+    return {
+      words: words.length,
+      terms: Array.isArray(baseOCRTerms) ? baseOCRTerms.length : 0,
+      rescued: Array.isArray(geminiRescuedTerms) ? geminiRescuedTerms.length : 0,
+      books: Number(activeShelfRecord?.identified_count || bookCatalog.length || 0),
+      confidence: words.length ? Math.round(confidenceTotal / words.length) : 0,
+      rotations,
+      width: Number(activeShelfRecord?.image_width || sourceCanvas?.width || 0),
+      height: Number(activeShelfRecord?.image_height || sourceCanvas?.height || 0)
+    };
+  }
+
+  function renderScanDetails() {
+    const summary = scanSummary();
+    if (resultsScanOCRWords) resultsScanOCRWords.textContent = String(summary.words);
+    if (resultsScanSearchTerms) resultsScanSearchTerms.textContent = String(summary.terms);
+    if (resultsScanAIRescued) resultsScanAIRescued.textContent = String(summary.rescued);
+    if (resultsScanBooks) resultsScanBooks.textContent = String(summary.books);
+    if (resultsScanConfidence) resultsScanConfidence.textContent = `${summary.confidence}%`;
+    if (resultsScanRotations) resultsScanRotations.innerHTML = `0°:<span>${summary.rotations["0°"]}</span> · 90°:<span>${summary.rotations["90°"]}</span> · -90°:<span>${summary.rotations["-90°"]}</span>`;
+    if (resultsScanImage) resultsScanImage.innerHTML = `image: <span>${summary.width} × ${summary.height}px</span>`;
+  }
+
+  function updateResultsInfoPanel() {
+    const complete = isFullIDComplete();
+    if (!complete) {
+      scanInfoOpen = false;
+      if (resultsInfoStatus) resultsInfoStatus.classList.remove("hidden");
+      if (resultsScanDetails) resultsScanDetails.classList.add("hidden");
+      if (resultsInfoStatusTitle) resultsInfoStatusTitle.textContent = activeShelfRecord?.status === "error" ? "Identification paused" : "Identifying your books…";
+      if (resultsInfoStatusCopy) resultsInfoStatusCopy.textContent = activeShelfRecord?.status === "error"
+        ? "OCR search is still available. Tap the highlighted search term to inspect the text found."
+        : "Full book identification is still running. Tap the highlighted search term to inspect the OCR text already found.";
+      if (resultsInfoStatusStage) resultsInfoStatusStage.textContent = activeShelfRecord?.status === "error"
+        ? (activeShelfRecord.last_error || "The worker will retry when Spineless opens again.")
+        : `${Number(activeShelfRecord?.identified_count || bookCatalog.length || 0)} matched · ${Math.round(backgroundProcessPercent)}% complete`;
+      if (resultsInfoProgressBar) resultsInfoProgressBar.style.width = `${backgroundProcessPercent}%`;
+      if (screenResults) screenResults.classList.add("scan-info-visible");
+      if (recognizedTitleWrap) recognizedTitleWrap.classList.add("hidden");
+      if (utilityData) {
+        utilityData.setAttribute("aria-expanded", "true");
+        utilityData.title = "Scan progress";
+      }
+      return;
+    }
+
+    renderScanDetails();
+    if (resultsInfoStatus) resultsInfoStatus.classList.add("hidden");
+    if (resultsScanDetails) resultsScanDetails.classList.remove("hidden");
+    if (screenResults) screenResults.classList.toggle("scan-info-visible", scanInfoOpen);
+    if (utilityData) {
+      utilityData.setAttribute("aria-expanded", scanInfoOpen ? "true" : "false");
+      utilityData.title = scanInfoOpen ? "Hide scan details" : "Show scan details";
+    }
+  }
 
   function setBackgroundRingFill(percent) {
     const p = Math.max(0, Math.min(100, Number(percent) || 0));
@@ -2067,12 +2260,13 @@
       backgroundCompletionTimer = null;
     }
     screenOCR.classList.add("id-background-active");
-    if (backgroundIDHeadline) backgroundIDHeadline.textContent = "Your shelf is ready to explore.";
-    if (backgroundIDDetail) backgroundIDDetail.textContent = "We’re still identifying books in the background. Search anything we’ve found so far.";
+    if (backgroundIDHeadline) backgroundIDHeadline.textContent = "Identifying your books…";
+    if (backgroundIDDetail) backgroundIDDetail.textContent = "OCR search is ready. Tap a search term to inspect the text found while full identification finishes.";
     if (backgroundIDStage) backgroundIDStage.textContent = "preparing book identification…";
     backgroundSpineCount = 0;
     backgroundProcessPercent = 0;
     updateBackgroundIDMetric();
+    updateResultsInfoPanel();
   }
 
   function completeBackgroundIDBanner(credibleCount, spineCount) {
@@ -2082,9 +2276,9 @@
     if (backgroundIDHeadline) backgroundIDHeadline.textContent = "Your shelf is ready.";
     if (backgroundIDDetail) backgroundIDDetail.textContent = "Book identification is complete. Search titles, authors, or anything we read on the shelf.";
     if (backgroundIDStage) backgroundIDStage.textContent = `${credibleCount} books confidently identified${backgroundSpineCount ? ` from ${backgroundSpineCount} detected spines` : ""}.`;
-    backgroundCompletionTimer = setTimeout(() => {
-      screenOCR.classList.remove("id-background-active");
-    }, 5000);
+    screenOCR.classList.remove("id-background-active");
+    scanInfoOpen = false;
+    updateResultsInfoPanel();
   }
 
   // Mirror the existing catalog engine's progress into the non-blocking banner
@@ -3407,7 +3601,7 @@
   function setRecognizedTitle(text, state = "") {
     if (!recognizedTitle || !recognizedTitleWrap) return;
     recognizedTitle.classList.remove("is-loading", "is-uncertain");
-    if (!text) {
+    if (!text || !isFullIDComplete()) {
       recognizedTitle.textContent = "";
       recognizedTitleWrap.classList.add("hidden");
       return;
@@ -4925,8 +5119,9 @@
 
 
   async function identifyCurrentBook() {
-    if (!BOOK_ID_ENABLED || !currentMatches.length || !sourceCanvas) {
+    if (!BOOK_ID_ENABLED || !isFullIDComplete() || !currentMatches.length || !sourceCanvas) {
       setRecognizedTitle("");
+      updateResultsInfoPanel();
       return;
     }
 
@@ -4959,6 +5154,7 @@
 
   function setupResultsScreen() {
     resultsImage.src = imageDataUrl;
+    updateResultsInfoPanel();
 
     if (currentTermIndex < 0 || !termList.length) {
       pillMainLabel.textContent = "";
@@ -5157,6 +5353,8 @@
     imageInput.value = "";
     activeShelfId = null;
     activeShelfRecord = null;
+    scanInfoOpen = false;
+    screenResults.classList.remove("scan-info-visible");
     if (shelfRealtimeChannel && sb) { sb.removeChannel(shelfRealtimeChannel); shelfRealtimeChannel = null; }
     ocrWords = [];
     termList = [];
@@ -5300,8 +5498,13 @@ const cropW = Math.max(1, x1 - x0);
   bookModalBackdrop.addEventListener("click", closeBookModal);
   if (utilityNewImage) utilityNewImage.addEventListener("click", () => btnNewImage.click());
   if (utilityNewSearch) utilityNewSearch.addEventListener("click", () => btnNewSearch.click());
-  if (utilityData) utilityData.addEventListener("click", async () => {
-    await copyOCRData(utilityData);
+  if (utilityData) utilityData.addEventListener("click", () => {
+    if (!isFullIDComplete()) {
+      updateResultsInfoPanel();
+      return;
+    }
+    scanInfoOpen = !scanInfoOpen;
+    updateResultsInfoPanel();
   });
 
   bookModalClose.addEventListener("click", closeBookModal);
@@ -5311,6 +5514,10 @@ const cropW = Math.max(1, x1 - x0);
     if (e.key === "Escape") {
       closeTermModal();
       closeBookModal();
+      if (scanInfoOpen) {
+        scanInfoOpen = false;
+        updateResultsInfoPanel();
+      }
     }
   });
 
