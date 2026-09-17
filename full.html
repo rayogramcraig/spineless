@@ -718,6 +718,12 @@
     #recognized-title.is-loading { cursor: default; }
     #recognized-title.is-loading { opacity: 0.72; }
     #recognized-title.is-uncertain { opacity: 0.78; font-weight: 600; }
+    #recognized-title.is-action {
+      background: #5f2b10;
+      border: 2px solid var(--accent);
+      color: var(--accent);
+      font-weight: 650;
+    }
 
     #results-info-panel {
       position: absolute;
@@ -1357,7 +1363,7 @@
     <div id="screen-add" class="screen active">
       <div class="add-stage">
         <div class="camera-card" aria-label="Scan your books">
-          <input type="file" id="imageInput" accept="image/*" capture="environment" aria-label="Take a picture of your bookshelf" />
+          <input type="file" id="imageInput" accept="image/*" aria-label="Take a picture or choose a bookshelf photo" />
           <div class="camera-card-title">
             <svg class="scan-books-icon" viewBox="0 0 36 48" aria-hidden="true">
               <rect x="5" y="2" width="24" height="44" rx="5" fill="none" stroke="currentColor" stroke-width="4"/>
@@ -1373,7 +1379,7 @@
             <circle cx="170" cy="140" r="58" fill="#000"/>
             <circle cx="170" cy="140" r="37" fill="currentColor"/>
           </svg>
-          <div class="camera-copy">Take a picture of your bookshelf to scan your books</div>
+          <div class="camera-copy">Take a picture or choose one from your photo library</div>
         </div>
         <div id="session-recovery-note">restoring your shelf…</div>
       </div>
@@ -1438,7 +1444,9 @@
             <div><span id="results-scan-ocr-words">0</span> OCR words</div>
             <div><span id="results-scan-search-terms">0</span> OCR search terms</div>
             <div><span id="results-scan-ai-rescued">0</span> AI rescued</div>
-            <div><strong><span id="results-scan-books">0</span> books identified</strong></div>
+            <div><strong><span id="results-scan-books">0</span> books found</strong></div>
+            <div><span id="results-scan-catalog-matches">0</span> catalog matches</div>
+            <div><span id="results-scan-covers">0</span> covers found</div>
             <div>average confidence <span id="results-scan-confidence">0%</span></div>
             <div id="results-scan-rotations">0°:<span>0</span> · 90°:<span>0</span> · -90°:<span>0</span></div>
             <div id="results-scan-image">image: <span>0 × 0px</span></div>
@@ -1538,7 +1546,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.2</div>
+    <div id="build-version">v4.3</div>
   </div>
 
 <script>
@@ -1574,6 +1582,8 @@
   const resultsScanSearchTerms = document.getElementById("results-scan-search-terms");
   const resultsScanAIRescued = document.getElementById("results-scan-ai-rescued");
   const resultsScanBooks = document.getElementById("results-scan-books");
+  const resultsScanCatalogMatches = document.getElementById("results-scan-catalog-matches");
+  const resultsScanCovers = document.getElementById("results-scan-covers");
   const resultsScanConfidence = document.getElementById("results-scan-confidence");
   const resultsScanRotations = document.getElementById("results-scan-rotations");
   const resultsScanImage = document.getElementById("results-scan-image");
@@ -1781,15 +1791,15 @@
   function findRememberedCatalogEnrichment(match) {
     if (!match || !match.bbox || !onDemandCatalogEnrichments.length) return null;
     let best = null;
-    let bestDistance = Infinity;
+    let bestScore = -Infinity;
     for (const remembered of onDemandCatalogEnrichments) {
-      const distance = normalizedDistanceBetweenMatches(match, remembered.match);
-      if (distance < bestDistance) {
+      const association = spineAssociation(match, remembered.match);
+      if (association.accepted && association.score > bestScore) {
         best = remembered;
-        bestDistance = distance;
+        bestScore = association.score;
       }
     }
-    return bestDistance <= 0.055 ? best : null;
+    return best;
   }
 
   function rememberCatalogEnrichment(match, result) {
@@ -1831,16 +1841,16 @@
       if (readError) throw readError;
 
       let target = null;
-      let bestDistance = Infinity;
+      let bestScore = -Infinity;
       for (const row of rows || []) {
         const rowMatch = { bbox: normalizeStoredBBox(row.bbox) };
-        const distance = normalizedDistanceBetweenMatches(remembered.match, rowMatch);
-        if (distance < bestDistance) {
+        const association = spineAssociation(remembered.match, rowMatch);
+        if (association.accepted && association.score > bestScore) {
           target = row;
-          bestDistance = distance;
+          bestScore = association.score;
         }
       }
-      if (!target || bestDistance > 0.055) return false;
+      if (!target) return false;
 
       const result = remembered.result || {};
       const coverId = Number.isFinite(Number(result.cover_i)) ? Number(result.cover_i) : null;
@@ -2125,7 +2135,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.2 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.3 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -2184,11 +2194,19 @@
       confidenceTotal += raw <= 1 ? raw * 100 : raw;
       if (Object.prototype.hasOwnProperty.call(rotations, word.ocrPass)) rotations[word.ocrPass]++;
     }
+    const catalogMatches = (bookCatalog || []).filter((entry) => {
+      const result = entry?.result;
+      const source = String(result?.catalogSource || "").toLowerCase();
+      return Boolean(result?.openLibraryKey || (source && source !== "none"));
+    }).length;
+    const covers = (bookCatalog || []).filter((entry) => Boolean(entry?.result?.cover_url || entry?.result?.cover_i)).length;
     return {
       words: words.length,
       terms: Array.isArray(baseOCRTerms) ? baseOCRTerms.length : 0,
       rescued: Array.isArray(geminiRescuedTerms) ? geminiRescuedTerms.length : 0,
       books: Number(activeShelfRecord?.identified_count || bookCatalog.length || 0),
+      catalogMatches,
+      covers,
       confidence: words.length ? Math.round(confidenceTotal / words.length) : 0,
       rotations,
       width: Number(activeShelfRecord?.image_width || sourceCanvas?.width || 0),
@@ -2202,6 +2220,8 @@
     if (resultsScanSearchTerms) resultsScanSearchTerms.textContent = String(summary.terms);
     if (resultsScanAIRescued) resultsScanAIRescued.textContent = String(summary.rescued);
     if (resultsScanBooks) resultsScanBooks.textContent = String(summary.books);
+    if (resultsScanCatalogMatches) resultsScanCatalogMatches.textContent = String(summary.catalogMatches);
+    if (resultsScanCovers) resultsScanCovers.textContent = String(summary.covers);
     if (resultsScanConfidence) resultsScanConfidence.textContent = `${summary.confidence}%`;
     if (resultsScanRotations) resultsScanRotations.innerHTML = `0°:<span>${summary.rotations["0°"]}</span> · 90°:<span>${summary.rotations["90°"]}</span> · -90°:<span>${summary.rotations["-90°"]}</span>`;
     if (resultsScanImage) resultsScanImage.innerHTML = `image: <span>${summary.width} × ${summary.height}px</span>`;
@@ -3598,9 +3618,10 @@
     hitNextInline.classList.remove("hidden");
   }
 
-  function setRecognizedTitle(text, state = "") {
+  function setRecognizedTitle(text, state = "", action = "") {
     if (!recognizedTitle || !recognizedTitleWrap) return;
-    recognizedTitle.classList.remove("is-loading", "is-uncertain");
+    recognizedTitle.classList.remove("is-loading", "is-uncertain", "is-action");
+    delete recognizedTitle.dataset.action;
     if (!text || !isFullIDComplete()) {
       recognizedTitle.textContent = "";
       recognizedTitleWrap.classList.add("hidden");
@@ -3608,6 +3629,7 @@
     }
     recognizedTitle.textContent = text;
     if (state) recognizedTitle.classList.add(state);
+    if (action) recognizedTitle.dataset.action = action;
     recognizedTitleWrap.classList.remove("hidden");
   }
 
@@ -3740,15 +3762,45 @@
     return Math.hypot(dx, dy);
   }
 
+  function spineAssociation(a, b) {
+    if (!sourceCanvas || !a?.bbox || !b?.bbox) return { accepted: false, score: -Infinity };
+    const wordBox = a.bbox;
+    const spineBox = b.bbox;
+    const wc = bboxCenter(wordBox);
+    const sc = bboxCenter(spineBox);
+    const padX = Math.max(6, sourceCanvas.width * 0.008);
+    const padY = Math.max(6, sourceCanvas.height * 0.008);
+    const centerInside = wc.x >= spineBox.x0 - padX && wc.x <= spineBox.x1 + padX &&
+      wc.y >= spineBox.y0 - padY && wc.y <= spineBox.y1 + padY;
+
+    const ix0 = Math.max(wordBox.x0, spineBox.x0);
+    const iy0 = Math.max(wordBox.y0, spineBox.y0);
+    const ix1 = Math.min(wordBox.x1, spineBox.x1);
+    const iy1 = Math.min(wordBox.y1, spineBox.y1);
+    const intersection = Math.max(0, ix1 - ix0) * Math.max(0, iy1 - iy0);
+    const wordArea = Math.max(1, (wordBox.x1 - wordBox.x0) * (wordBox.y1 - wordBox.y0));
+    const spineArea = Math.max(1, (spineBox.x1 - spineBox.x0) * (spineBox.y1 - spineBox.y0));
+    const overlapOverSmaller = intersection / Math.min(wordArea, spineArea);
+    const distance = normalizedDistanceBetweenMatches(a, b);
+    const horizontalDistance = Math.abs(wc.x - sc.x) / sourceCanvas.width;
+    const accepted = centerInside || overlapOverSmaller >= 0.22 || distance <= 0.045;
+    const score = (centerInside ? 8 : 0) + overlapOverSmaller * 5 + bboxIoU(wordBox, spineBox) * 2
+      - horizontalDistance * 3 - distance * 0.25;
+    return { accepted, score };
+  }
+
   function findCatalogEntryForMatch(match) {
+    if (match?.catalogEntry?.result) return match.catalogEntry;
     if (!match || !bookCatalog.length) return null;
-    let best = null, bestD = Infinity;
+    let best = null, bestScore = -Infinity;
     for (const entry of bookCatalog) {
-      const d = normalizedDistanceBetweenMatches(match, entry.match);
-      if (d < bestD) { bestD = d; best = entry; }
+      const association = spineAssociation(match, entry.match);
+      if (association.accepted && association.score > bestScore) {
+        bestScore = association.score;
+        best = entry;
+      }
     }
-    // Tight enough to usually mean the same physical book, but forgiving of different OCR words on it.
-    return bestD <= 0.045 ? best : null;
+    return best;
   }
 
   async function identifyMatch(match, searchTerm, options = {}) {
@@ -5118,7 +5170,8 @@
   }
 
 
-  async function identifyCurrentBook() {
+  async function identifyCurrentBook(options = {}) {
+    const { force = false } = options;
     if (!BOOK_ID_ENABLED || !isFullIDComplete() || !currentMatches.length || !sourceCanvas) {
       setRecognizedTitle("");
       updateResultsInfoPanel();
@@ -5127,9 +5180,16 @@
 
     const match = currentMatches[currentMatchIndex] || currentMatches[0];
     const catalogEntry = findCatalogEntryForMatch(match);
-    if (catalogEntry?.result && (catalogEntry.result.cover_url || catalogEntry.result.cover_i)) {
+    if (catalogEntry?.result?.title && catalogEntry.result.title !== "Unknown title") {
       const r = catalogEntry.result;
       setRecognizedTitle(r.title || "Unknown title", r.confidence < 0.55 ? "is-uncertain" : "");
+      return;
+    }
+
+    // Completed shelves are authoritative. Do not silently spend another AI
+    // request just because a user searched an OCR word. Let the user opt in.
+    if (!force) {
+      setRecognizedTitle("identify this book", "is-action", "identify");
       return;
     }
 
@@ -5493,6 +5553,10 @@ const cropW = Math.max(1, x1 - x0);
 
   recognizedTitle.addEventListener("click", () => {
     if (recognizedTitle.classList.contains("is-loading")) return;
+    if (recognizedTitle.dataset.action === "identify") {
+      identifyCurrentBook({ force: true });
+      return;
+    }
     openBookModal();
   });
   bookModalBackdrop.addEventListener("click", closeBookModal);
