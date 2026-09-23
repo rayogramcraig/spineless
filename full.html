@@ -739,6 +739,14 @@
       pointer-events: none;
     }
 
+    /* API • means the catalog match is comparatively metadata-rich:
+       at least three of cover, year, publisher and ISBN are present. */
+    #recognized-title-source.is-enriched {
+      background: rgba(232,255,41,0.14);
+      border-color: rgba(232,255,41,0.48);
+      color: var(--scan-yellow);
+    }
+
     #recognized-title.is-loading { cursor: default; }
     #recognized-title.is-loading { opacity: 0.72; }
     #recognized-title.is-uncertain { opacity: 0.78; font-weight: 600; }
@@ -1594,7 +1602,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.4</div>
+    <div id="build-version">v4.5</div>
   </div>
 
 <script>
@@ -1824,7 +1832,7 @@
         title: book.title,
         author: book.author || "",
         confidence: conf,
-        year: book.year ?? null,
+        year: Number(book.year) > 0 ? Number(book.year) : null,
         publisher: book.publisher ? [book.publisher] : [],
         isbn: book.isbn ? [book.isbn] : [],
         cover_i: book.cover_id ?? null,
@@ -2194,7 +2202,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.4 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.5 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -3677,13 +3685,34 @@
     hitNextInline.classList.remove("hidden");
   }
 
+  function hasCatalogMatch(result) {
+    if (!result || result.error) return false;
+    const catalogSource = String(result.catalogSource || "").trim().toLowerCase();
+    return Boolean(result.openLibraryKey || (catalogSource && catalogSource !== "none"));
+  }
+
+  function hasMeaningfulArrayValue(value) {
+    if (Array.isArray(value)) return value.some((item) => String(item || "").trim());
+    return Boolean(String(value || "").trim());
+  }
+
+  function catalogMetadataScore(result) {
+    if (!hasCatalogMatch(result)) return 0;
+    let score = 0;
+    if (result.cover_url || Number(result.cover_i) > 0) score++;
+    if (Number(result.year) > 0) score++;
+    if (hasMeaningfulArrayValue(result.publisher)) score++;
+    if (hasMeaningfulArrayValue(result.isbn)) score++;
+    return score;
+  }
+
   function identificationSourceForResult(result) {
     if (!result || result.error) return "";
     const explicit = String(result.identificationSource || "").trim().toLowerCase();
-    const catalogSource = String(result.catalogSource || "").trim().toLowerCase();
-    if (result.openLibraryKey || (catalogSource && catalogSource !== "none")) return "API";
+    if (hasCatalogMatch(result) || explicit === "api") {
+      return catalogMetadataScore(result) >= 3 ? "API •" : "API";
+    }
     if (explicit === "ocr") return "OCR";
-    if (explicit === "api") return "API";
     if (result.title && result.title !== "Unknown title") return "AI";
     return "";
   }
@@ -3707,6 +3736,7 @@
       const label = String(source || "").trim().toUpperCase();
       recognizedTitleSource.textContent = label;
       recognizedTitleSource.classList.toggle("hidden", !label);
+      recognizedTitleSource.classList.toggle("is-enriched", label.includes("•"));
     }
     if (state) recognizedTitle.classList.add(state);
     if (action) recognizedTitle.dataset.action = action;
@@ -4459,7 +4489,7 @@
     });
 
     return [
-      "Spineless v4.4 full diagnostic",
+      "Spineless v4.5 full diagnostic",
       `mode: ${PROCESSING_MODE}`,
       `shelf: ${activeShelfId || "(none)"}`,
       `search: ${currentTerm || "(none)"}${currentMatches?.length ? ` · result ${Math.min(currentMatchIndex + 1, currentMatches.length)} of ${currentMatches.length}` : ""}`,
@@ -5672,10 +5702,19 @@ const cropW = Math.max(1, x1 - x0);
     }
 
     const rows = [];
-    if (r.year) rows.push(["First published", String(r.year)]);
-    if (Array.isArray(r.publisher) && r.publisher.length) rows.push(["Publisher", r.publisher[0]]);
-    if (Array.isArray(r.isbn) && r.isbn.length) rows.push(["ISBN", r.isbn[0]]);
-    if (Number.isFinite(Number(r.confidence))) rows.push(["AI confidence", `${Math.round(Number(r.confidence) * 100)}%`]);
+    if (Number(r.year) > 0) rows.push(["First published", String(r.year)]);
+    if (Array.isArray(r.publisher) && r.publisher.length && String(r.publisher[0] || "").trim()) rows.push(["Publisher", r.publisher[0]]);
+    if (Array.isArray(r.isbn) && r.isbn.length && String(r.isbn[0] || "").trim()) rows.push(["ISBN", r.isbn[0]]);
+
+    if (hasCatalogMatch(r)) {
+      const apiConfidence = Number(r.catalogConfidence);
+      rows.push(["API match", Number.isFinite(apiConfidence) && apiConfidence > 0
+        ? `${Math.round(apiConfidence * 100)}%`
+        : "matched"]);
+    }
+    if (Number.isFinite(Number(r.confidence))) {
+      rows.push(["AI identification", `${Math.round(Number(r.confidence) * 100)}%`]);
+    }
 
     bookModalMeta.innerHTML = rows.map(([label, value]) =>
       `<div class="book-meta-row"><div class="book-meta-label">${label}</div><div class="book-meta-value">${value}</div></div>`
