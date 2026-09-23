@@ -697,9 +697,10 @@
     }
 
     #recognized-title {
+      position: relative;
       width: min(94vw, 540px);
       min-height: 46px;
-      padding: 10px 22px;
+      padding: 10px 64px;
       border-radius: 999px;
       border: none;
       background: #8d390b;
@@ -709,10 +710,33 @@
       font-weight: 750;
       text-align: center;
       box-shadow: var(--shadow-soft);
+      cursor: pointer;
+    }
+
+    #recognized-title-text {
+      display: block;
+      min-width: 0;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      cursor: pointer;
+    }
+
+    #recognized-title-source {
+      position: absolute;
+      right: 13px;
+      top: 50%;
+      transform: translateY(-50%);
+      padding: 3px 7px 2px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.16);
+      border: 1px solid rgba(255,255,255,0.28);
+      color: rgba(255,255,255,0.9);
+      font-size: 0.62rem;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      pointer-events: none;
     }
 
     #recognized-title.is-loading { cursor: default; }
@@ -799,6 +823,26 @@
     #results-scan-details-grid strong { color: #fff; }
     #results-scan-rotations,
     #results-scan-image { grid-column: 1 / -1; }
+
+    #results-scan-copy {
+      margin-top: 16px;
+      padding: 8px 13px;
+      border: 1px solid rgba(255,122,26,0.72);
+      border-radius: 999px;
+      background: transparent;
+      color: #ff7a1a;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 650;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    #results-scan-copy.is-copied {
+      color: #fff;
+      border-color: rgba(255,255,255,0.5);
+      opacity: 0.72;
+    }
 
     @media (max-width: 430px) {
       #results-info-panel { padding-left: 20px; padding-right: 20px; }
@@ -1451,6 +1495,7 @@
             <div id="results-scan-rotations">0°:<span>0</span> · 90°:<span>0</span> · -90°:<span>0</span></div>
             <div id="results-scan-image">image: <span>0 × 0px</span></div>
           </div>
+          <button id="results-scan-copy" type="button" title="Copy full diagnostic information">copy full diagnostic info</button>
         </div>
       </div>
 
@@ -1459,7 +1504,10 @@
       </div>
 
       <div id="recognized-title-wrap" class="hidden">
-        <div id="recognized-title"></div>
+        <div id="recognized-title">
+          <span id="recognized-title-text"></span>
+          <span id="recognized-title-source" class="hidden"></span>
+        </div>
       </div>
 
       <div id="catalog-stats"></div>
@@ -1546,7 +1594,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.3</div>
+    <div id="build-version">v4.4</div>
   </div>
 
 <script>
@@ -1587,6 +1635,7 @@
   const resultsScanConfidence = document.getElementById("results-scan-confidence");
   const resultsScanRotations = document.getElementById("results-scan-rotations");
   const resultsScanImage = document.getElementById("results-scan-image");
+  const resultsScanCopy = document.getElementById("results-scan-copy");
   const buildVersion = document.getElementById("build-version");
   const sessionRecoveryNote = document.getElementById("session-recovery-note");
 
@@ -1610,6 +1659,7 @@
   let shelfRealtimeChannel = null;
   let shelfRefreshTimer = null;
   let persistenceBusy = false;
+  let latestServerBookRows = [];
 
   function showRecoveryNote(message = "restoring your shelf…") {
     if (!sessionRecoveryNote) return;
@@ -1782,7 +1832,10 @@
         openLibraryKey: book.open_library_key || null,
         catalogSource: book.catalog_source || null,
         catalogConfidence: Number.isFinite(Number(book.catalog_confidence)) ? Number(book.catalog_confidence) : null,
-        visualEvidence: Array.isArray(book.visual_evidence) ? book.visual_evidence : []
+        visualEvidence: Array.isArray(book.visual_evidence) ? book.visual_evidence : [],
+        identificationSource: "ai",
+        sourceStep: Number.isFinite(Number(book.source_step)) ? Number(book.source_step) : null,
+        bookKey: book.book_key || null
       },
       persistentBookId: book.id
     };
@@ -1943,7 +1996,11 @@
     if (booksRes.error) throw booksRes.error;
     if (wordsRes.error) throw wordsRes.error;
 
-    bookCatalog = (booksRes.data || [])
+    latestServerBookRows = Array.isArray(booksRes.data)
+      ? booksRes.data.map(row => ({ ...row }))
+      : [];
+
+    bookCatalog = latestServerBookRows
       .map(serverBookToCatalogEntry)
       .filter(Boolean)
       .map(mergeRememberedCatalogEnrichment);
@@ -2060,6 +2117,8 @@
   const resultsImage = document.getElementById("results-image");
   const recognizedTitleWrap = document.getElementById("recognized-title-wrap");
   const recognizedTitle = document.getElementById("recognized-title");
+  const recognizedTitleText = document.getElementById("recognized-title-text");
+  const recognizedTitleSource = document.getElementById("recognized-title-source");
   const btnNewImage = document.getElementById("btn-new-image");
   const btnNewSearch = document.getElementById("new-search-btn");
   const utilityNewImage = document.getElementById("utility-new-image");
@@ -2135,7 +2194,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.3 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.4 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -3618,16 +3677,37 @@
     hitNextInline.classList.remove("hidden");
   }
 
-  function setRecognizedTitle(text, state = "", action = "") {
+  function identificationSourceForResult(result) {
+    if (!result || result.error) return "";
+    const explicit = String(result.identificationSource || "").trim().toLowerCase();
+    const catalogSource = String(result.catalogSource || "").trim().toLowerCase();
+    if (result.openLibraryKey || (catalogSource && catalogSource !== "none")) return "API";
+    if (explicit === "ocr") return "OCR";
+    if (explicit === "api") return "API";
+    if (result.title && result.title !== "Unknown title") return "AI";
+    return "";
+  }
+
+  function setRecognizedTitle(text, state = "", action = "", source = "") {
     if (!recognizedTitle || !recognizedTitleWrap) return;
     recognizedTitle.classList.remove("is-loading", "is-uncertain", "is-action");
     delete recognizedTitle.dataset.action;
     if (!text || !isFullIDComplete()) {
-      recognizedTitle.textContent = "";
+      if (recognizedTitleText) recognizedTitleText.textContent = "";
+      if (recognizedTitleSource) {
+        recognizedTitleSource.textContent = "";
+        recognizedTitleSource.classList.add("hidden");
+      }
       recognizedTitleWrap.classList.add("hidden");
       return;
     }
-    recognizedTitle.textContent = text;
+    if (recognizedTitleText) recognizedTitleText.textContent = text;
+    else recognizedTitle.textContent = text;
+    if (recognizedTitleSource) {
+      const label = String(source || "").trim().toUpperCase();
+      recognizedTitleSource.textContent = label;
+      recognizedTitleSource.classList.toggle("hidden", !label);
+    }
     if (state) recognizedTitle.classList.add(state);
     if (action) recognizedTitle.dataset.action = action;
     recognizedTitleWrap.classList.remove("hidden");
@@ -3851,7 +3931,9 @@
         publisher: matchedCandidate && matchedCandidate.publisher ? matchedCandidate.publisher : [],
         isbn: matchedCandidate && matchedCandidate.isbn ? matchedCandidate.isbn : [],
         cover_i: matchedCandidate ? matchedCandidate.cover_i : null,
-        openLibraryKey: matchedCandidate ? matchedCandidate.key : null
+        openLibraryKey: matchedCandidate ? matchedCandidate.key : null,
+        catalogSource: matchedCandidate ? "openlibrary+ondemand" : "none",
+        identificationSource: matchedCandidate ? "api" : "ai"
       };
       bookRecognitionCache.set(cacheKey, clean);
       const remembered = rememberCatalogEnrichment(match, clean);
@@ -4325,6 +4407,28 @@
 
   function buildCopiedOCRData() {
     const words = (ocrWords || []).filter(w => w && w.text);
+    const summary = scanSummary();
+    const currentMatch = currentMatches?.[currentMatchIndex] || currentMatches?.[0] || null;
+    const currentCatalogEntry = currentMatch ? findCatalogEntryForMatch(currentMatch) : null;
+    const shelfSnapshot = activeShelfRecord ? {
+      id: activeShelfRecord.id || null,
+      status: activeShelfRecord.status || null,
+      worker_step: activeShelfRecord.worker_step ?? null,
+      processing_progress: activeShelfRecord.processing_progress ?? null,
+      identified_count: activeShelfRecord.identified_count ?? null,
+      estimated_spines: activeShelfRecord.estimated_spines ?? null,
+      image_width: activeShelfRecord.image_width ?? null,
+      image_height: activeShelfRecord.image_height ?? null,
+      image_path: activeShelfRecord.image_path || null,
+      last_error: activeShelfRecord.last_error || null
+    } : null;
+    const catalogSnapshot = (bookCatalog || []).map((entry, index) => ({
+      index,
+      persistentBookId: entry?.persistentBookId || null,
+      term: entry?.term || null,
+      match: entry?.match || null,
+      result: entry?.result || null
+    }));
     const byPass = { "0°": 0, "90°": 0, "-90°": 0, "other": 0 };
     for (const w of words) {
       const key = Object.prototype.hasOwnProperty.call(byPass, w.ocrPass) ? w.ocrPass : "other";
@@ -4355,7 +4459,30 @@
     });
 
     return [
-      "Spineless OCR v14 diagnostic",
+      "Spineless v4.4 full diagnostic",
+      `mode: ${PROCESSING_MODE}`,
+      `shelf: ${activeShelfId || "(none)"}`,
+      `search: ${currentTerm || "(none)"}${currentMatches?.length ? ` · result ${Math.min(currentMatchIndex + 1, currentMatches.length)} of ${currentMatches.length}` : ""}`,
+      "",
+      "SCAN SUMMARY",
+      JSON.stringify(summary, null, 2),
+      "",
+      "SHELF RECORD",
+      JSON.stringify(shelfSnapshot, null, 2),
+      "",
+      "CURRENT SEARCH MATCH",
+      JSON.stringify(currentMatch, null, 2),
+      "",
+      "CURRENT CATALOG ENTRY",
+      JSON.stringify(currentCatalogEntry, null, 2),
+      "",
+      "RAW SERVER SHELF_BOOKS",
+      JSON.stringify(latestServerBookRows || [], null, 2),
+      "",
+      "CURRENT BOOK CATALOG",
+      JSON.stringify(catalogSnapshot, null, 2),
+      "",
+      "OCR SUMMARY",
       `${words.length} OCR words · ${baseOCRTerms.length} OCR search terms + ${geminiRescuedTerms.length} Gemini rescued = ${uniqueTerms} total · average confidence ${Math.round(avgConfidence)}%`,
       `passes: 0° ${byPass["0°"]} · 90° ${byPass["90°"]} · -90° ${byPass["-90°"]}`,
       sourceCanvas ? `image: ${sourceCanvas.width} × ${sourceCanvas.height}px` : "",
@@ -4422,15 +4549,6 @@
   }
 
   async function copyOCRData(sourceEl) {
-    if (!ocrWords.length) {
-      if (sourceEl === utilityData) {
-        const oldTitle = utilityData.title;
-        utilityData.title = "No OCR data yet";
-        setTimeout(() => { utilityData.title = oldTitle; }, 1200);
-      }
-      return;
-    }
-
     const text = buildCopiedOCRData();
     let copied = false;
     try {
@@ -4451,13 +4569,16 @@
       } catch (_) {}
     }
 
-    if (sourceEl === utilityData) {
-      utilityData.classList.add("is-copied");
-      const oldTitle = utilityData.title;
-      utilityData.title = copied ? "OCR data copied" : "Could not copy OCR data";
+    if (sourceEl) {
+      sourceEl.classList.add("is-copied");
+      const oldTitle = sourceEl.title;
+      const oldText = sourceEl === resultsScanCopy ? sourceEl.textContent : null;
+      sourceEl.title = copied ? "Diagnostic info copied" : "Could not copy diagnostic info";
+      if (sourceEl === resultsScanCopy) sourceEl.textContent = copied ? "copied" : "copy failed";
       setTimeout(() => {
-        utilityData.classList.remove("is-copied");
-        utilityData.title = oldTitle;
+        sourceEl.classList.remove("is-copied");
+        sourceEl.title = oldTitle;
+        if (sourceEl === resultsScanCopy && oldText != null) sourceEl.textContent = oldText;
       }, 1200);
     }
   }
@@ -4581,7 +4702,9 @@
         publisher: book.publisher ? [String(book.publisher)] : [],
         isbn: book.isbn ? [String(book.isbn)] : [],
         cover_i: null,
-        openLibraryKey: null
+        openLibraryKey: null,
+        catalogSource: "none",
+        identificationSource: "ai"
       }
     };
   }
@@ -4706,7 +4829,9 @@
         publisher: [],
         isbn: [],
         cover_i: null,
-        openLibraryKey: null
+        openLibraryKey: null,
+        catalogSource: "none",
+        identificationSource: "ai"
       }
     };
   }
@@ -5182,7 +5307,12 @@
     const catalogEntry = findCatalogEntryForMatch(match);
     if (catalogEntry?.result?.title && catalogEntry.result.title !== "Unknown title") {
       const r = catalogEntry.result;
-      setRecognizedTitle(r.title || "Unknown title", r.confidence < 0.55 ? "is-uncertain" : "");
+      setRecognizedTitle(
+        r.title || "Unknown title",
+        r.confidence < 0.55 ? "is-uncertain" : "",
+        "",
+        identificationSourceForResult(r)
+      );
       return;
     }
 
@@ -5200,7 +5330,12 @@
       setRecognizedTitle("AI recognition error", "is-uncertain");
       return;
     }
-    setRecognizedTitle(result.title || "Unknown title", result.confidence < 0.55 ? "is-uncertain" : "");
+    setRecognizedTitle(
+      result.title || "Unknown title",
+      result.confidence < 0.55 ? "is-uncertain" : "",
+      "",
+      identificationSourceForResult(result)
+    );
     if (result.title && result.title !== "Unknown title") {
       const existingEntry = findCatalogEntryForMatch(match);
       if (existingEntry) {
@@ -5562,6 +5697,7 @@ const cropW = Math.max(1, x1 - x0);
   bookModalBackdrop.addEventListener("click", closeBookModal);
   if (utilityNewImage) utilityNewImage.addEventListener("click", () => btnNewImage.click());
   if (utilityNewSearch) utilityNewSearch.addEventListener("click", () => btnNewSearch.click());
+  if (resultsScanCopy) resultsScanCopy.addEventListener("click", () => copyOCRData(resultsScanCopy));
   if (utilityData) utilityData.addEventListener("click", () => {
     if (!isFullIDComplete()) {
       updateResultsInfoPanel();
