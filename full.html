@@ -1602,7 +1602,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.5</div>
+    <div id="build-version">v4.6</div>
   </div>
 
 <script>
@@ -1870,7 +1870,9 @@
       remembered = {
         match: { ...match, bbox: { ...match.bbox } },
         result: { ...result },
-        persistentBookId: null,
+        // If this search hit is already tied to a persisted book, retain that
+        // exact identity. Never re-find it later by loose proximity.
+        persistentBookId: match?.catalogEntry?.persistentBookId || null,
         persistencePending: false
       };
       onDemandCatalogEnrichments.push(remembered);
@@ -1891,24 +1893,68 @@
     return entry;
   }
 
+  function bboxHorizontalOverlap(a, b) {
+    if (!a || !b) return 0;
+    const overlap = Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0));
+    const minW = Math.max(1, Math.min(a.x1 - a.x0, b.x1 - b.x0));
+    return overlap / minW;
+  }
+
+  // Persistence must be stricter than search/highlighting. A nearby OCR hit is
+  // allowed to *show* a likely book, but it must not rewrite a neighboring
+  // shelf_books row. This test is intentionally based on the same physical
+  // x-column plus meaningful vertical overlap.
+  function strictPersistedSpineAssociation(a, b) {
+    if (!sourceCanvas || !a?.bbox || !b?.bbox) return { accepted: false, score: -Infinity };
+    const A = a.bbox, B = b.bbox;
+    const ac = bboxCenter(A), bc = bboxCenter(B);
+    const dx = Math.abs(ac.x - bc.x) / sourceCanvas.width;
+    const dy = Math.abs(ac.y - bc.y) / sourceCanvas.height;
+    const ho = bboxHorizontalOverlap(A, B);
+    const vo = bboxVerticalOverlap(A, B);
+    const iou = bboxIoU(A, B);
+    const accepted = iou >= 0.30 || (ho >= 0.72 && vo >= 0.28 && dx <= 0.018);
+    const score = iou * 10 + ho * 4 + vo * 3 - dx * 8 - dy * 0.5;
+    return { accepted, score, iou, ho, vo, dx, dy };
+  }
+
   async function persistRememberedCatalogEnrichment(remembered) {
     if (!sb || !activeShelfId || !remembered || remembered.persistencePending || remembered.persistentBookId === "saved") return false;
     remembered.persistencePending = true;
     try {
-      const { data: rows, error: readError } = await sb
-        .from("shelf_books")
-        .select("id,bbox")
-        .eq("shelf_id", activeShelfId);
-      if (readError) throw readError;
-
       let target = null;
-      let bestScore = -Infinity;
-      for (const row of rows || []) {
-        const rowMatch = { bbox: normalizeStoredBBox(row.bbox) };
-        const association = spineAssociation(remembered.match, rowMatch);
-        if (association.accepted && association.score > bestScore) {
-          target = row;
-          bestScore = association.score;
+
+      // Best case: the search match already belongs to a specific persisted
+      // shelf_book. Use its immutable row id rather than re-associating it.
+      if (remembered.persistentBookId && remembered.persistentBookId !== "saved") {
+        const { data: exactRow, error: exactError } = await sb
+          .from("shelf_books")
+          .select("id,bbox,title,author,book_key")
+          .eq("shelf_id", activeShelfId)
+          .eq("id", remembered.persistentBookId)
+          .maybeSingle();
+        if (exactError) throw exactError;
+        if (exactRow) target = exactRow;
+      }
+
+      // OCR-only hits have no persisted id. Only attach metadata when the
+      // geometry is very convincing; otherwise keep the enrichment in memory
+      // for display and let the background worker own persistent identity.
+      if (!target) {
+        const { data: rows, error: readError } = await sb
+          .from("shelf_books")
+          .select("id,bbox,title,author,book_key")
+          .eq("shelf_id", activeShelfId);
+        if (readError) throw readError;
+
+        let bestScore = -Infinity;
+        for (const row of rows || []) {
+          const rowMatch = { bbox: normalizeStoredBBox(row.bbox) };
+          const association = strictPersistedSpineAssociation(remembered.match, rowMatch);
+          if (association.accepted && association.score > bestScore) {
+            target = row;
+            bestScore = association.score;
+          }
         }
       }
       if (!target) return false;
@@ -1916,9 +1962,9 @@
       const result = remembered.result || {};
       const coverId = Number.isFinite(Number(result.cover_i)) ? Number(result.cover_i) : null;
       const payload = {
-        title: result.title || "Unknown title",
-        author: result.author || "",
-        year: Number.isFinite(Number(result.year)) ? Number(result.year) : null,
+        // On-demand lookup enriches the existing physical book. It must not
+        // replace title/author identity on an already-identified row.
+        year: Number(result.year) > 0 ? Number(result.year) : null,
         publisher: Array.isArray(result.publisher) ? (result.publisher[0] || null) : (result.publisher || null),
         isbn: Array.isArray(result.isbn) ? (result.isbn[0] || null) : (result.isbn || null),
         open_library_key: result.openLibraryKey || null,
@@ -2202,7 +2248,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.5 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.6 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -4489,7 +4535,7 @@
     });
 
     return [
-      "Spineless v4.5 full diagnostic",
+      "Spineless v4.6 full diagnostic",
       `mode: ${PROCESSING_MODE}`,
       `shelf: ${activeShelfId || "(none)"}`,
       `search: ${currentTerm || "(none)"}${currentMatches?.length ? ` · result ${Math.min(currentMatchIndex + 1, currentMatches.length)} of ${currentMatches.length}` : ""}`,
