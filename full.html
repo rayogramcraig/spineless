@@ -575,6 +575,13 @@
       transform: translateY(0);
     }
 
+    /* Full AI book-identification progress belongs in the top status panel. */
+    #screen-ocr.mode-search.id-background-active #background-id-ring {
+      display: grid;
+      opacity: 1;
+      visibility: visible;
+    }
+
     #background-id-headline {
       font-size: clamp(1.25rem, 4.5vw, 1.85rem);
       font-weight: 500;
@@ -609,6 +616,9 @@
       width: 88px;
       height: 88px;
       border-radius: 50%;
+      z-index: 2;
+      opacity: 1;
+      visibility: visible;
       background: conic-gradient(
         from -90deg,
         var(--scan-yellow) 0deg var(--background-id-angle),
@@ -1602,7 +1612,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.6</div>
+    <div id="build-version">v4.7.1</div>
   </div>
 
 <script>
@@ -2248,7 +2258,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.6 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.7.1 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -2398,6 +2408,7 @@
     if (backgroundIDStage) backgroundIDStage.textContent = "preparing book identification…";
     backgroundSpineCount = 0;
     backgroundProcessPercent = 0;
+    setBackgroundRingFill(0);
     updateBackgroundIDMetric();
     updateResultsInfoPanel();
   }
@@ -3230,7 +3241,9 @@
   }
 
   function setScanMode(angleLabel, modeClass) {
-    stopAnalysisProgress(true);
+    // Reading uses the same circular progress UI as analyzing. Stop any
+    // animation loop without resetting the accumulated OCR progress.
+    stopAnalysisProgress(false);
     screenOCR.classList.add("scanning");
     screenOCR.classList.remove("analyzing");
     scanGradient.style.opacity = "1";
@@ -3359,6 +3372,8 @@
     if (catalogingBar) catalogingBar.style.width = "0%";
 
     stopScanPulses();
+    stopAnalysisProgress(true);
+    renderAnalysisProgress(0);
 
     try {
       const img = new Image();
@@ -3453,6 +3468,10 @@
               const pct = Math.round((m.progress || 0) * 100);
               ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}… ${pct}%`;
               updateScanProgress(m.progress || 0);
+              // Circular ring shows total reading progress across all three
+              // OCR orientations rather than restarting visually each pass.
+              const overallOCRProgress = ((i + Math.max(0, Math.min(1, m.progress || 0))) / passTotal) * 100;
+              renderAnalysisProgress(overallOCRProgress);
             } else {
               ocrProgress.textContent = `reading ${label}  ${passIndex}/${passTotal}…`;
             }
@@ -3460,6 +3479,7 @@
         });
 
         updateScanProgress(1);
+        renderAnalysisProgress(((i + 1) / passTotal) * 100);
 
         const words = result.data.words || [];
 
@@ -4535,7 +4555,7 @@
     });
 
     return [
-      "Spineless v4.6 full diagnostic",
+      "Spineless v4.7.1 full diagnostic",
       `mode: ${PROCESSING_MODE}`,
       `shelf: ${activeShelfId || "(none)"}`,
       `search: ${currentTerm || "(none)"}${currentMatches?.length ? ` · result ${Math.min(currentMatchIndex + 1, currentMatches.length)} of ${currentMatches.length}` : ""}`,
