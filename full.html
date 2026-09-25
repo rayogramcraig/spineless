@@ -88,7 +88,6 @@
       position: absolute;
       left: 50%;
       top: 17%;
-      width: min(72vw, 560px);
       height: min(48vh, 720px);
       min-height: 430px;
       transform: translateX(-50%);
@@ -120,9 +119,9 @@
     }
 
     .scan-books-icon {
-      width: clamp(28px, 6vw, 42px);
-      height: clamp(34px, 7vw, 50px);
-      color: #ff5b00;
+      width: clamp(24px, 5vw, 32px);
+      height: clamp(40px, 7vw, 50px);
+      object-fit: contain;
       flex: 0 0 auto;
     }
 
@@ -135,13 +134,14 @@
     }
 
     .camera-copy {
-      margin-top: clamp(62px, 8vh, 96px);
-      width: min(58%, 255px);
-      font-size: clamp(1.25rem, 3.5vw, 2rem);
-      line-height: 1.22;
-      font-weight: 400;
-      text-align: left;
-      pointer-events: none;
+    margin-top: clamp(62px, 8vh, 96px);
+    width: min(58%, 255px);
+    font-size: clamp(1.0rem, 3.2vw, 1rem);
+    line-height: 1.22;
+    font-weight: 400;
+    text-align: center;
+    pointer-events: none;
+    margin-bottom: clamp(62px, 8vh, 96px);
     }
 
     #imageInput {
@@ -1427,11 +1427,7 @@
         <div class="camera-card" aria-label="Scan your books">
           <input type="file" id="imageInput" accept="image/*" aria-label="Take a picture or choose a bookshelf photo" />
           <div class="camera-card-title">
-            <svg class="scan-books-icon" viewBox="0 0 36 48" aria-hidden="true">
-              <rect x="5" y="2" width="24" height="44" rx="5" fill="none" stroke="currentColor" stroke-width="4"/>
-              <path d="M10 10h5v11h-5zm7 0h5v11h-5zm7 0h1v11h-1M10 26h5v12h-5zm7 0h5v12h-5zm7 0h1v12h-1" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
-              <path d="M11 16l4 4m4-8l3 7m-11 13l4 4m4-8l3 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-            </svg>
+            <img class="scan-books-icon" src="bookshelf.svg" alt="" aria-hidden="true" />
             <span>Scan your books</span>
           </div>
           <svg class="camera-glyph" viewBox="0 0 320 230" aria-hidden="true">
@@ -1612,7 +1608,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.7.1</div>
+    <div id="build-version">v4.8</div>
   </div>
 
 <script>
@@ -2258,7 +2254,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.7.1 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.8 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -4555,7 +4551,7 @@
     });
 
     return [
-      "Spineless v4.7.1 full diagnostic",
+      "Spineless v4.8 full diagnostic",
       `mode: ${PROCESSING_MODE}`,
       `shelf: ${activeShelfId || "(none)"}`,
       `search: ${currentTerm || "(none)"}${currentMatches?.length ? ` · result ${Math.min(currentMatchIndex + 1, currentMatches.length)} of ${currentMatches.length}` : ""}`,
