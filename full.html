@@ -1328,6 +1328,13 @@
       cursor: pointer;
     }
 
+    .hit-nav-inline svg, .hit-nav-btn svg {
+      display: block;
+      width: 19px;
+      height: 29px;
+      flex: none;
+      overflow: visible;
+    }
     .hit-nav-inline:disabled { opacity: 0.3; cursor: default; }
 
 	#pill-badge {
@@ -1623,9 +1630,13 @@
           <button id="pill-left" class="pill pill-side"></button>
           <div class="pill-main-wrapper">
             <div id="pill-main" class="pill pill-main">
-              <button id="hit-prev-inline" class="hit-nav-inline" aria-label="Previous result">&#9664;</button>
+              <button id="hit-prev-inline" class="hit-nav-inline" aria-label="Previous result"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19.029 29.377">
+  <path id="Polygon_2" data-name="Polygon 2" d="M11.522,4.1a4,4,0,0,1,6.333,0L24.4,12.585a4,4,0,0,1-3.166,6.444H8.141a4,4,0,0,1-3.166-6.444Z" transform="translate(0 29.377) rotate(-90)" fill="#fff"/>
+</svg></button>
               <span id="pill-main-label" class="pill-main-label"></span>
-              <button id="hit-next-inline" class="hit-nav-inline" aria-label="Next result">&#9654;</button>
+              <button id="hit-next-inline" class="hit-nav-inline" aria-label="Next result"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19.029 29.377">
+  <path id="Polygon_1" data-name="Polygon 1" d="M11.522,4.1a4,4,0,0,1,6.333,0L24.4,12.585a4,4,0,0,1-3.166,6.444H8.141a4,4,0,0,1-3.166-6.444Z" transform="translate(19.029) rotate(90)" fill="#fff"/>
+</svg></button>
             </div>
             <div id="pill-badge" class="pill-badge hidden"></div>
           </div>
@@ -1635,9 +1646,13 @@
         <div id="results-bottom-row">
           <button id="new-search-btn">new search</button>
           <div id="instance-nav" class="hidden">
-            <button id="hit-prev" class="hit-nav-btn">&#9664;</button>
+            <button id="hit-prev" class="hit-nav-btn" aria-label="Previous result"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19.029 29.377">
+  <path id="Polygon_2" data-name="Polygon 2" d="M11.522,4.1a4,4,0,0,1,6.333,0L24.4,12.585a4,4,0,0,1-3.166,6.444H8.141a4,4,0,0,1-3.166-6.444Z" transform="translate(0 29.377) rotate(-90)" fill="#fff"/>
+</svg></button>
             <div id="hit-counter">1</div>
-            <button id="hit-next" class="hit-nav-btn">&#9654;</button>
+            <button id="hit-next" class="hit-nav-btn" aria-label="Next result"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19.029 29.377">
+  <path id="Polygon_1" data-name="Polygon 1" d="M11.522,4.1a4,4,0,0,1,6.333,0L24.4,12.585a4,4,0,0,1-3.166,6.444H8.141a4,4,0,0,1-3.166-6.444Z" transform="translate(19.029) rotate(90)" fill="#fff"/>
+</svg></button>
           </div>
         </div>
       </div>
@@ -1690,7 +1705,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.11</div>
+    <div id="build-version">v4.12</div>
   </div>
 
 <script>
@@ -2337,7 +2352,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.11 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.12 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
