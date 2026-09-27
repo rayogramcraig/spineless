@@ -1705,7 +1705,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.12</div>
+    <div id="build-version">v4.13</div>
   </div>
 
 <script>
@@ -2352,7 +2352,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.12 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.13 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -2590,13 +2590,23 @@
     const startSearch = sourceSearch.getBoundingClientRect();
     const searchContainer = screenOCR.querySelector(".search-container");
     const oldTransition = searchContainer.style.transition;
+
+    // iOS/WebKit is much smoother if the real controls do not run their own
+    // CSS transition while the FLIP overlay is moving between layouts.
     searchContainer.style.transition = "none";
     prepare();
     showScreen(destination);
+
+    // Give WebKit two paints to settle viewport/layout changes (notably the
+    // dynamic browser chrome) before measuring the destination geometry.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
     const endImage = fromSearch ? resultsPictureRect() : targetImage.getBoundingClientRect();
     const endSearch = targetSearch.getBoundingClientRect();
-    requestAnimationFrame(() => { searchContainer.style.transition = oldTransition; });
-    if (![startImage, startSearch, endImage, endSearch].every(r => r.width && r.height)) return;
+    if (![startImage, startSearch, endImage, endSearch].every(r => r.width && r.height)) {
+      searchContainer.style.transition = oldTransition;
+      return;
+    }
 
     const shelf = document.createElement("img");
     shelf.src = imageDataUrl;
@@ -2605,25 +2615,51 @@
     lozenge.textContent = "search";
     const layers = [shelf, lozenge];
     const hidden = [sourceImage, sourceSearch, targetImage, targetSearch];
-    const position = (rect) => ({
-      left: `${rect.left}px`, top: `${rect.top}px`,
-      width: `${rect.width}px`, height: `${rect.height}px`
+
+    const baseStyle = (rect) => ({
+      position: "fixed",
+      left: `${rect.left}px`,
+      top: `${rect.top}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+      margin: "0",
+      transform: "translate3d(0,0,0) scale3d(1,1,1)",
+      transformOrigin: "0 0",
+      willChange: "transform",
+      backfaceVisibility: "hidden",
+      WebkitBackfaceVisibility: "hidden",
+      contain: "paint",
+      pointerEvents: "none"
     });
-    Object.assign(shelf.style, position(startImage), {
-      position: "fixed", zIndex: "100", pointerEvents: "none",
-      objectFit: "cover", objectPosition: "center",
+
+    Object.assign(shelf.style, baseStyle(startImage), {
+      zIndex: "100",
+      objectFit: "cover",
+      objectPosition: "center",
+      // Do not animate filter on iOS; large filtered layers are a common source
+      // of dropped frames. The destination adopts its normal brightness at end.
       filter: fromSearch ? "brightness(.45)" : "brightness(1)"
     });
-    Object.assign(lozenge.style, position(startSearch), {
-      position: "fixed", zIndex: "101", pointerEvents: "none",
-      display: "flex", alignItems: "center", borderRadius: "999px",
-      padding: "0 20px", background: "#fff", color: "#bfa89e",
+    Object.assign(lozenge.style, baseStyle(startSearch), {
+      zIndex: "101",
+      display: "flex",
+      alignItems: "center",
+      borderRadius: "999px",
+      padding: "0 20px",
+      background: "#fff",
+      color: "#bfa89e",
       fontFamily: "Chivo, sans-serif",
       fontSize: fromSearch ? "1.4rem" : ".95rem",
-      boxShadow: "0 12px 30px rgba(0,0,0,.35)"
+      boxShadow: "0 12px 30px rgba(0,0,0,.35)",
+      whiteSpace: "nowrap",
+      overflow: "hidden"
     });
+
     layers.forEach(el => document.body.appendChild(el));
-    hidden.forEach(el => { el.dataset.transitionOpacity = el.style.opacity; el.style.opacity = "0"; });
+    hidden.forEach(el => {
+      el.dataset.transitionOpacity = el.style.opacity;
+      el.style.opacity = "0";
+    });
 
     let completed = false;
     const finish = () => {
@@ -2634,19 +2670,34 @@
         el.style.opacity = el.dataset.transitionOpacity || "";
         delete el.dataset.transitionOpacity;
       });
+      searchContainer.style.transition = oldTransition;
       shelfViewTransition = null;
     };
     shelfViewTransition = { finish };
-    const timing = { duration: 650, easing: "cubic-bezier(.22,.8,.22,1)", fill: "forwards" };
+
+    const flipTransform = (from, to) => {
+      const dx = to.left - from.left;
+      const dy = to.top - from.top;
+      const sx = to.width / from.width;
+      const sy = to.height / from.height;
+      return `translate3d(${dx}px, ${dy}px, 0) scale3d(${sx}, ${sy}, 1)`;
+    };
+
+    const timing = {
+      duration: 650,
+      easing: "cubic-bezier(.22,.8,.22,1)",
+      fill: "forwards"
+    };
+
     try {
       const animations = [
         shelf.animate([
-          { ...position(startImage), filter: fromSearch ? "brightness(.45)" : "brightness(1)" },
-          { ...position(endImage), filter: fromSearch ? "brightness(1)" : "brightness(.45)" }
+          { transform: "translate3d(0,0,0) scale3d(1,1,1)" },
+          { transform: flipTransform(startImage, endImage) }
         ], timing),
         lozenge.animate([
-          { ...position(startSearch), fontSize: fromSearch ? "1.4rem" : ".95rem" },
-          { ...position(endSearch), fontSize: fromSearch ? ".95rem" : "1.4rem" }
+          { transform: "translate3d(0,0,0) scale3d(1,1,1)" },
+          { transform: flipTransform(startSearch, endSearch) }
         ], timing)
       ];
       await Promise.all(animations.map(animation => animation.finished));
