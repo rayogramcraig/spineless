@@ -1233,7 +1233,8 @@
     }
 
     #results-pills {
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
       align-items: center;
       justify-content: center;
       gap: 0;
@@ -1259,12 +1260,17 @@
       border: 1px solid #ff5900;
       font-size: .8rem;
       min-width: 0;
-      flex: 1;
-      padding: 7px 12px;
+      width: max-content;
+      max-width: calc(100% + 14px);
+      padding: 7px 28px;
       font-weight: 400;
+      height: 30px;
+      line-height: 1;
+      position: relative;
+      z-index: 0;
     }
-    #pill-left { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-    #pill-right { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+    #pill-left { justify-self: end; margin-right: -14px; text-align: left; padding-right: 30px; }
+    #pill-right { justify-self: start; margin-left: -14px; text-align: right; padding-left: 30px; }
 
     .pill-side.disabled {
       opacity: 0.3;
@@ -1273,12 +1279,12 @@
     }
 
     .pill-main-wrapper {
-      flex: 0 1 auto;
-      min-width: 44%;
-      max-width: 66%;
+      width: max-content;
+      max-width: min(58vw, 380px);
       position: relative;
       display: flex;
       justify-content: center;
+      z-index: 1;
     }
 
     .pill-main {
@@ -1300,9 +1306,10 @@
     }
 
     .pill-main-label {
-      flex: 1;
+      flex: 0 1 auto;
       text-align: center;
       min-width: 0;
+      max-width: 38vw;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1323,19 +1330,19 @@
 
     .hit-nav-inline:disabled { opacity: 0.3; cursor: default; }
 
-    #pill-badge {
-      position: absolute;
-      top: -30px;
-      right: -6px;
-      height: 26px;
-      min-width: 38px;
-      border-radius: 999px;
-      display: flex;
-      overflow: hidden;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
-      font-size: 0.9rem;
-      font-weight: 700;
-    }
+	#pill-badge {
+	    position: absolute;
+	    top: -13px;
+	    right: 30px;
+	    height: 26px;
+	    min-width: 38px;
+	    border-radius: 999px;
+	    display: flex;
+	    overflow: hidden;
+	    /* box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4); */
+	    font-size: 0.9rem;
+	    font-weight: 700;
+	}
 
     .pill-badge-current, .pill-badge-total {
       padding: 0 6px;
@@ -1683,7 +1690,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.9</div>
+    <div id="build-version">v4.10</div>
   </div>
 
 <script>
@@ -2330,7 +2337,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.8 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.10 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -5549,14 +5556,14 @@
       pillRight.classList.add("disabled");
     } else if (prevIndex === nextIndex || (prevIndex === -1 || nextIndex === -1)) {
       const idx = prevIndex !== -1 ? prevIndex : nextIndex;
-      const label = truncateLabel(termList[idx], 10);
+      const label = termList[idx];
       pillLeft.textContent = label;
       pillRight.textContent = label;
       pillLeft.classList.add("disabled");
       pillRight.classList.add("disabled");
     } else {
-      pillLeft.textContent = truncateLabel(termList[prevIndex], 10);
-      pillRight.textContent = truncateLabel(termList[nextIndex], 10);
+      pillLeft.textContent = termList[prevIndex];
+      pillRight.textContent = termList[nextIndex];
       pillLeft.classList.remove("disabled");
       pillRight.classList.remove("disabled");
     }
