@@ -1690,7 +1690,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.10</div>
+    <div id="build-version">v4.11</div>
   </div>
 
 <script>
@@ -2337,7 +2337,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.10 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.11 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -2536,6 +2536,110 @@
   function showScreen(el) {
     [screenAdd, screenOCR, screenResults].forEach((s) => s.classList.remove("active"));
     el.classList.add("active");
+  }
+
+  // Animate the same shelf and search control between the two screen layouts.
+  // The temporary layers are visual only; the original controls remain interactive.
+  let shelfViewTransition = null;
+  function resultsPictureRect() {
+    const rect = resultsImage.getBoundingClientRect();
+    if (rect.width && rect.height) return rect;
+    const box = document.getElementById("results-image-inner").getBoundingClientRect();
+    const width = sourceCanvas?.width || activeShelfRecord?.image_width || 1;
+    const height = sourceCanvas?.height || activeShelfRecord?.image_height || 1;
+    const scale = Math.min(box.width / width, box.height / height);
+    const w = width * scale, h = height * scale;
+    return { left: box.left + (box.width - w) / 2, top: box.top + (box.height - h) / 2, width: w, height: h };
+  }
+  async function transitionShelfView(destination, prepare = () => {}) {
+    const fromSearch = destination === screenResults;
+    const sourceImage = fromSearch ? ocrBg : resultsImage;
+    const sourceSearch = fromSearch ? searchInput : utilityNewSearch;
+    const targetImage = fromSearch ? resultsImage : ocrBg;
+    const targetSearch = fromSearch ? utilityNewSearch : searchInput;
+    const previous = fromSearch ? screenOCR : screenResults;
+
+    if (shelfViewTransition) {
+      shelfViewTransition.finish();
+      shelfViewTransition = null;
+    }
+    if (!previous.classList.contains("active") ||
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+        !imageDataUrl || !sourceImage || !sourceSearch) {
+      prepare();
+      showScreen(destination);
+      return;
+    }
+
+    const startImage = sourceImage.getBoundingClientRect();
+    const startSearch = sourceSearch.getBoundingClientRect();
+    const searchContainer = screenOCR.querySelector(".search-container");
+    const oldTransition = searchContainer.style.transition;
+    searchContainer.style.transition = "none";
+    prepare();
+    showScreen(destination);
+    const endImage = fromSearch ? resultsPictureRect() : targetImage.getBoundingClientRect();
+    const endSearch = targetSearch.getBoundingClientRect();
+    requestAnimationFrame(() => { searchContainer.style.transition = oldTransition; });
+    if (![startImage, startSearch, endImage, endSearch].every(r => r.width && r.height)) return;
+
+    const shelf = document.createElement("img");
+    shelf.src = imageDataUrl;
+    shelf.alt = "";
+    const lozenge = document.createElement("div");
+    lozenge.textContent = "search";
+    const layers = [shelf, lozenge];
+    const hidden = [sourceImage, sourceSearch, targetImage, targetSearch];
+    const position = (rect) => ({
+      left: `${rect.left}px`, top: `${rect.top}px`,
+      width: `${rect.width}px`, height: `${rect.height}px`
+    });
+    Object.assign(shelf.style, position(startImage), {
+      position: "fixed", zIndex: "100", pointerEvents: "none",
+      objectFit: "cover", objectPosition: "center",
+      filter: fromSearch ? "brightness(.45)" : "brightness(1)"
+    });
+    Object.assign(lozenge.style, position(startSearch), {
+      position: "fixed", zIndex: "101", pointerEvents: "none",
+      display: "flex", alignItems: "center", borderRadius: "999px",
+      padding: "0 20px", background: "#fff", color: "#bfa89e",
+      fontFamily: "Chivo, sans-serif",
+      fontSize: fromSearch ? "1.4rem" : ".95rem",
+      boxShadow: "0 12px 30px rgba(0,0,0,.35)"
+    });
+    layers.forEach(el => document.body.appendChild(el));
+    hidden.forEach(el => { el.dataset.transitionOpacity = el.style.opacity; el.style.opacity = "0"; });
+
+    let completed = false;
+    const finish = () => {
+      if (completed) return;
+      completed = true;
+      layers.forEach(el => el.remove());
+      hidden.forEach(el => {
+        el.style.opacity = el.dataset.transitionOpacity || "";
+        delete el.dataset.transitionOpacity;
+      });
+      shelfViewTransition = null;
+    };
+    shelfViewTransition = { finish };
+    const timing = { duration: 650, easing: "cubic-bezier(.22,.8,.22,1)", fill: "forwards" };
+    try {
+      const animations = [
+        shelf.animate([
+          { ...position(startImage), filter: fromSearch ? "brightness(.45)" : "brightness(1)" },
+          { ...position(endImage), filter: fromSearch ? "brightness(1)" : "brightness(.45)" }
+        ], timing),
+        lozenge.animate([
+          { ...position(startSearch), fontSize: fromSearch ? "1.4rem" : ".95rem" },
+          { ...position(endSearch), fontSize: fromSearch ? ".95rem" : "1.4rem" }
+        ], timing)
+      ];
+      await Promise.all(animations.map(animation => animation.finished));
+    } catch (_) {
+      // A second navigation can cancel the animation.
+    } finally {
+      finish();
+    }
   }
 
   async function loadWordLists() {
@@ -3799,8 +3903,7 @@
     currentMatches = getMatchesForTerm(currentTerm);
     currentMatchIndex = 0;
 
-    setupResultsScreen();
-    showScreen(screenResults);
+    transitionShelfView(screenResults, setupResultsScreen);
     drawHighlightsForTerm(currentTerm, currentMatchIndex);
   }
 
@@ -5748,12 +5851,11 @@
   });
 
   btnNewSearch.addEventListener("click", () => {
-    showScreen(screenOCR);
-    screenOCR.classList.add("mode-search");
+    transitionShelfView(screenOCR, () => screenOCR.classList.add("mode-search"));
     stopScanPulses();
     searchInput.value = "";
     autosuggestEl.classList.remove("visible");
-    setTimeout(() => searchInput.focus(), 200);
+    setTimeout(() => searchInput.focus(), 680);
   });
 
   function openTermModal() {
