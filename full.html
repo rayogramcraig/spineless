@@ -742,6 +742,7 @@
 
     #recognized-title-source {
       position: absolute;
+      z-index: 2;
       right: 26px;
       top: -8px;
       padding: 3px 7px 2px;
@@ -1705,7 +1706,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.14</div>
+    <div id="build-version">v4.15</div>
   </div>
 
 <script>
@@ -2352,7 +2353,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.14 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.15 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
