@@ -900,7 +900,6 @@
     #results-scan-image { grid-column: auto; }
 
     #results-scan-copy {
-      display: none;
       margin-top: 16px;
       padding: 8px 13px;
       border: 1px solid rgba(255,122,26,0.72);
@@ -1721,7 +1720,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.16</div>
+    <div id="build-version">v4.17</div>
   </div>
 
 <script>
@@ -2368,7 +2367,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.16 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.17 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
