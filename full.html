@@ -792,49 +792,52 @@
     }
     #results-info-card {
       width: min(92%, 560px);
-      max-height: calc(100vh - 48px);
+      max-height: calc(100dvh - 48px);
       overflow: auto;
-      padding: 24px 28px 28px;
+      padding: 0;
       border: 2px solid #ff5900;
       border-radius: 28px;
       background: #000;
     }
+    #shelf-header { padding: 24px 28px 25px; }
     #shelf-heading {
       display: flex;
-      align-items: flex-start;
-      gap: 18px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
       color: #ff5900;
-      margin-bottom: 34px;
     }
-    #shelf-title {     font-size: clamp(1.7rem, 5vw, 2.7rem); font-weight: 800; }
+    #shelf-title { font-size: clamp(1.8rem, 6vw, 2.7rem); line-height: 1.1; font-weight: 800; overflow-wrap: anywhere; }
     #shelf-rename, #shelf-delete {
       border: 0;
       background: none;
       color: #ff5900;
       font: inherit;
-      cursor: default;
+      cursor: pointer;
     }
-    #shelf-rename { font-size: 1.5rem; }
-    #shelf-new-scan {
+    #shelf-rename { flex: none; padding: 6px; font-size: 1.5rem; line-height: 1; }
+    #shelf-rename svg { display: block; width: 26px; height: 26px; fill: currentColor; }
+    #shelf-date { margin-top: 8px; font-size: clamp(.9rem, 3.6vw, 1.1rem); }
+    #shelf-details-section { padding: 32px 28px 36px; border-top: 2px solid #ff5900; }
+    #shelf-actions { display: grid; gap: 20px; padding: 24px 28px 28px; border-top: 2px solid #ff5900; }
+    #shelf-new-scan, #shelf-delete {
       display: flex;
       align-items: center;
       gap: 18px;
+      width: fit-content;
+      margin: 0;
+      padding: 0;
       border: 0;
       background: none;
-      color: #fff;
+      color: #ff5900;
       font: inherit;
-      font-size: 1.7rem;
+      font-size: clamp(.9rem, 3.8vw, 1.25rem);
+      text-align: left;
       text-decoration: underline;
-      text-underline-offset: 5px;
+      text-underline-offset: 4px;
       cursor: pointer;
     }
-    #shelf-new-scan svg { width: 42px; height: 42px; color: #ff5900; }
-    #shelf-date { margin: 12px 0 34px 60px; font-size: 1.1rem; }
-    #results-scan-details-title { font-weight: 400; font-size: 1.2rem; }
-    #shelf-details-section { margin: 0 -28px; padding: 35px 5px 0 86px; border-top: 2px solid #ff5900; }
-    #shelf-delete { display: flex; align-items: center; gap: 24px; margin-top: 34px; font-size: 1.1rem; text-decoration: underline; text-underline-offset: 4px; }
-    #shelf-delete span { font-size: 2.5rem; line-height: 0.7; text-decoration: none; }
-    #results-info-close { float: right; border: 0; background: none; color: #ff5900; font-size: 1.8rem; cursor: pointer; }
+    #shelf-new-scan svg, #shelf-delete svg { flex: none; width: 32px; height: 32px; fill: currentColor; }
     #results-info-panel button:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
 
     #screen-results.scan-info-visible #results-info-panel {
@@ -850,6 +853,8 @@
       font-weight: 600;
       line-height: 1.12;
     }
+
+    #results-scan-details-title { font-size: 1rem; font-weight: 400; }
 
     #results-info-status-copy {
       margin-top: 7px;
@@ -895,6 +900,7 @@
     #results-scan-image { grid-column: auto; }
 
     #results-scan-copy {
+      display: none;
       margin-top: 16px;
       padding: 8px 13px;
       border: 1px solid rgba(255,122,26,0.72);
@@ -916,6 +922,10 @@
 
     @media (max-width: 430px) {
       #results-info-panel { padding-left: 20px; padding-right: 20px; }
+      #results-info-card { width: min(100%, 290px); }
+      #shelf-header { padding: 20px 20px 22px; }
+      #shelf-details-section { padding: 28px 20px 32px; }
+      #shelf-actions { padding: 22px 20px 25px; }
       #results-scan-details-grid { grid-template-columns: 1fr; gap: 3px; }
       #results-scan-rotations,
       #results-scan-image { grid-column: auto; }
@@ -1568,17 +1578,13 @@
     <div id="screen-results" class="screen">
       <div id="results-info-panel" aria-live="polite">
         <div id="results-info-card" role="dialog" aria-modal="true" aria-labelledby="shelf-title">
-          <button id="results-info-close" type="button" aria-label="Close shelf information">&times;</button>
-          <div id="shelf-heading">
-            <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzNyIgaGVpZ2h0PSIzMy4yMDUiIHZpZXdCb3g9IjAgMCAzNyAzMy4yMDUiPgogIDxnIGlkPSJHcm91cF8yOCIgZGF0YS1uYW1lPSJHcm91cCAyOCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTE1IC03OTkpIj4KICAgIDxnIGlkPSJSZWN0YW5nbGVfMjQiIGRhdGEtbmFtZT0iUmVjdGFuZ2xlIDI0IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxNSA4MDYpIiBmaWxsPSIjNzcwYzBkIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiI+CiAgICAgIDxyZWN0IHdpZHRoPSIzNyIgaGVpZ2h0PSIyMi40OCIgcng9IjMiIHN0cm9rZT0ibm9uZSIvPgogICAgICA8cmVjdCB4PSIxIiB5PSIxIiB3aWR0aD0iMzUiIGhlaWdodD0iMjAuNDgiIHJ4PSIyIiBmaWxsPSJub25lIi8+CiAgICA8L2c+CiAgICA8ZyBpZD0iUmVjdGFuZ2xlXzM5IiBkYXRhLW5hbWU9IlJlY3RhbmdsZSAzOSIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjAgODAzKSIgZmlsbD0iIzc3MGMwZCIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiPgogICAgICA8cmVjdCB3aWR0aD0iMjcuMDI4IiBoZWlnaHQ9IjI3LjEyMiIgcng9IjMiIHN0cm9rZT0ibm9uZSIvPgogICAgICA8cmVjdCB4PSIxIiB5PSIxIiB3aWR0aD0iMjUuMDI4IiBoZWlnaHQ9IjI1LjEyMiIgcng9IjIiIGZpbGw9Im5vbmUiLz4KICAgIDwvZz4KICAgIDxnIGlkPSJHcm91cF80OCIgZGF0YS1uYW1lPSJHcm91cCA0OCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjQuNTYzIDc5OSkiPgogICAgICA8ZyBpZD0iUmVjdGFuZ2xlXzE4IiBkYXRhLW5hbWU9IlJlY3RhbmdsZSAxOCIgZmlsbD0iIzc3MGMwZCIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiPgogICAgICAgIDxyZWN0IHdpZHRoPSIxNy44NzQiIGhlaWdodD0iMzMuMjA1IiByeD0iMyIgc3Ryb2tlPSJub25lIi8+CiAgICAgICAgPHJlY3QgeD0iMSIgeT0iMSIgd2lkdGg9IjE1Ljg3NCIgaGVpZ2h0PSIzMS4yMDUiIHJ4PSIyIiBmaWxsPSJub25lIi8+CiAgICAgIDwvZz4KICAgICAgPGcgaWQ9IlJlY3RhbmdsZV8xOSIgZGF0YS1uYW1lPSJSZWN0YW5nbGUgMTkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMTAuMjI5KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiPgogICAgICAgIDxyZWN0IHdpZHRoPSIxNy44NzQiIGhlaWdodD0iMTMuMjA2IiBzdHJva2U9Im5vbmUiLz4KICAgICAgICA8cmVjdCB4PSIxIiB5PSIxIiB3aWR0aD0iMTUuODc0IiBoZWlnaHQ9IjExLjIwNiIgZmlsbD0ibm9uZSIvPgogICAgICA8L2c+CiAgICAgIDxnIGlkPSJHcm91cF8xOSIgZGF0YS1uYW1lPSJHcm91cCAxOSIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNS4yMjIgNC45ODgpIj4KICAgICAgICA8bGluZSBpZD0iTGluZV83IiBkYXRhLW5hbWU9IkxpbmUgNyIgeDI9IjAuMTY4IiB5Mj0iNi41NTQiIHRyYW5zZm9ybT0ibWF0cml4KDAuOTQsIC0wLjM0MiwgMC4zNDIsIDAuOTQsIDAsIDAuMTc4KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgICA8bGluZSBpZD0iTGluZV8xOCIgZGF0YS1uYW1lPSJMaW5lIDE4IiB5Mj0iNC40ODQiIHRyYW5zZm9ybT0ibWF0cml4KDAuOTQsIC0wLjM0MiwgMC4zNDIsIDAuOTQsIDMuMDQ4LCAyLjExKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgICA8bGluZSBpZD0iTGluZV8xMCIgZGF0YS1uYW1lPSJMaW5lIDEwIiB5Mj0iNi40NTkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDYuODk1KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgPC9nPgogICAgICA8ZyBpZD0iR3JvdXBfMjIiIGRhdGEtbmFtZT0iR3JvdXAgMjIiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDYuMjg2IDE1LjEyMSkiPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzkiIGRhdGEtbmFtZT0iTGluZSA5IiB5Mj0iNS45MDciIHRyYW5zZm9ybT0idHJhbnNsYXRlKDcuOTQ4IDMuMTExKSByb3RhdGUoOTApIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzUiIGRhdGEtbmFtZT0iTGluZSA1IiB4MT0iMC4wNCIgeTI9IjYuNzU5IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgtMC45NDMgMCkgcm90YXRlKDkpIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICAgIDxwYXRoIGlkPSJQYXRoXzE0IiBkYXRhLW5hbWU9IlBhdGggMTQiIGQ9Ik0wLDBWNS45MTQiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDcuOTQ4IDUuNjc0KSByb3RhdGUoOTApIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzEwLTIiIGRhdGEtbmFtZT0iTGluZSAxMCIgeTI9IjUuOTA3IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSg3Ljk0OCAwLjQxOCkgcm90YXRlKDkwKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgPC9nPgogICAgICA8ZyBpZD0iR3JvdXBfMjEiIGRhdGEtbmFtZT0iR3JvdXAgMjEiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDYuODk3IDI0LjQwNikiPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzctMiIgZGF0YS1uYW1lPSJMaW5lIDciIHkyPSI1LjkyNiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNS4xMTYgMS4wOCkiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmNTkwMCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgICAgICAgPGxpbmUgaWQ9IkxpbmVfNiIgZGF0YS1uYW1lPSJMaW5lIDYiIHkyPSI3LjAwNiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMi4yMDIpIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzE5IiBkYXRhLW5hbWU9IkxpbmUgMTkiIHkyPSI1LjkyNiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMCAxLjA4KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgPC9nPgogICAgPC9nPgogIDwvZz4KPC9zdmc+Cg==" width="37" height="34" alt="" />
-            <span id="shelf-title">Living Room</span>
-            <button id="shelf-rename" type="button" aria-label="Rename shelf, coming soon" title="Rename shelf, coming soon">✎</button>
+          <div id="shelf-header">
+            <div id="shelf-heading">
+              <span id="shelf-title">Living Room</span>
+              <button id="shelf-rename" type="button" aria-label="Rename shelf, coming soon" title="Rename shelf, coming soon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17.25 0 3.75 3.75 0L17.8 9.94l-3.75-3.75L3 17.25Zm17.7-10.2a1 1 0 0 0 0-1.42l-2.33-2.33a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"/></svg></button>
+            </div>
+            <div id="shelf-date"></div>
           </div>
-          <button id="shelf-new-scan" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M8 4 6.5 6H3a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.5L16 4H8Zm4 14a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>
-            <span>New Scan</span>
-          </button>
-          <div id="shelf-date"></div>
           <div id="shelf-details-section">
         <div id="results-info-status">
           <div id="results-info-status-title">Identifying your books…</div>
@@ -1602,7 +1608,16 @@
           <button id="results-scan-copy" type="button" title="Copy full diagnostic information">copy full diagnostic info</button>
         </div>
           </div>
-          <button id="shelf-delete" type="button" aria-label="Delete bookshelf, coming soon" title="Delete bookshelf, coming soon"><span aria-hidden="true">×</span>Delete bookshelf</button>
+          <div id="shelf-actions">
+            <button id="shelf-new-scan" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4 6.5 6H3a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.5L16 4H8Zm4 14a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>
+              <span>Replace With New Scan</span>
+            </button>
+            <button id="shelf-delete" type="button" aria-label="Delete bookshelf, coming soon" title="Delete bookshelf, coming soon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.1 4.9 17.1 2.9 12 8 6.9 2.9 4.9 4.9 10 10 4.9 15.1 6.9 17.1 12 12 17.1 17.1 19.1 15.1 14 10Z" transform="translate(0 2)"/></svg>
+              <span>Delete bookshelf</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1706,7 +1721,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.15</div>
+    <div id="build-version">v4.16</div>
   </div>
 
 <script>
@@ -2353,7 +2368,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.15 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.textContent = `v4.16 · ${PROCESSING_MODE}`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
@@ -2449,7 +2464,7 @@
     const complete = isFullIDComplete();
     const created = activeShelfRecord?.created_at;
     if (shelfDate) shelfDate.textContent = created
-      ? "◴ " + new Date(created).toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
+      ? "◴  " + new Date(created).toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric" }) + " - " + new Date(created).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }).replace(" AM", "am").replace(" PM", "pm")
       : "";
     if (!complete) {
       if (resultsInfoStatus) resultsInfoStatus.classList.remove("hidden");
