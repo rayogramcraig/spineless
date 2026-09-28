@@ -74,6 +74,21 @@
     .screen.active { display: block; }
     .hidden { display: none !important; }
 
+    #screen-shelves { background: #810b0d; padding: 22px 12px 14px; }
+    .shelves-card { height: 100%; max-width: 560px; margin: auto; overflow-y: auto; border-radius: 26px; background: #000; padding: 22px 26px 32px; }
+    .shelves-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 20px 32px; color: #ff5900; }
+    .shelves-heading h1 { font-size: 29px; font-weight: 600; }
+    .shelves-heading button { border: 0; background: none; color: inherit; font-size: 42px; line-height: 1; cursor: pointer; }
+    #shelves-list { display: grid; gap: 20px; margin-left: 20px; }
+    .shelf-list-row { position: relative; width: 100%; min-height: 52px; border: 1px solid #666; border-radius: 16px; background: #000; color: #fff; padding: 6px 14px; text-align: left; font-size: 28px; cursor: pointer; overflow-wrap: anywhere; }
+    .shelf-list-row::before { content: '▤'; display: inline-block; margin-right: 13px; color: #ff5900; font-size: 24px; vertical-align: 1px; }
+    .shelf-list-row.current::after { content: ''; position: absolute; width: 12px; height: 12px; left: -22px; top: calc(50% - 6px); border-radius: 50%; background: #ff5900; }
+    #shelves-message { margin: 15px 20px; color: #fff; }
+    #shelves-back { margin: 30px 20px 0; border: 0; background: none; color: #ff5900; font-size: 17px; cursor: pointer; }
+    #shelf-name-input { display: none; min-width: 0; width: 100%; border: 1px solid #ff5900; border-radius: 8px; padding: 5px 8px; background: #111; color: #fff; font-size: clamp(1.4rem, 5vw, 2rem); }
+    #shelf-heading.editing #shelf-title { display: none; }
+    #shelf-heading.editing #shelf-name-input { display: block; }
+
     /* ADD IMAGE SCREEN — new camera-first onboarding */
     #screen-add {
       background: #8c0b0d;
@@ -1529,6 +1544,15 @@
       </div>
     </div>
 
+    <div id="screen-shelves" class="screen">
+      <div class="shelves-card">
+        <div class="shelves-heading"><h1>Bookshelves</h1><button id="shelves-add" type="button" aria-label="Add bookshelf">+</button></div>
+        <div id="shelves-list" aria-label="Your bookshelves"></div>
+        <p id="shelves-message" role="status"></p>
+        <button id="shelves-back" type="button">← Back</button>
+      </div>
+    </div>
+
     <!-- OCR / SCANNING -->
     <div id="screen-ocr" class="screen">
       <div id="ocr-bg"></div>
@@ -1579,8 +1603,8 @@
         <div id="results-info-card" role="dialog" aria-modal="true" aria-labelledby="shelf-title">
           <div id="shelf-header">
             <div id="shelf-heading">
-              <span id="shelf-title">Living Room</span>
-              <button id="shelf-rename" type="button" aria-label="Rename shelf, coming soon" title="Rename shelf, coming soon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17.25 0 3.75 3.75 0L17.8 9.94l-3.75-3.75L3 17.25Zm17.7-10.2a1 1 0 0 0 0-1.42l-2.33-2.33a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"/></svg></button>
+              <span id="shelf-title">Bookshelf 1</span><input id="shelf-name-input" type="text" maxlength="80" aria-label="Bookshelf name" />
+              <button id="shelf-rename" type="button" aria-label="Rename bookshelf" title="Rename bookshelf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17.25 0 3.75 3.75 0L17.8 9.94l-3.75-3.75L3 17.25Zm17.7-10.2a1 1 0 0 0 0-1.42l-2.33-2.33a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"/></svg></button>
             </div>
             <div id="shelf-date"></div>
           </div>
@@ -1673,7 +1697,7 @@
       </div>
 
       <div id="results-utility-bar" aria-label="Results controls">
-        <button id="utility-new-image" class="results-utility-icon" aria-label="New picture" title="New picture">
+        <button id="utility-new-image" class="results-utility-icon" aria-label="Bookshelves" title="Bookshelves">
           <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzNyIgaGVpZ2h0PSIzMy4yMDUiIHZpZXdCb3g9IjAgMCAzNyAzMy4yMDUiPgogIDxnIGlkPSJHcm91cF8yOCIgZGF0YS1uYW1lPSJHcm91cCAyOCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTE1IC03OTkpIj4KICAgIDxnIGlkPSJSZWN0YW5nbGVfMjQiIGRhdGEtbmFtZT0iUmVjdGFuZ2xlIDI0IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxNSA4MDYpIiBmaWxsPSIjNzcwYzBkIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiI+CiAgICAgIDxyZWN0IHdpZHRoPSIzNyIgaGVpZ2h0PSIyMi40OCIgcng9IjMiIHN0cm9rZT0ibm9uZSIvPgogICAgICA8cmVjdCB4PSIxIiB5PSIxIiB3aWR0aD0iMzUiIGhlaWdodD0iMjAuNDgiIHJ4PSIyIiBmaWxsPSJub25lIi8+CiAgICA8L2c+CiAgICA8ZyBpZD0iUmVjdGFuZ2xlXzM5IiBkYXRhLW5hbWU9IlJlY3RhbmdsZSAzOSIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjAgODAzKSIgZmlsbD0iIzc3MGMwZCIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiPgogICAgICA8cmVjdCB3aWR0aD0iMjcuMDI4IiBoZWlnaHQ9IjI3LjEyMiIgcng9IjMiIHN0cm9rZT0ibm9uZSIvPgogICAgICA8cmVjdCB4PSIxIiB5PSIxIiB3aWR0aD0iMjUuMDI4IiBoZWlnaHQ9IjI1LjEyMiIgcng9IjIiIGZpbGw9Im5vbmUiLz4KICAgIDwvZz4KICAgIDxnIGlkPSJHcm91cF80OCIgZGF0YS1uYW1lPSJHcm91cCA0OCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjQuNTYzIDc5OSkiPgogICAgICA8ZyBpZD0iUmVjdGFuZ2xlXzE4IiBkYXRhLW5hbWU9IlJlY3RhbmdsZSAxOCIgZmlsbD0iIzc3MGMwZCIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiPgogICAgICAgIDxyZWN0IHdpZHRoPSIxNy44NzQiIGhlaWdodD0iMzMuMjA1IiByeD0iMyIgc3Ryb2tlPSJub25lIi8+CiAgICAgICAgPHJlY3QgeD0iMSIgeT0iMSIgd2lkdGg9IjE1Ljg3NCIgaGVpZ2h0PSIzMS4yMDUiIHJ4PSIyIiBmaWxsPSJub25lIi8+CiAgICAgIDwvZz4KICAgICAgPGcgaWQ9IlJlY3RhbmdsZV8xOSIgZGF0YS1uYW1lPSJSZWN0YW5nbGUgMTkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMTAuMjI5KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiPgogICAgICAgIDxyZWN0IHdpZHRoPSIxNy44NzQiIGhlaWdodD0iMTMuMjA2IiBzdHJva2U9Im5vbmUiLz4KICAgICAgICA8cmVjdCB4PSIxIiB5PSIxIiB3aWR0aD0iMTUuODc0IiBoZWlnaHQ9IjExLjIwNiIgZmlsbD0ibm9uZSIvPgogICAgICA8L2c+CiAgICAgIDxnIGlkPSJHcm91cF8xOSIgZGF0YS1uYW1lPSJHcm91cCAxOSIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNS4yMjIgNC45ODgpIj4KICAgICAgICA8bGluZSBpZD0iTGluZV83IiBkYXRhLW5hbWU9IkxpbmUgNyIgeDI9IjAuMTY4IiB5Mj0iNi41NTQiIHRyYW5zZm9ybT0ibWF0cml4KDAuOTQsIC0wLjM0MiwgMC4zNDIsIDAuOTQsIDAsIDAuMTc4KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgICA8bGluZSBpZD0iTGluZV8xOCIgZGF0YS1uYW1lPSJMaW5lIDE4IiB5Mj0iNC40ODQiIHRyYW5zZm9ybT0ibWF0cml4KDAuOTQsIC0wLjM0MiwgMC4zNDIsIDAuOTQsIDMuMDQ4LCAyLjExKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgICA8bGluZSBpZD0iTGluZV8xMCIgZGF0YS1uYW1lPSJMaW5lIDEwIiB5Mj0iNi40NTkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDYuODk1KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgPC9nPgogICAgICA8ZyBpZD0iR3JvdXBfMjIiIGRhdGEtbmFtZT0iR3JvdXAgMjIiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDYuMjg2IDE1LjEyMSkiPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzkiIGRhdGEtbmFtZT0iTGluZSA5IiB5Mj0iNS45MDciIHRyYW5zZm9ybT0idHJhbnNsYXRlKDcuOTQ4IDMuMTExKSByb3RhdGUoOTApIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzUiIGRhdGEtbmFtZT0iTGluZSA1IiB4MT0iMC4wNCIgeTI9IjYuNzU5IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgtMC45NDMgMCkgcm90YXRlKDkpIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICAgIDxwYXRoIGlkPSJQYXRoXzE0IiBkYXRhLW5hbWU9IlBhdGggMTQiIGQ9Ik0wLDBWNS45MTQiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDcuOTQ4IDUuNjc0KSByb3RhdGUoOTApIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzEwLTIiIGRhdGEtbmFtZT0iTGluZSAxMCIgeTI9IjUuOTA3IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSg3Ljk0OCAwLjQxOCkgcm90YXRlKDkwKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgPC9nPgogICAgICA8ZyBpZD0iR3JvdXBfMjEiIGRhdGEtbmFtZT0iR3JvdXAgMjEiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDYuODk3IDI0LjQwNikiPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzctMiIgZGF0YS1uYW1lPSJMaW5lIDciIHkyPSI1LjkyNiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNS4xMTYgMS4wOCkiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmNTkwMCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgICAgICAgPGxpbmUgaWQ9IkxpbmVfNiIgZGF0YS1uYW1lPSJMaW5lIDYiIHkyPSI3LjAwNiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMi4yMDIpIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzE5IiBkYXRhLW5hbWU9IkxpbmUgMTkiIHkyPSI1LjkyNiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMCAxLjA4KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgPC9nPgogICAgPC9nPgogIDwvZz4KPC9zdmc+Cg==" width="37" height="34" alt="" />
         </button>
         <button id="utility-data" class="results-utility-icon" aria-label="Scan details" title="Scan details" aria-expanded="false">
@@ -1720,13 +1744,14 @@
       </div>
     </div>
 
-    <div id="build-version">v4.17</div>
+    <div id="build-version">v4.18</div>
   </div>
 
 <script>
   const screenAdd = document.getElementById("screen-add");
   const screenOCR = document.getElementById("screen-ocr");
   const screenResults = document.getElementById("screen-results");
+  const screenShelves = document.getElementById("screen-shelves");
   const imageInput = document.getElementById("imageInput");
   const ocrBg = document.getElementById("ocr-bg");
   const ocrProgress = document.getElementById("ocr-progress");
@@ -1787,6 +1812,64 @@
   let shelfRefreshTimer = null;
   let persistenceBusy = false;
   let latestServerBookRows = [];
+  let shelfListReturnScreen = screenResults;
+  let nextShelfNumber = 1;
+
+  async function fetchUserShelves() {
+    const session = await ensureSpinelessSession();
+    if (!session?.user) throw new Error("Your shelves are unavailable right now.");
+    const { data, error } = await sb.from("shelves").select("*")
+      .eq("user_id", session.user.id).order("created_at", { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  function nextAvailableShelfNumber(shelves) {
+    const used = new Set(shelves.map(s => /^bookshelf\s+(\d+)$/i.exec(String(s.name || "").trim()))
+      .filter(Boolean).map(match => Number(match[1])));
+    let number = 1;
+    while (used.has(number)) number++;
+    return number;
+  }
+
+  async function openShelfList() {
+    shelfListReturnScreen = [screenResults, screenOCR, screenAdd].find(s => s.classList.contains("active")) || screenAdd;
+    scanInfoOpen = false;
+    updateResultsInfoPanel();
+    showScreen(screenShelves);
+    const list = document.getElementById("shelves-list");
+    const message = document.getElementById("shelves-message");
+    list.replaceChildren();
+    message.textContent = "Loading bookshelves…";
+    try {
+      const shelves = sb ? await fetchUserShelves() : [];
+      nextShelfNumber = nextAvailableShelfNumber(shelves);
+      message.textContent = shelves.length ? "" : "No bookshelves yet. Tap + to add one.";
+      for (const shelf of shelves) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "shelf-list-row" + (shelf.id === activeShelfId ? " current" : "");
+        row.textContent = shelf.name || "Untitled bookshelf";
+        row.addEventListener("click", async () => {
+          if (shelf.id === activeShelfId) { showScreen(shelfListReturnScreen); return; }
+          message.textContent = `Opening ${shelf.name || "bookshelf"}…`;
+          row.disabled = true;
+          try {
+            if (shelfRefreshTimer) { clearTimeout(shelfRefreshTimer); shelfRefreshTimer = null; }
+            await restoreShelfRecord(shelf);
+          } catch (error) {
+            console.warn("Could not open bookshelf:", error);
+            message.textContent = "Could not open this bookshelf. Please try again.";
+            row.disabled = false;
+          }
+        });
+        list.append(row);
+      }
+    } catch (error) {
+      console.warn("Could not list bookshelves:", error);
+      message.textContent = "Could not load bookshelves. Please try again.";
+    }
+  }
 
   function showRecoveryNote(message = "restoring your shelf…") {
     if (!sessionRecoveryNote) return;
@@ -1830,11 +1913,13 @@
     const session = await ensureSpinelessSession();
     if (!session?.user) return null;
 
+    const shelves = await fetchUserShelves();
+    const name = `Bookshelf ${nextAvailableShelfNumber(shelves)}`;
     const { data: shelf, error } = await sb
       .from("shelves")
       .insert({
         user_id: session.user.id,
-        name: "My Shelf",
+        name,
         status: "reading",
         processing_mode: PROCESSING_MODE,
         image_width: width,
@@ -2123,6 +2208,7 @@
   function applyPersistentShelfStatus(shelf) {
     if (!shelf) return;
     activeShelfRecord = shelf;
+    document.getElementById("shelf-title").textContent = shelf.name || "Untitled bookshelf";
     backgroundSpineCount = Math.max(0, Number(shelf.estimated_spines || 0));
     backgroundProcessPercent = Math.max(0, Math.min(100, Number(shelf.processing_progress || 0)));
 
@@ -2461,6 +2547,7 @@
 
   function updateResultsInfoPanel() {
     const complete = isFullIDComplete();
+    document.getElementById("shelf-title").textContent = activeShelfRecord?.name || `Bookshelf ${nextShelfNumber}`;
     const created = activeShelfRecord?.created_at;
     if (shelfDate) shelfDate.textContent = created
       ? "◴  " + new Date(created).toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric" }) + " - " + new Date(created).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }).replace(" AM", "am").replace(" PM", "pm")
@@ -2564,7 +2651,7 @@
   ]);
 
   function showScreen(el) {
-    [screenAdd, screenOCR, screenResults].forEach((s) => s.classList.remove("active"));
+    [screenAdd, screenOCR, screenResults, screenShelves].forEach((s) => s.classList.remove("active"));
     el.classList.add("active");
   }
 
@@ -6064,7 +6151,53 @@ const cropW = Math.max(1, x1 - x0);
     openBookModal();
   });
   bookModalBackdrop.addEventListener("click", closeBookModal);
-  // Shelf switching is reserved for the multiple-shelves feature.
+  utilityNewImage.addEventListener("click", openShelfList);
+  document.getElementById("shelves-add").addEventListener("click", () => btnNewImage.click());
+  document.getElementById("shelves-back").addEventListener("click", () => showScreen(shelfListReturnScreen));
+
+  const shelfHeading = document.getElementById("shelf-heading");
+  const shelfNameInput = document.getElementById("shelf-name-input");
+  const shelfRename = document.getElementById("shelf-rename");
+  function stopShelfRename() { shelfHeading.classList.remove("editing"); shelfRename.disabled = false; }
+  async function saveShelfName() {
+    if (!shelfHeading.classList.contains("editing")) return;
+    const name = shelfNameInput.value.trim();
+    if (!name) { shelfNameInput.focus(); return; }
+    if (!activeShelfId || !sb) {
+      if (activeShelfRecord) activeShelfRecord.name = name;
+      document.getElementById("shelf-title").textContent = name;
+      stopShelfRename();
+      return;
+    }
+    shelfRename.disabled = true;
+    try {
+      const { data, error } = await sb.from("shelves").update({ name })
+        .eq("id", activeShelfId).eq("user_id", spinelessSession.user.id).select("*").single();
+      if (error) throw error;
+      activeShelfRecord = data;
+      document.getElementById("shelf-title").textContent = data.name;
+      stopShelfRename();
+    } catch (error) {
+      console.warn("Could not rename bookshelf:", error);
+      shelfNameInput.setCustomValidity("Could not save name. Please try again.");
+      shelfNameInput.reportValidity();
+      shelfNameInput.setCustomValidity("");
+      shelfRename.disabled = false;
+    }
+  }
+  shelfRename.addEventListener("click", () => {
+    if (shelfHeading.classList.contains("editing")) { saveShelfName(); return; }
+    shelfNameInput.value = activeShelfRecord?.name || document.getElementById("shelf-title").textContent;
+    shelfHeading.classList.add("editing");
+    shelfNameInput.focus();
+    shelfNameInput.select();
+  });
+  shelfNameInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); saveShelfName(); }
+    if (e.key === "Escape") { e.stopPropagation(); stopShelfRename(); }
+  });
+  shelfNameInput.addEventListener("blur", saveShelfName);
+
   if (document.getElementById("shelf-new-scan")) document.getElementById("shelf-new-scan").addEventListener("click", () => {
     scanInfoOpen = false;
     updateResultsInfoPanel();
@@ -6092,6 +6225,7 @@ const cropW = Math.max(1, x1 - x0);
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      if (screenShelves.classList.contains("active")) showScreen(shelfListReturnScreen);
       closeTermModal();
       closeBookModal();
       if (scanInfoOpen) {
