@@ -1752,7 +1752,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.20</div>
+    <div id="build-version">v4.21</div>
   </div>
 
 <script>
@@ -1835,7 +1835,9 @@
     if (error) throw error;
     // A scan can leave a row behind if its image upload failed. Such a row
     // cannot be opened and must not appear as a bookshelf in the UI.
-    return (data || []).filter(shelf => Boolean(shelf.image_path));
+    return (data || []).filter(shelf =>
+      Boolean(shelf.image_path) && String(shelf.name || "").trim().toLowerCase() !== "my shelf"
+    );
   }
 
   function nextAvailableShelfNumber(shelves) {
