@@ -505,6 +505,13 @@
       transform: translate(-50%, 0);
     }
     #screen-ocr.mode-search #scan-word-overlay { display: none; }
+    #search-shelves {
+      display: none; position: absolute; left: 16px; bottom: 16px; z-index: 18;
+      width: 44px; height: 46px; align-items: center; justify-content: center;
+      padding: 0; border: 0; background: transparent; color: #ff5900; cursor: pointer;
+    }
+    #screen-ocr.mode-search #search-shelves { display: flex; }
+    #search-shelves img { width: 37px; height: 34px; }
 
     #ocr-progress {
       display: none !important;
@@ -1523,7 +1530,7 @@
 <body>
   <div id="app">
     <!-- ADD IMAGE -->
-    <div id="screen-add" class="screen active">
+    <div id="screen-add" class="screen">
       <div class="add-stage">
         <div class="camera-card" aria-label="Scan your books">
           <input type="file" id="imageInput" accept="image/*" aria-label="Take a picture or choose a bookshelf photo" />
@@ -1544,7 +1551,7 @@
       </div>
     </div>
 
-    <div id="screen-shelves" class="screen">
+    <div id="screen-shelves" class="screen active">
       <div class="shelves-card">
         <div class="shelves-heading"><h1>Bookshelves</h1><button id="shelves-add" type="button" aria-label="Add bookshelf">+</button></div>
         <div id="shelves-list" aria-label="Your bookshelves"></div>
@@ -1574,6 +1581,7 @@
         </div>
         <div id="search-catalog-stats"></div>
       </div>
+      <button id="search-shelves" type="button" aria-label="Bookshelves" title="Bookshelves"></button>
 
       <div id="cataloging-overlay">
         <div id="cataloging-card">
@@ -1744,7 +1752,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.18</div>
+    <div id="build-version">v4.20</div>
   </div>
 
 <script>
@@ -1815,13 +1823,19 @@
   let shelfListReturnScreen = screenResults;
   let nextShelfNumber = 1;
 
+  function updateSearchPlaceholder() {
+    searchInput.placeholder = `search ${activeShelfRecord?.name || `Bookshelf ${nextShelfNumber}`}`;
+  }
+
   async function fetchUserShelves() {
     const session = await ensureSpinelessSession();
     if (!session?.user) throw new Error("Your shelves are unavailable right now.");
     const { data, error } = await sb.from("shelves").select("*")
       .eq("user_id", session.user.id).order("created_at", { ascending: false });
     if (error) throw error;
-    return data || [];
+    // A scan can leave a row behind if its image upload failed. Such a row
+    // cannot be opened and must not appear as a bookshelf in the UI.
+    return (data || []).filter(shelf => Boolean(shelf.image_path));
   }
 
   function nextAvailableShelfNumber(shelves) {
@@ -1833,7 +1847,9 @@
   }
 
   async function openShelfList() {
-    shelfListReturnScreen = [screenResults, screenOCR, screenAdd].find(s => s.classList.contains("active")) || screenAdd;
+    if (!screenShelves.classList.contains("active")) {
+      shelfListReturnScreen = [screenResults, screenOCR, screenAdd].find(s => s.classList.contains("active")) || screenAdd;
+    }
     scanInfoOpen = false;
     updateResultsInfoPanel();
     showScreen(screenShelves);
@@ -1934,23 +1950,32 @@
 
     activeShelfId = shelf.id;
     activeShelfRecord = shelf;
+    updateSearchPlaceholder();
 
     const imagePath = `${session.user.id}/${shelf.id}/source.jpg`;
     const blob = await dataUrlToBlob(dataUrl);
-    const { error: uploadError } = await sb.storage
-      .from(SHELF_IMAGE_BUCKET)
-      .upload(imagePath, blob, { contentType: "image/jpeg", upsert: true });
-    if (uploadError) throw uploadError;
+    let updated;
+    try {
+      const { error: uploadError } = await sb.storage
+        .from(SHELF_IMAGE_BUCKET)
+        .upload(imagePath, blob, { contentType: "image/jpeg", upsert: true });
+      if (uploadError) throw uploadError;
 
-    const { data: updated, error: updateError } = await sb
-      .from("shelves")
-      .update({ image_path: imagePath })
-      .eq("id", shelf.id)
-      .select("*")
-      .single();
-    if (updateError) throw updateError;
+      const result = await sb.from("shelves")
+        .update({ image_path: imagePath }).eq("id", shelf.id)
+        .select("*").single();
+      if (result.error) throw result.error;
+      updated = result.data;
+    } catch (error) {
+      // Keep the list free of rows created before a failed image upload.
+      await sb.from("shelves").delete().eq("id", shelf.id).eq("user_id", session.user.id);
+      activeShelfId = null;
+      activeShelfRecord = null;
+      throw error;
+    }
 
     activeShelfRecord = updated;
+    updateSearchPlaceholder();
     subscribeToShelf(updated.id);
     return updated;
   }
@@ -2208,6 +2233,7 @@
   function applyPersistentShelfStatus(shelf) {
     if (!shelf) return;
     activeShelfRecord = shelf;
+    updateSearchPlaceholder();
     document.getElementById("shelf-title").textContent = shelf.name || "Untitled bookshelf";
     backgroundSpineCount = Math.max(0, Number(shelf.estimated_spines || 0));
     backgroundProcessPercent = Math.max(0, Math.min(100, Number(shelf.processing_progress || 0)));
@@ -2320,6 +2346,7 @@
     if (!sb || !shelf?.id || !shelf.image_path) return false;
     activeShelfId = shelf.id;
     activeShelfRecord = shelf;
+    updateSearchPlaceholder();
     subscribeToShelf(shelf.id);
 
     const { data: blob, error } = await sb.storage.from(SHELF_IMAGE_BUCKET).download(shelf.image_path);
@@ -2351,26 +2378,7 @@
   }
 
   async function bootstrapPersistentSession() {
-    if (!sb) return;
-    showRecoveryNote("restoring your shelf…");
-    try {
-      const session = await ensureSpinelessSession();
-      if (!session?.user) return;
-
-      const { data: shelves, error } = await sb
-        .from("shelves")
-        .select("*")
-        .eq("user_id", session.user.id)
-        .order("created_at", { ascending: false })
-        .limit(1);
-      if (error) throw error;
-      const latest = shelves?.[0];
-      if (latest?.image_path) await restoreShelfRecord(latest);
-    } catch (err) {
-      console.warn("Session/shelf recovery unavailable:", err);
-    } finally {
-      hideRecoveryNote();
-    }
+    await openShelfList();
   }
 
   const resultsImage = document.getElementById("results-image");
@@ -6019,6 +6027,7 @@
   });
 
   btnNewSearch.addEventListener("click", () => {
+    updateSearchPlaceholder();
     transitionShelfView(screenOCR, () => screenOCR.classList.add("mode-search"));
     stopScanPulses();
     searchInput.value = "";
@@ -6152,6 +6161,9 @@ const cropW = Math.max(1, x1 - x0);
   });
   bookModalBackdrop.addEventListener("click", closeBookModal);
   utilityNewImage.addEventListener("click", openShelfList);
+  const searchShelves = document.getElementById("search-shelves");
+  searchShelves.innerHTML = utilityNewImage.innerHTML;
+  searchShelves.addEventListener("click", openShelfList);
   document.getElementById("shelves-add").addEventListener("click", () => btnNewImage.click());
   document.getElementById("shelves-back").addEventListener("click", () => showScreen(shelfListReturnScreen));
 
@@ -6175,6 +6187,7 @@ const cropW = Math.max(1, x1 - x0);
         .eq("id", activeShelfId).eq("user_id", spinelessSession.user.id).select("*").single();
       if (error) throw error;
       activeShelfRecord = data;
+      updateSearchPlaceholder();
       document.getElementById("shelf-title").textContent = data.name;
       stopShelfRename();
     } catch (error) {
@@ -6243,9 +6256,7 @@ const cropW = Math.max(1, x1 - x0);
 
   loadWordLists();
 
-  // Restore the Supabase session and most-recent shelf on every visit. The auth
-  // token is persisted by supabase-js, so simply reopening this URL in the same
-  // browser resumes the shelf without a special return link.
+  // Open the shelf list first. Selecting a shelf restores its saved search state.
   bootstrapPersistentSession();
 </script>
 
