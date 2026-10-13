@@ -1059,9 +1059,14 @@
       font-size: 0.68rem;
       font-weight: 600;
       letter-spacing: 0.04em;
-      color: rgba(255,255,255,0.42);
-      pointer-events: none;
+      color: #fff;
+      background: #ff7a1a;
+      border: 0;
+      border-radius: 3px;
+      padding: 3px 5px;
+      cursor: pointer;
       user-select: none;
+      -webkit-tap-highlight-color: transparent;
     }
 
     /* BOOK DETAIL MODAL */
@@ -1755,7 +1760,7 @@
       </div>
     </div>
 
-    <div id="build-version">v4.22</div>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.22</button>
   </div>
 
 <script>
@@ -1801,6 +1806,14 @@
   const shelfDate = document.getElementById("shelf-date");
   const buildVersion = document.getElementById("build-version");
   const sessionRecoveryNote = document.getElementById("session-recovery-note");
+
+  // Request a fresh copy of the HTML even in the iPhone Home Screen web app.
+  // This does not clear Supabase data or local storage.
+  buildVersion?.addEventListener("click", () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("_refresh", Date.now().toString());
+    window.location.replace(url.toString());
+  });
 
   /* ==========================
      PERSISTENT SUPABASE SHELF
@@ -2466,7 +2479,7 @@
   const PROCESSING_MODE = ["ocr", "assist", "full"].includes(requestedMode) ? requestedMode : "full";
   const USE_AI_ASSIST = PROCESSING_MODE !== "ocr";
   const USE_BOOK_ID = PROCESSING_MODE === "full";
-  if (buildVersion) buildVersion.textContent = `v4.17 · ${PROCESSING_MODE}`;
+  if (buildVersion) buildVersion.title = `Refresh Spineless (mode: ${PROCESSING_MODE})`;
 
   // Two-stage OCR rescue. Deploy the supplied Supabase Edge Function as `ocr-rescue`.. Deploy the supplied Supabase Edge Function as `ocr-rescue`.
   const OCR_RESCUE_ENDPOINT = "https://npjiuowtneivxbgskobd.supabase.co/functions/v1/ocr-rescue";
