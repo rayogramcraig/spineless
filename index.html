@@ -237,8 +237,8 @@
     #screen-ocr.mode-search #search-shelf-panel { display: block; }
     #search-shelf-header {
       display: flex;
-      align-items: center;
-      justify-content: center;
+      align-items: flex-start;
+      justify-content: flex-start;
       position: absolute;
       top: 17px;
       left: 18px;
@@ -246,15 +246,20 @@
       min-height: 43px;
     }
     #search-shelf-name {
-      max-width: calc(100% - 48px);
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      line-clamp: 3;
+      width: 100%;
+      padding-right: 45px;
       color: #fff;
       font-size: clamp(1.4rem, 6.5vw, 1.85rem);
       font-weight: 700;
       line-height: 1.1;
-      text-align: center;
+      text-align: left;
       overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      overflow-wrap: anywhere;
+      white-space: normal;
     }
     #search-close {
       position: absolute;
@@ -1876,7 +1881,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.28</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.29</button>
   </div>
 
 <script>
