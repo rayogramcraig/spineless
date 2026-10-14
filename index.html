@@ -737,14 +737,14 @@
     #recognized-title {
       position: relative;
       width: fit-content;
-      max-width: min(52vw, 225px);
+      max-width: min(62vw, 270px);
       min-height: 0;
-      padding: 10px 12px;
+      padding: 12px 14px;
       border-radius: 14px;
-      border: none;
+      border: 1px solid var(--scan-yellow);
       background: #000;
       color: #fff;
-      font-size: 0.86rem;
+      font-size: 1.03rem;
       line-height: 1.28;
       font-weight: 400;
       text-align: left;
@@ -784,9 +784,10 @@
     /* API • means the catalog match is comparatively metadata-rich:
        at least three of cover, year, publisher and ISBN are present. */
     #recognized-title-source.is-enriched {
-      background: rgba(232,255,41,0.14);
-      border-color: rgba(232,255,41,0.48);
-      color: var(--scan-yellow);
+      background: var(--scan-yellow);
+      border: 1px solid var(--scan-yellow);
+      color: #111;
+      opacity: 1;
     }
 
     #recognized-title.is-loading { cursor: default; }
