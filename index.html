@@ -90,7 +90,7 @@
     #shelf-heading.editing #shelf-name-input { display: block; }
 
 
-    /* v4.30 — complete multi-shelf book catalog */
+    /* v4.31 — complete multi-shelf book catalog */
     #shelves-all-books { display:flex; align-items:center; justify-content:space-between; width:calc(100% - 40px); margin:-16px 0 20px 20px; padding:6px 10px; color:#ff5900; background:#000; border:1px solid #777; border-radius:11px; font-size:17px; text-align:left; cursor:pointer; }
     #shelves-all-books span:last-child { font-size:21px; line-height:1; }
     #screen-catalog { background:#810b0d; padding:26px 22px; }
@@ -127,6 +127,21 @@
     #catalog-detail-author { font-size:15px; margin-bottom:12px; }
     #catalog-detail-location { color:#ff5900; font-weight:700; font-size:15px; }
     @media(max-width:370px) { #screen-catalog { padding:18px 12px; } .catalog-fixed { padding-left:14px; padding-right:14px; } #catalog-book-list { padding-left:14px; padding-right:14px; } .catalog-book-shelf { font-size:12px; } }
+
+    /* v4.31: make the catalog detail an accessible path back to a book. */
+    #catalog-detail-body { cursor:pointer; }
+    #catalog-detail-body:focus-visible { outline:2px solid #ff5900; outline-offset:5px; }
+    #catalog-detail-hint { margin-top:22px; color:#ff5900; font-size:14px; text-align:right; cursor:pointer; }
+
+    /* Keep the shelf search beneath the variable-height identification banner.
+       The banner can grow when its text wraps on narrow mobile screens. */
+    #screen-ocr.mode-search.id-background-active #search-shelf-panel {
+      top: calc(var(--spineless-status-height, 205px) + 12px);
+    }
+    #screen-ocr.mode-search.id-background-active .search-container {
+      top: calc(var(--spineless-status-height, 205px) + 25%);
+    }
+    #screen-ocr.mode-search.id-background-active #background-id-banner { z-index:12; }
 
     /* ADD IMAGE SCREEN — new camera-first onboarding */
     #screen-add {
@@ -1742,7 +1757,8 @@
     </div>
     <div id="catalog-detail" role="dialog" aria-modal="true" aria-label="Book details">
       <div class="catalog-detail-card"><button id="catalog-detail-close" type="button" aria-label="Close">×</button>
-        <div id="catalog-detail-body"><img id="catalog-detail-cover" alt=""/><div><div id="catalog-detail-title"></div><div id="catalog-detail-author"></div><div id="catalog-detail-location"></div></div></div>
+        <div id="catalog-detail-body" role="button" tabindex="0" aria-label="Show this book on its bookshelf"><img id="catalog-detail-cover" alt=""/><div><div id="catalog-detail-title"></div><div id="catalog-detail-author"></div><div id="catalog-detail-location"></div></div></div>
+        <div id="catalog-detail-hint">Tap to locate on bookshelf →</div>
       </div>
     </div>
 
@@ -1965,6 +1981,12 @@
   const searchCatalogStats = document.getElementById("search-catalog-stats");
   const catalogingBar = document.getElementById("cataloging-bar");
   const backgroundIDBanner = document.getElementById("background-id-banner");
+  if (backgroundIDBanner && typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(() => {
+      const height = Math.ceil(backgroundIDBanner.getBoundingClientRect().height);
+      if (height) document.getElementById("screen-ocr").style.setProperty("--spineless-status-height", height + "px");
+    }).observe(backgroundIDBanner);
+  }
   const backgroundIDHeadline = document.getElementById("background-id-headline");
   const backgroundIDDetail = document.getElementById("background-id-detail");
   const backgroundIDStage = document.getElementById("background-id-stage");
@@ -2161,7 +2183,9 @@
     addBatch();
   }
   let catalogRenderSerial = 0;
+  let selectedCatalogBook = null;
   function openCatalogBookDetail(book, coverUrl) {
+    selectedCatalogBook = book;
     document.getElementById("catalog-detail-title").textContent = book.title || "";
     document.getElementById("catalog-detail-author").textContent = book.author || "";
     document.getElementById("catalog-detail-location").textContent = book.shelfName || "";
@@ -2171,6 +2195,47 @@
     document.getElementById("catalog-detail").classList.add("visible");
   }
   function closeCatalogDetail() { document.getElementById("catalog-detail").classList.remove("visible"); }
+  async function locateCatalogBook() {
+    const selected = selectedCatalogBook;
+    if (!selected || !sb) return;
+    const hint = document.getElementById("catalog-detail-hint");
+    if (hint.dataset.busy === "1") return;
+    hint.dataset.busy = "1";
+    hint.textContent = "Opening bookshelf…";
+    try {
+      const { data: shelf, error } = await sb.from("shelves").select("*").eq("id", selected.shelf_id).single();
+      if (error || !shelf) throw error || new Error("Bookshelf not found");
+      const wasCurrent = activeShelfId === shelf.id && sourceCanvas;
+      if (!wasCurrent) await restoreShelfRecord(shelf);
+      // Refresh the saved spine geometry if needed. A book's title alone is
+      // insufficient to locate the correct physical copy on a shelf.
+      let entry = bookCatalog.find(e => String(e.persistentBookId) === String(selected.id));
+      if (!entry) {
+        await refreshPersistentShelf();
+        entry = bookCatalog.find(e => String(e.persistentBookId) === String(selected.id));
+      }
+      if (!entry?.match?.bbox) throw new Error("No saved position for this book yet");
+      closeCatalogDetail();
+      const normalizedTitle = normalizeToken(selected.title || "");
+      let idx = termList.findIndex(t => t === normalizedTitle);
+      if (idx < 0) idx = termList.findIndex(t => normalizedTitle.includes(t) || t.includes(normalizedTitle));
+      if (idx < 0) { termList.push(normalizedTitle); idx = termList.length - 1; }
+      currentTermIndex = idx;
+      currentTerm = termList[idx];
+      currentMatches = [{ ...entry.match, catalogEntry: entry }];
+      currentMatchIndex = 0;
+      showScreen(screenResults);
+      setupResultsScreen();
+      requestAnimationFrame(() => drawHighlightsForTerm(currentTerm, 0));
+      // The ordinary result panel uses the saved catalog entry for its title.
+    } catch (err) {
+      console.warn("Could not locate catalog book", err);
+      hint.textContent = "Unable to locate this book on the shelf.";
+    } finally {
+      hint.dataset.busy = "0";
+      if (hint.textContent === "Opening bookshelf…") hint.textContent = "Tap to locate on bookshelf →";
+    }
+  }
   async function openWholeCatalog() {
     showScreen(screenCatalog);
     const input=document.getElementById("catalog-search"); input.value="";
@@ -6606,6 +6671,9 @@ const cropW = Math.max(1, x1 - x0);
   document.getElementById("catalog-back").addEventListener("click", openShelfList);
   document.getElementById("catalog-search").addEventListener("input", () => { document.getElementById("catalog-book-list").scrollTop=0; renderWholeCatalog(); });
   document.getElementById("catalog-detail-close").addEventListener("click", closeCatalogDetail);
+  document.getElementById("catalog-detail-body").addEventListener("click", locateCatalogBook);
+  document.getElementById("catalog-detail-hint").addEventListener("click", locateCatalogBook);
+  document.getElementById("catalog-detail-body").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); locateCatalogBook(); } });
   document.getElementById("catalog-detail").addEventListener("click", e=>{if(e.target.id==="catalog-detail") closeCatalogDetail();});
   document.getElementById("shelves-add").addEventListener("click", () => btnNewImage.click());
   document.getElementById("shelves-back").addEventListener("click", () => showScreen(shelfListReturnScreen));
