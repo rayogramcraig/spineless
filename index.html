@@ -843,6 +843,27 @@
       #background-id-stage { font-size: 0.7rem; }
     }
 
+    /* v4.33 — visible shelf name and two-line book identification */
+    #results-shelf-name {
+      position: absolute;
+      top: calc(11px + env(safe-area-inset-top));
+      left: 55px;
+      right: 14px;
+      z-index: 15;
+      color: #ff5900;
+      font-size: clamp(19px, 5.5vw, 23px);
+      font-weight: 800;
+      line-height: 1.17;
+      text-align: left;
+      overflow-wrap: anywhere;
+      pointer-events: none;
+      text-shadow: 0 1px 5px rgba(0,0,0,.35);
+    }
+    #recognized-title-text { font-weight: 800; font-size: 1.28rem; line-height: 1.12; }
+    #recognized-title-author { display: block; margin-top: 5px; font-size: .93rem; font-weight: 400; line-height: 1.2; overflow-wrap: anywhere; }
+    #recognized-title-author:empty { display: none; }
+    #screen-results.scan-info-visible #results-shelf-name { visibility: hidden; }
+
     /* RESULTS SCREEN */
     #screen-results { inset: 0; background: #770c0d; color: #fff; }
 
@@ -1815,6 +1836,7 @@
 
     <!-- RESULTS -->
     <div id="screen-results" class="screen">
+      <div id="results-shelf-name" aria-label="Current bookshelf"></div>
       <div id="results-info-panel" aria-live="polite">
         <div id="results-info-card" role="dialog" aria-modal="true" aria-labelledby="shelf-title">
           <div id="shelf-header">
@@ -1873,6 +1895,7 @@
       <div id="recognized-title-wrap" class="hidden">
         <div id="recognized-title">
           <span id="recognized-title-text"></span>
+          <span id="recognized-title-author"></span>
           <span id="recognized-title-source" class="hidden"></span>
         </div>
       </div>
@@ -1959,7 +1982,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.32</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.33</button>
   </div>
 
 <script>
@@ -2825,6 +2848,8 @@
   const recognizedTitleWrap = document.getElementById("recognized-title-wrap");
   const recognizedTitle = document.getElementById("recognized-title");
   const recognizedTitleText = document.getElementById("recognized-title-text");
+  const recognizedTitleAuthor = document.getElementById("recognized-title-author");
+  const resultsShelfName = document.getElementById("results-shelf-name");
   const recognizedTitleSource = document.getElementById("recognized-title-source");
   const btnNewImage = document.getElementById("btn-new-image");
   const btnNewSearch = document.getElementById("new-search-btn");
@@ -2995,7 +3020,9 @@
 
   function updateResultsInfoPanel() {
     const complete = isFullIDComplete();
-    document.getElementById("shelf-title").textContent = activeShelfRecord?.name || `Bookshelf ${nextShelfNumber}`;
+    const displayShelfName = activeShelfRecord?.name || `Bookshelf ${nextShelfNumber}`;
+    document.getElementById("shelf-title").textContent = displayShelfName;
+    if (resultsShelfName) resultsShelfName.textContent = displayShelfName;
     const created = activeShelfRecord?.created_at;
     if (shelfDate) shelfDate.textContent = created
       ? "◴  " + new Date(created).toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric" }) + " - " + new Date(created).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }).replace(" AM", "am").replace(" PM", "pm")
@@ -4620,12 +4647,13 @@
     recognizedTitleWrap.style.top = `${scored[0].y}px`;
   }
 
-  function setRecognizedTitle(text, state = "", action = "", source = "") {
+  function setRecognizedTitle(text, state = "", action = "", source = "", author = "") {
     if (!recognizedTitle || !recognizedTitleWrap) return;
     recognizedTitle.classList.remove("is-loading", "is-uncertain", "is-action");
     delete recognizedTitle.dataset.action;
     if (!text || !isFullIDComplete()) {
       if (recognizedTitleText) recognizedTitleText.textContent = "";
+      if (recognizedTitleAuthor) recognizedTitleAuthor.textContent = "";
       if (recognizedTitleSource) {
         recognizedTitleSource.textContent = "";
         recognizedTitleSource.classList.add("hidden");
@@ -4634,6 +4662,7 @@
       return;
     }
     if (recognizedTitleText) recognizedTitleText.textContent = text;
+    if (recognizedTitleAuthor) recognizedTitleAuthor.textContent = String(author || "").trim();
     else recognizedTitle.textContent = text;
     if (recognizedTitleSource) {
       const label = String(source || "").trim().toUpperCase();
@@ -6245,7 +6274,8 @@
         r.title || "Unknown title",
         r.confidence < 0.55 ? "is-uncertain" : "",
         "",
-        identificationSourceForResult(r)
+        identificationSourceForResult(r),
+        r.author
       );
       return;
     }
@@ -6268,7 +6298,8 @@
       result.title || "Unknown title",
       result.confidence < 0.55 ? "is-uncertain" : "",
       "",
-      identificationSourceForResult(result)
+      identificationSourceForResult(result),
+      result.author
     );
     if (result.title && result.title !== "Unknown title") {
       const existingEntry = findCatalogEntryForMatch(match);
@@ -6688,6 +6719,7 @@ const cropW = Math.max(1, x1 - x0);
     if (!name) { shelfNameInput.focus(); return; }
     if (!activeShelfId || !sb) {
       if (activeShelfRecord) activeShelfRecord.name = name;
+      if (resultsShelfName) resultsShelfName.textContent = name;
       document.getElementById("shelf-title").textContent = name;
       stopShelfRename();
       return;
