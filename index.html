@@ -2051,7 +2051,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.36</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.36.1</button>
   </div>
 
 <script>
@@ -2921,6 +2921,9 @@
   const resultsShelfName = document.getElementById("results-shelf-name");
   // The photo card uses flex layout, so a wrapping bookshelf name naturally
   // pushes the image down without overlapping it.
+  function updateResultsPhotoTop() {
+    // Flexbox handles sizing; retain this function for existing navigation calls.
+  }
 
   const recognizedTitleSource = document.getElementById("recognized-title-source");
   const btnNewImage = document.getElementById("btn-new-image");
