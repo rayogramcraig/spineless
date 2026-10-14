@@ -89,6 +89,45 @@
     #shelf-heading.editing #shelf-title { display: none; }
     #shelf-heading.editing #shelf-name-input { display: block; }
 
+
+    /* v4.30 — complete multi-shelf book catalog */
+    #shelves-all-books { display:flex; align-items:center; justify-content:space-between; width:calc(100% - 40px); margin:-16px 0 20px 20px; padding:6px 10px; color:#ff5900; background:#000; border:1px solid #777; border-radius:11px; font-size:17px; text-align:left; cursor:pointer; }
+    #shelves-all-books span:last-child { font-size:21px; line-height:1; }
+    #screen-catalog { background:#810b0d; padding:26px 22px; }
+    .catalog-panel { display:flex; flex-direction:column; height:100%; max-width:560px; margin:0 auto; overflow:hidden; background:#320302; border:1px solid #df5100; border-radius:15px; }
+    .catalog-fixed { flex:none; padding:17px 19px 0; background:#320302; }
+    .catalog-top { display:flex; align-items:center; gap:15px; min-height:42px; margin-bottom:11px; color:#ff5900; }
+    #catalog-back { flex:none; width:48px; height:44px; color:#ff5900; border:0; background:transparent; padding:0; font-size:33px; line-height:1; cursor:pointer; }
+    #catalog-back svg { display:block; width:40px; height:40px; }
+    #catalog-heading { flex:1; font-size:clamp(18px,5vw,24px); font-weight:700; white-space:nowrap; }
+    .catalog-search-line { display:flex; align-items:center; gap:10px; margin-bottom:17px; }
+    #catalog-search { min-width:0; flex:1; width:100%; height:35px; padding:7px 12px; border:1px solid #bcbcbc; border-radius:18px; outline:none; background:#fff; color:#111; font-size:14px; }
+    #catalog-search:focus, #catalog-search:not(:placeholder-shown) { height:54px; border-radius:13px; font-size:26px; }
+    #catalog-search::placeholder { color:#c9a99b; }
+    #catalog-count { display:none; flex:none; min-width:47px; color:#fff; text-align:center; font-size:32px; font-weight:700; line-height:1; }
+    #catalog-count small { display:block; color:#ff5900; font-size:11px; font-weight:400; }
+    .catalog-panel.searching #catalog-count { display:block; }
+    .catalog-panel.searching .catalog-search-line { margin-bottom:10px; }
+    #catalog-book-list { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:0 19px 18px; scrollbar-width:thin; }
+    .catalog-book { display:flex; align-items:center; width:100%; gap:8px; min-height:59px; margin-bottom:8px; padding:6px 9px; border:1px solid #786d6d; border-radius:16px; background:transparent; color:#fff; text-align:left; cursor:pointer; }
+    .catalog-cover { width:31px; height:43px; flex:none; object-fit:cover; }
+    .catalog-book-copy { min-width:0; flex:1; }
+    .catalog-book-title { font-size:clamp(15px,4.5vw,20px); line-height:1.14; overflow-wrap:anywhere; }
+    .catalog-book-author { margin-top:3px; font-size:13px; line-height:1.13; }
+    .catalog-book-shelf { max-width:35%; align-self:flex-end; margin-bottom:3px; color:#ff5900; font-size:13px; font-weight:700; line-height:1.15; text-align:right; overflow-wrap:anywhere; }
+    .catalog-no-cover { flex:none; width:31px; height:43px; }
+    #catalog-message { padding:12px 0; color:#ddd; font-size:14px; }
+    #catalog-detail { display:none; position:absolute; inset:0; z-index:45; align-items:center; justify-content:center; padding:24px; background:rgba(0,0,0,.8); }
+    #catalog-detail.visible { display:flex; }
+    .catalog-detail-card { position:relative; width:min(100%,420px); padding:22px; border:1px solid #ff5900; border-radius:20px; background:#220303; color:#fff; }
+    #catalog-detail-close { position:absolute; top:8px; right:14px; background:none; border:0; color:#ff5900; font-size:30px; cursor:pointer; }
+    #catalog-detail-body { display:flex; gap:17px; padding-right:15px; align-items:flex-start; }
+    #catalog-detail-cover { width:75px; max-height:120px; object-fit:contain; }
+    #catalog-detail-title { font-size:21px; margin-bottom:8px; }
+    #catalog-detail-author { font-size:15px; margin-bottom:12px; }
+    #catalog-detail-location { color:#ff5900; font-weight:700; font-size:15px; }
+    @media(max-width:370px) { #screen-catalog { padding:18px 12px; } .catalog-fixed { padding-left:14px; padding-right:14px; } #catalog-book-list { padding-left:14px; padding-right:14px; } .catalog-book-shelf { font-size:12px; } }
+
     /* ADD IMAGE SCREEN — new camera-first onboarding */
     #screen-add {
       background: #8c0b0d;
@@ -1677,10 +1716,33 @@
     <div id="screen-shelves" class="screen">
       <div class="shelves-card">
         <div class="shelves-heading"><h1>Bookshelves</h1><button id="shelves-add" type="button" aria-label="Add bookshelf">+</button></div>
+        <button id="shelves-all-books" type="button"><span>List all identified books</span><span aria-hidden="true">▶</span></button>
         <div id="shelves-list" aria-label="Your bookshelves"></div>
         <p id="shelves-message" role="status"></p>
         <button type="button" id="shelves-logout">Log out</button>
         <button id="shelves-back" type="button">← Back</button>
+      </div>
+    </div>
+
+
+    <div id="screen-catalog" class="screen">
+      <div class="catalog-panel" id="catalog-panel">
+        <div class="catalog-fixed">
+          <div class="catalog-top">
+            <button id="catalog-back" type="button" aria-label="Back to bookshelves" title="Back to bookshelves"><svg viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><rect x="10" y="12" width="22" height="26" rx="2"/><rect x="6" y="16" width="22" height="22" rx="2"/><rect x="16" y="5" width="22" height="33" rx="2"/><path d="M21 12h12M21 16h12M21 20h12"/></svg></button>
+            <div id="catalog-heading"><span id="catalog-total">0</span> identified books</div>
+          </div>
+          <div class="catalog-search-line">
+            <input id="catalog-search" type="search" placeholder="⌕ search" aria-label="Search book titles and authors" autocomplete="off" />
+            <div id="catalog-count"><span id="catalog-matches">0</span><small>matches</small></div>
+          </div>
+        </div>
+        <div id="catalog-book-list" aria-label="All identified books"><p id="catalog-message" role="status">Loading books…</p></div>
+      </div>
+    </div>
+    <div id="catalog-detail" role="dialog" aria-modal="true" aria-label="Book details">
+      <div class="catalog-detail-card"><button id="catalog-detail-close" type="button" aria-label="Close">×</button>
+        <div id="catalog-detail-body"><img id="catalog-detail-cover" alt=""/><div><div id="catalog-detail-title"></div><div id="catalog-detail-author"></div><div id="catalog-detail-location"></div></div></div>
       </div>
     </div>
 
@@ -1881,7 +1943,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.29</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.30</button>
   </div>
 
 <script>
@@ -1890,6 +1952,7 @@
   const screenOCR = document.getElementById("screen-ocr");
   const screenResults = document.getElementById("screen-results");
   const screenShelves = document.getElementById("screen-shelves");
+  const screenCatalog = document.getElementById("screen-catalog");
   const imageInput = document.getElementById("imageInput");
   const ocrBg = document.getElementById("ocr-bg");
   const ocrProgress = document.getElementById("ocr-progress");
@@ -1960,6 +2023,8 @@
   let latestServerBookRows = [];
   let shelfListReturnScreen = screenResults;
   let nextShelfNumber = 1;
+  let catalogAllBooks = [];
+  let catalogLoadSerial = 0;
 
   function updateSearchPlaceholder() {
     searchInput.placeholder = "search";
@@ -2026,6 +2091,100 @@
     } catch (error) {
       console.warn("Could not list bookshelves:", error);
       message.textContent = "Could not load bookshelves. Please try again.";
+    }
+  }
+
+
+  // Fetch all saved books, across every valid bookshelf. Supabase applies a
+  // default row limit, so paginate instead of silently omitting large libraries.
+  async function fetchWholeCatalog() {
+    const shelves = await fetchUserShelves();
+    const byId = new Map(shelves.map(s => [s.id, s.name || "Untitled bookshelf"]));
+    if (!byId.size) return [];
+    const all = [];
+    const pageSize = 500;
+    for (const shelf of shelves) {
+      for (let start = 0; ; start += pageSize) {
+        const { data, error } = await sb.from("shelf_books")
+          .select("id,shelf_id,title,author,cover_url,cover_id,created_at")
+          .eq("shelf_id", shelf.id)
+          .order("created_at", { ascending: true })
+          .range(start, start + pageSize - 1);
+        if (error) throw error;
+        all.push(...(data || []).filter(book => String(book.title || "").trim())
+          .map(book => ({ ...book, shelfName: byId.get(book.shelf_id) })));
+        if (!data || data.length < pageSize) break;
+      }
+    }
+    return all.sort((a,b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity:"base" }) || String(a.author || "").localeCompare(String(b.author || "")));
+  }
+
+  function renderWholeCatalog() {
+    const q = document.getElementById("catalog-search").value.trim().toLocaleLowerCase();
+    const panel = document.getElementById("catalog-panel");
+    panel.classList.toggle("searching", Boolean(q));
+    const matches = q ? catalogAllBooks.filter(book => `${book.title || ""} ${book.author || ""}`.toLocaleLowerCase().includes(q)) : catalogAllBooks;
+    document.getElementById("catalog-total").textContent = catalogAllBooks.length.toLocaleString();
+    document.getElementById("catalog-matches").textContent = matches.length.toLocaleString();
+    const container = document.getElementById("catalog-book-list");
+    container.replaceChildren();
+    if (!matches.length) {
+      const p = document.createElement("p"); p.id = "catalog-message";
+      p.textContent = q ? "No matching books." : "No identified books yet.";
+      container.append(p); return;
+    }
+    // Render in batches to keep large libraries responsive on phones.
+    const serial = ++catalogRenderSerial;
+    let index = 0;
+    const addBatch = () => {
+      if (serial !== catalogRenderSerial || !screenCatalog.classList.contains("active")) return;
+      const fragment = document.createDocumentFragment();
+      for (const end = Math.min(index+90, matches.length); index < end; index++) {
+        const book = matches[index];
+        const row = document.createElement("button"); row.type="button"; row.className="catalog-book";
+        const coverUrl = book.cover_url || (book.cover_id ? `https://covers.openlibrary.org/b/id/${encodeURIComponent(book.cover_id)}-S.jpg` : "");
+        if (coverUrl) {
+          const img = document.createElement("img"); img.className="catalog-cover"; img.loading="lazy";
+          img.src=coverUrl; img.alt=""; img.onerror=()=>img.replaceWith(Object.assign(document.createElement("span"),{className:"catalog-no-cover"}));
+          fragment.append(); row.append(img);
+        } else { const blank=document.createElement("span"); blank.className="catalog-no-cover"; row.append(blank); }
+        const copy=document.createElement("span"); copy.className="catalog-book-copy";
+        const title=document.createElement("span"); title.className="catalog-book-title"; title.style.display="block"; title.textContent=book.title;
+        const author=document.createElement("span"); author.className="catalog-book-author"; author.style.display="block"; author.textContent=book.author || "";
+        copy.append(title,author);
+        const loc=document.createElement("span"); loc.className="catalog-book-shelf"; loc.textContent=book.shelfName;
+        row.append(copy,loc); row.addEventListener("click",()=>openCatalogBookDetail(book,coverUrl)); fragment.append(row);
+      }
+      container.append(fragment);
+      if (index < matches.length) requestAnimationFrame(addBatch);
+    };
+    addBatch();
+  }
+  let catalogRenderSerial = 0;
+  function openCatalogBookDetail(book, coverUrl) {
+    document.getElementById("catalog-detail-title").textContent = book.title || "";
+    document.getElementById("catalog-detail-author").textContent = book.author || "";
+    document.getElementById("catalog-detail-location").textContent = book.shelfName || "";
+    const img=document.getElementById("catalog-detail-cover");
+    img.style.display=coverUrl ? "block":"none";
+    if (coverUrl) { img.src=coverUrl; img.onerror=()=>{img.style.display="none";}; }
+    document.getElementById("catalog-detail").classList.add("visible");
+  }
+  function closeCatalogDetail() { document.getElementById("catalog-detail").classList.remove("visible"); }
+  async function openWholeCatalog() {
+    showScreen(screenCatalog);
+    const input=document.getElementById("catalog-search"); input.value="";
+    document.getElementById("catalog-panel").classList.remove("searching");
+    document.getElementById("catalog-book-list").innerHTML='<p id="catalog-message" role="status">Loading books…</p>';
+    const serial=++catalogLoadSerial;
+    try {
+      const books=await fetchWholeCatalog();
+      if (serial !== catalogLoadSerial || !screenCatalog.classList.contains("active")) return;
+      catalogAllBooks=books;
+      renderWholeCatalog();
+    } catch (err) {
+      console.warn("Could not fetch catalog",err);
+      document.getElementById("catalog-book-list").innerHTML='<p id="catalog-message" role="status">Could not load books. Please try again.</p>';
     }
   }
 
@@ -2875,7 +3034,7 @@
   ]);
 
   function showScreen(el) {
-    [screenLogin, screenAdd, screenOCR, screenResults, screenShelves].forEach((s) => s.classList.remove("active"));
+    [screenLogin, screenAdd, screenOCR, screenResults, screenShelves, screenCatalog].forEach((s) => s.classList.remove("active"));
     el.classList.add("active");
   }
 
@@ -6443,6 +6602,11 @@ const cropW = Math.max(1, x1 - x0);
   const searchShelves = document.getElementById("search-shelves");
   searchShelves.innerHTML = utilityNewImage.innerHTML;
   searchShelves.addEventListener("click", openShelfList);
+  document.getElementById("shelves-all-books").addEventListener("click", openWholeCatalog);
+  document.getElementById("catalog-back").addEventListener("click", openShelfList);
+  document.getElementById("catalog-search").addEventListener("input", () => { document.getElementById("catalog-book-list").scrollTop=0; renderWholeCatalog(); });
+  document.getElementById("catalog-detail-close").addEventListener("click", closeCatalogDetail);
+  document.getElementById("catalog-detail").addEventListener("click", e=>{if(e.target.id==="catalog-detail") closeCatalogDetail();});
   document.getElementById("shelves-add").addEventListener("click", () => btnNewImage.click());
   document.getElementById("shelves-back").addEventListener("click", () => showScreen(shelfListReturnScreen));
 
@@ -6517,6 +6681,8 @@ const cropW = Math.max(1, x1 - x0);
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      if (document.getElementById("catalog-detail").classList.contains("visible")) { closeCatalogDetail(); return; }
+      if (screenCatalog.classList.contains("active")) { openShelfList(); return; }
       if (screenShelves.classList.contains("active")) showScreen(shelfListReturnScreen);
       closeTermModal();
       closeBookModal();
