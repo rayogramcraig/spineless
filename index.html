@@ -1533,10 +1533,38 @@
       #term-modal-card { padding: 24px 24px 28px; }
       #term-modal-text { font-size: 1.5rem; }
     }
+
+    /* Testing phase: authenticated accounts only. */
+    #screen-login { background: #810b0d; padding: 22px 12px 14px; }
+    .login-card { height: 100%; max-width: 560px; margin: auto; border-radius: 26px; background: #000; padding: clamp(30px, 7vw, 56px) 26px; overflow-y: auto; display: flex; flex-direction: column; justify-content: center; }
+    .login-brand { color: #ff5900; font-size: clamp(2.2rem, 9vw, 3.5rem); font-weight: 700; letter-spacing: -.05em; margin-bottom: 40px; text-align: center; }
+    .login-heading { font-size: 1.8rem; font-weight: 600; margin-bottom: 20px; }
+    #login-form { display: grid; gap: 12px; }
+    #login-form input { display: block; width: 100%; min-height: 50px; border: 1px solid #777; border-radius: 24px; background: #fff; color: #111; font-size: 1rem; padding: 12px 18px; }
+    #login-submit { min-height: 50px; border: 0; background: #ff5900; color: #fff; border-radius: 26px; font-size: 1.1rem; font-weight: 700; cursor: pointer; }
+    #login-toggle, #login-forgot { border: 0; background: none; color: #ff5900; font-size: 1rem; text-decoration: underline; cursor: pointer; padding: 8px; }
+    #login-message { min-height: 1.5em; margin: 12px 0; color: #fff; line-height: 1.4; font-size: .92rem; }
+    #shelves-logout { border: 0; background: none; color: #ff5900; font-size: .85rem; padding: 12px 20px; cursor: pointer; text-decoration: underline; align-self: flex-start; }
   </style>
 </head>
 <body>
   <div id="app">
+    <!-- ACCOUNT LOGIN (required during testing) -->
+    <div id="screen-login" class="screen active">
+      <div class="login-card">
+        <div class="login-brand">spineless</div>
+        <h1 class="login-heading" id="login-heading">Log in</h1>
+        <form id="login-form">
+          <input type="email" id="login-email" placeholder="Email address" autocomplete="email" required />
+          <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" minlength="6" required />
+          <button id="login-submit" type="submit">Log in</button>
+        </form>
+        <p id="login-message" role="status" aria-live="polite"></p>
+        <button type="button" id="login-toggle">Create account</button>
+        <button type="button" id="login-forgot">Forgot password?</button>
+      </div>
+    </div>
+
     <!-- ADD IMAGE -->
     <div id="screen-add" class="screen">
       <div class="add-stage">
@@ -1559,11 +1587,12 @@
       </div>
     </div>
 
-    <div id="screen-shelves" class="screen active">
+    <div id="screen-shelves" class="screen">
       <div class="shelves-card">
         <div class="shelves-heading"><h1>Bookshelves</h1><button id="shelves-add" type="button" aria-label="Add bookshelf">+</button></div>
         <div id="shelves-list" aria-label="Your bookshelves"></div>
         <p id="shelves-message" role="status"></p>
+        <button type="button" id="shelves-logout">Log out</button>
         <button id="shelves-back" type="button">← Back</button>
       </div>
     </div>
@@ -1760,10 +1789,11 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.22</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.23</button>
   </div>
 
 <script>
+  const screenLogin = document.getElementById("screen-login");
   const screenAdd = document.getElementById("screen-add");
   const screenOCR = document.getElementById("screen-ocr");
   const screenResults = document.getElementById("screen-results");
@@ -1917,25 +1947,92 @@
 
   async function ensureSpinelessSession() {
     if (!sb) return null;
-    if (spinelessSession?.user) return spinelessSession;
-
-    const { data: current } = await sb.auth.getSession();
-    if (current?.session?.user) {
-      spinelessSession = current.session;
-      return spinelessSession;
-    }
-
-    // Anonymous Supabase auth gives Spineless a real, stable user_id without
-    // putting a sign-up wall in front of the first scan. The session persists
-    // in this browser and can later be linked to email/Apple if desired.
-    const { data, error } = await sb.auth.signInAnonymously();
-    if (error) {
-      console.warn("Supabase anonymous session unavailable:", error);
-      return null;
-    }
-    spinelessSession = data.session;
+    if (spinelessSession?.user && !spinelessSession.user.is_anonymous) return spinelessSession;
+    const { data, error } = await sb.auth.getSession();
+    if (error) throw error;
+    const session = data?.session;
+    // Never auto-create anonymous users: testing now requires a named account.
+    spinelessSession = session?.user && !session.user.is_anonymous ? session : null;
     return spinelessSession;
   }
+
+  let loginMode = "login";
+  function showLogin(message = "") {
+    document.getElementById("login-message").textContent = message;
+    showScreen(screenLogin);
+  }
+  function setLoginMode(mode) {
+    loginMode = mode;
+    const signup = mode === "signup";
+    const recovery = mode === "recovery";
+    document.getElementById("login-heading").textContent = recovery ? "Set new password" : (signup ? "Create account" : "Log in");
+    document.getElementById("login-submit").textContent = recovery ? "Set new password" : (signup ? "Create account" : "Log in");
+    document.getElementById("login-toggle").textContent = recovery ? "" : (signup ? "Already have an account? Log in" : "Create account");
+    document.getElementById("login-toggle").hidden = recovery;
+    document.getElementById("login-email").hidden = recovery;
+    document.getElementById("login-email").required = !recovery;
+    document.getElementById("login-forgot").hidden = signup || recovery;
+    document.getElementById("login-password").autocomplete = signup ? "new-password" : "current-password";
+    document.getElementById("login-message").textContent = "";
+  }
+  document.getElementById("login-toggle").addEventListener("click", () => setLoginMode(loginMode === "login" ? "signup" : "login"));
+  document.getElementById("login-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    const email = document.getElementById("login-email").value.trim();
+    const password = document.getElementById("login-password").value;
+    const button = document.getElementById("login-submit");
+    const message = document.getElementById("login-message");
+    if (!sb) { message.textContent = "Connection unavailable. Please try again later."; return; }
+    button.disabled = true;
+    message.textContent = loginMode === "recovery" ? "Updating password…" : (loginMode === "signup" ? "Creating account…" : "Signing in…");
+    try {
+      const { data, error } = loginMode === "recovery"
+        ? await sb.auth.updateUser({ password })
+        : loginMode === "signup"
+          ? await sb.auth.signUp({ email, password })
+          : await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      if (loginMode === "recovery") {
+        setLoginMode("login");
+        message.textContent = "Password updated. You can now log in.";
+      } else if (data?.session?.user && !data.session.user.is_anonymous) {
+        spinelessSession = data.session;
+        activeShelfId = null;
+        activeShelfRecord = null;
+        await openShelfList();
+      } else {
+        message.textContent = "Check your email to confirm your account, then return here to log in.";
+        setLoginMode("login");
+        message.textContent = "Check your email to confirm your account, then return here to log in.";
+      }
+    } catch (err) {
+      message.textContent = err?.message || "Sign-in failed. Please try again.";
+    } finally { button.disabled = false; }
+  });
+  if (sb) sb.auth.onAuthStateChange((event) => {
+    if (event === "PASSWORD_RECOVERY") {
+      setLoginMode("recovery");
+      showLogin("Enter your new password.");
+    }
+  });
+  document.getElementById("login-forgot").addEventListener("click", async () => {
+    const email = document.getElementById("login-email").value.trim();
+    const message = document.getElementById("login-message");
+    if (!email) { message.textContent = "Enter your email address first."; return; }
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+    message.textContent = error ? error.message : "If this email has an account, a password-reset email has been sent.";
+  });
+  document.getElementById("shelves-logout").addEventListener("click", async () => {
+    // Do not clear browser storage: leave any legacy installation data intact.
+    if (shelfRealtimeChannel) { sb.removeChannel(shelfRealtimeChannel); shelfRealtimeChannel = null; }
+    await sb.auth.signOut();
+    spinelessSession = null;
+    activeShelfId = null;
+    activeShelfRecord = null;
+    document.getElementById("shelves-list").replaceChildren();
+    setLoginMode("login");
+    showLogin();
+  });
 
   async function dataUrlToBlob(dataUrl) {
     const r = await fetch(dataUrl);
@@ -2396,7 +2493,14 @@
   }
 
   async function bootstrapPersistentSession() {
-    await openShelfList();
+    try {
+      const session = await ensureSpinelessSession();
+      if (session?.user) await openShelfList();
+      else showLogin();
+    } catch (err) {
+      console.warn("Could not restore account:", err);
+      showLogin("Unable to restore your session. Please log in.");
+    }
   }
 
   const resultsImage = document.getElementById("results-image");
@@ -2677,7 +2781,7 @@
   ]);
 
   function showScreen(el) {
-    [screenAdd, screenOCR, screenResults, screenShelves].forEach((s) => s.classList.remove("active"));
+    [screenLogin, screenAdd, screenOCR, screenResults, screenShelves].forEach((s) => s.classList.remove("active"));
     el.classList.add("active");
   }
 
