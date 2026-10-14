@@ -843,7 +843,7 @@
       #background-id-stage { font-size: 0.7rem; }
     }
 
-    /* v4.34 — visible shelf name and two-line book identification */
+    /* v4.35 — visible shelf name and two-line book identification */
     #results-shelf-name {
       position: absolute;
       top: calc(11px + env(safe-area-inset-top));
@@ -864,7 +864,7 @@
     #recognized-title-author:empty { display: none; }
     #screen-results.scan-info-visible #results-shelf-name { visibility: hidden; }
 
-    /* v4.34 — reserve a variable-height header above the shelf photo. */
+    /* v4.35 — reserve a variable-height header above the shelf photo. */
     #screen-results { --results-photo-top: 78px; }
     #results-image-wrapper { top: var(--results-photo-top); align-items: flex-start; }
     #results-image-inner { align-items: flex-start; }
@@ -1389,13 +1389,13 @@
 
     #results-image-wrapper {
       position: absolute;
-      top: 0;
+      top: var(--results-photo-top);
       left: 0;
       right: 0;
       bottom: 235px;
       padding: 0;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
     }
 
@@ -1405,7 +1405,7 @@
       max-width: 560px;
       height: 100%;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
       overflow: hidden;
     }
@@ -1987,7 +1987,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.34</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.35</button>
   </div>
 
 <script>
