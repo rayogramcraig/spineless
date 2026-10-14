@@ -100,7 +100,13 @@
     #catalog-back { flex:none; width:48px; height:44px; color:#ff5900; border:0; background:transparent; padding:0; font-size:33px; line-height:1; cursor:pointer; }
     #catalog-back img { display:block; width:40px; height:40px; object-fit:contain; }
     #catalog-heading { flex:1; font-size:clamp(18px,5vw,24px); font-weight:700; white-space:nowrap; }
-    .catalog-search-line { display:flex; align-items:center; gap:10px; margin-bottom:17px; }
+    .catalog-search-line { display:flex; align-items:center; gap:12px; margin-bottom:13px; }
+    .catalog-sort { display:flex; align-items:center; gap:5px; flex:none; color:#ff5900; font-size:15px; white-space:nowrap; }
+    .catalog-sort-options { display:inline-flex; align-items:center; padding:2px 3px; border-radius:18px; background:#160101; }
+    .catalog-sort button { border:0; border-radius:12px; padding:1px 5px; background:transparent; color:#fff; font-size:15px; line-height:1.2; cursor:pointer; }
+    .catalog-sort button.active { color:#ff5900; background:#e8ff29; }
+    .catalog-search-line #catalog-search { flex:1; min-width:0; }
+    @media(max-width:390px) { .catalog-search-line { gap:6px; } .catalog-sort { gap:3px; font-size:13px; } .catalog-sort button { font-size:13px; padding:1px 3px; } }
     #catalog-search { min-width:0; flex:1; width:100%; height:35px; padding:7px 12px; border:1px solid #bcbcbc; border-radius:18px; outline:none; background:#fff; color:#111; font-size:14px; }
     #catalog-search:focus, #catalog-search:not(:placeholder-shown) { height:54px; border-radius:13px; font-size:26px; }
     #catalog-search::placeholder { color:#c9a99b; }
@@ -1814,7 +1820,7 @@
     <div id="screen-shelves" class="screen">
       <div class="shelves-card">
         <div class="shelves-heading"><h1>Bookshelves</h1><button id="shelves-add" type="button" aria-label="Add bookshelf">+</button></div>
-        <button id="shelves-all-books" type="button"><span>List all identified books</span><svg class="list-arrow" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3.5a1.4 1.4 0 0 1 2.1-1.2L21 10.8a1.45 1.45 0 0 1 0 2.4L8.1 21.7A1.4 1.4 0 0 1 6 20.5z"/></svg></button>
+        <button id="shelves-all-books" type="button"><span>Search all books</span><svg class="list-arrow" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3.5a1.4 1.4 0 0 1 2.1-1.2L21 10.8a1.45 1.45 0 0 1 0 2.4L8.1 21.7A1.4 1.4 0 0 1 6 20.5z"/></svg></button>
         <div id="shelves-list" aria-label="Your bookshelves"></div>
         <p id="shelves-message" role="status"></p>
         <button type="button" id="shelves-logout">Log out</button>
@@ -1831,6 +1837,7 @@
             <div id="catalog-heading"><span id="catalog-total">0</span> identified books</div>
           </div>
           <div class="catalog-search-line">
+            <div class="catalog-sort" role="group" aria-label="Sort books by"><span>sort by:</span><span class="catalog-sort-options"><button id="catalog-sort-title" type="button" class="active" aria-pressed="true">title</button><button id="catalog-sort-author" type="button" aria-pressed="false">author</button></span></div>
             <input id="catalog-search" type="search" placeholder="⌕ search" aria-label="Search book titles and authors" autocomplete="off" />
             <div id="catalog-count"><span id="catalog-matches">0</span><small>matches</small></div>
           </div>
@@ -2057,7 +2064,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.37.2</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.38</button>
   </div>
 
 <script>
@@ -2239,11 +2246,26 @@
     return all.sort((a,b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity:"base" }) || String(a.author || "").localeCompare(String(b.author || "")));
   }
 
+  let catalogSortBy = "title";
+  function setCatalogSort(field) {
+    catalogSortBy = field;
+    for (const name of ["title", "author"]) {
+      const button = document.getElementById("catalog-sort-" + name);
+      button.classList.toggle("active", name === field);
+      button.setAttribute("aria-pressed", String(name === field));
+    }
+    document.getElementById("catalog-book-list").scrollTop = 0;
+    renderWholeCatalog();
+  }
   function renderWholeCatalog() {
     const q = document.getElementById("catalog-search").value.trim().toLocaleLowerCase();
     const panel = document.getElementById("catalog-panel");
     panel.classList.toggle("searching", Boolean(q));
-    const matches = q ? catalogAllBooks.filter(book => `${book.title || ""} ${book.author || ""}`.toLocaleLowerCase().includes(q)) : catalogAllBooks;
+    const filtered = q ? catalogAllBooks.filter(book => `${book.title || ""} ${book.author || ""}`.toLocaleLowerCase().includes(q)) : catalogAllBooks;
+    const sortKey = catalogSortBy;
+    const secondKey = sortKey === "title" ? "author" : "title";
+    const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+    const matches = [...filtered].sort((a,b) => collator.compare(String(a[sortKey] || ""), String(b[sortKey] || "")) || collator.compare(String(a[secondKey] || ""), String(b[secondKey] || "")));
     document.getElementById("catalog-total").textContent = catalogAllBooks.length.toLocaleString();
     document.getElementById("catalog-matches").textContent = matches.length.toLocaleString();
     const container = document.getElementById("catalog-book-list");
@@ -6841,6 +6863,8 @@ const cropW = Math.max(1, x1 - x0);
   searchShelves.addEventListener("click", openShelfList);
   document.getElementById("shelves-all-books").addEventListener("click", openWholeCatalog);
   document.getElementById("catalog-back").addEventListener("click", openShelfList);
+  document.getElementById("catalog-sort-title").addEventListener("click", () => setCatalogSort("title"));
+  document.getElementById("catalog-sort-author").addEventListener("click", () => setCatalogSort("author"));
   document.getElementById("catalog-search").addEventListener("input", () => { document.getElementById("catalog-book-list").scrollTop=0; renderWholeCatalog(); });
   document.getElementById("catalog-detail-close").addEventListener("click", closeCatalogDetail);
   document.getElementById("catalog-detail-body").addEventListener("click", locateCatalogBook);
