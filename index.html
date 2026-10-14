@@ -212,6 +212,85 @@
       z-index: 0;
     }
 
+    /* v4.27: shelf search overlay — visible only after scanning */
+    #search-shelf-panel {
+      display: none;
+      position: absolute;
+      inset: calc(40px + env(safe-area-inset-top)) 6.5% 3.5%;
+      z-index: 2;
+      border: 1px solid rgba(255, 106, 24, .65);
+      border-radius: 17px;
+      background: rgba(65, 6, 5, .28);
+      pointer-events: none;
+    }
+    #screen-ocr.mode-search::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      background: rgba(133, 12, 8, .70);
+      pointer-events: none;
+    }
+    #screen-ocr.mode-search #ocr-bg {
+      filter: brightness(.78);
+    }
+    #screen-ocr.mode-search #search-shelf-panel { display: block; }
+    #search-shelf-header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: absolute;
+      top: 17px;
+      left: 18px;
+      right: 18px;
+      min-height: 43px;
+    }
+    #search-shelf-name {
+      max-width: calc(100% - 48px);
+      color: #fff;
+      font-size: clamp(1.4rem, 6.5vw, 1.85rem);
+      font-weight: 700;
+      line-height: 1.1;
+      text-align: center;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #search-close {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: #ff5900;
+      font-size: 38px;
+      font-weight: 400;
+      line-height: 1;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+    #screen-ocr.mode-search .search-container {
+      top: 35%;
+      bottom: auto;
+      width: 71%;
+      max-width: 420px;
+    }
+    #screen-ocr.mode-search .search-input {
+      padding: 10px 17px;
+      min-height: 51px;
+      font-size: clamp(1.4rem, 5.5vw, 1.85rem);
+      font-weight: 400;
+      box-shadow: none;
+    }
+    #screen-ocr.mode-search .search-input::placeholder {
+      color: #999;
+      opacity: 1;
+    }
+    #screen-ocr.mode-search button#search-shelves { display: none; }
+
     /* Floating found-words overlay (during scanning) */
     #scan-word-overlay {
       position: absolute;
@@ -1603,6 +1682,12 @@
     <!-- OCR / SCANNING -->
     <div id="screen-ocr" class="screen">
       <div id="ocr-bg"></div>
+      <div id="search-shelf-panel">
+        <div id="search-shelf-header">
+          <span id="search-shelf-name"></span>
+          <button id="search-close" type="button" aria-label="Return to results" title="Back to results">×</button>
+        </div>
+      </div>
       <div id="scan-word-overlay"></div>
       <div id="scan-gradient"><div id="scan-band"></div></div>
       <div id="analysis-progress-ring" aria-hidden="true"></div>
@@ -1791,7 +1876,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.26</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.27</button>
   </div>
 
 <script>
@@ -1872,7 +1957,9 @@
   let nextShelfNumber = 1;
 
   function updateSearchPlaceholder() {
-    searchInput.placeholder = `search ${activeShelfRecord?.name || `Bookshelf ${nextShelfNumber}`}`;
+    searchInput.placeholder = "search";
+    const searchShelfName = document.getElementById("search-shelf-name");
+    if (searchShelfName) searchShelfName.textContent = activeShelfRecord?.name || `Bookshelf ${nextShelfNumber}`;
   }
 
   async function fetchUserShelves() {
@@ -6190,6 +6277,12 @@
     recognitionRequestSerial++;
     stopScanPulses();
     showScreen(screenAdd);
+  });
+
+  document.getElementById("search-close").addEventListener("click", () => {
+    searchInput.blur();
+    autosuggestEl.classList.remove("visible");
+    transitionShelfView(screenResults);
   });
 
   btnNewSearch.addEventListener("click", () => {
