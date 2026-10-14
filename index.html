@@ -91,14 +91,14 @@
 
 
     /* v4.31 — complete multi-shelf book catalog */
-    #shelves-all-books { display:flex; align-items:center; justify-content:space-between; width:calc(100% - 40px); margin:-16px 0 20px 20px; padding:6px 10px; color:#ff5900; background:#000; border:1px solid #777; border-radius:11px; font-size:17px; text-align:left; cursor:pointer; }
-    #shelves-all-books span:last-child { font-size:21px; line-height:1; }
+    #shelves-all-books { display:flex; align-items:center; justify-content:space-between; width:calc(100% - 20px); margin:-16px 0 20px 20px; padding:6px 10px; color:#ff5900; background:#000; border:1px solid #777; border-radius:11px; font-size:17px; text-align:left; cursor:pointer; }
+    #shelves-all-books .list-arrow { width:15px; height:15px; flex:none; fill:#ff5900; }
     #screen-catalog { background:#810b0d; padding:26px 22px; }
     .catalog-panel { display:flex; flex-direction:column; height:100%; max-width:560px; margin:0 auto; overflow:hidden; background:#320302; border:1px solid #df5100; border-radius:15px; }
     .catalog-fixed { flex:none; padding:17px 19px 0; background:#320302; }
     .catalog-top { display:flex; align-items:center; gap:15px; min-height:42px; margin-bottom:11px; color:#ff5900; }
     #catalog-back { flex:none; width:48px; height:44px; color:#ff5900; border:0; background:transparent; padding:0; font-size:33px; line-height:1; cursor:pointer; }
-    #catalog-back svg { display:block; width:40px; height:40px; }
+    #catalog-back img { display:block; width:40px; height:40px; object-fit:contain; }
     #catalog-heading { flex:1; font-size:clamp(18px,5vw,24px); font-weight:700; white-space:nowrap; }
     .catalog-search-line { display:flex; align-items:center; gap:10px; margin-bottom:17px; }
     #catalog-search { min-width:0; flex:1; width:100%; height:35px; padding:7px 12px; border:1px solid #bcbcbc; border-radius:18px; outline:none; background:#fff; color:#111; font-size:14px; }
@@ -1731,7 +1731,7 @@
     <div id="screen-shelves" class="screen">
       <div class="shelves-card">
         <div class="shelves-heading"><h1>Bookshelves</h1><button id="shelves-add" type="button" aria-label="Add bookshelf">+</button></div>
-        <button id="shelves-all-books" type="button"><span>List all identified books</span><span aria-hidden="true">▶</span></button>
+        <button id="shelves-all-books" type="button"><span>List all identified books</span><svg class="list-arrow" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3.5a1.4 1.4 0 0 1 2.1-1.2L21 10.8a1.45 1.45 0 0 1 0 2.4L8.1 21.7A1.4 1.4 0 0 1 6 20.5z"/></svg></button>
         <div id="shelves-list" aria-label="Your bookshelves"></div>
         <p id="shelves-message" role="status"></p>
         <button type="button" id="shelves-logout">Log out</button>
@@ -1744,7 +1744,7 @@
       <div class="catalog-panel" id="catalog-panel">
         <div class="catalog-fixed">
           <div class="catalog-top">
-            <button id="catalog-back" type="button" aria-label="Back to bookshelves" title="Back to bookshelves"><svg viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><rect x="10" y="12" width="22" height="26" rx="2"/><rect x="6" y="16" width="22" height="22" rx="2"/><rect x="16" y="5" width="22" height="33" rx="2"/><path d="M21 12h12M21 16h12M21 20h12"/></svg></button>
+            <button id="catalog-back" type="button" aria-label="Back to bookshelves" title="Back to bookshelves"><img src="shelves.svg" alt="" /></button>
             <div id="catalog-heading"><span id="catalog-total">0</span> identified books</div>
           </div>
           <div class="catalog-search-line">
@@ -1852,7 +1852,7 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4 6.5 6H3a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.5L16 4H8Zm4 14a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>
               <span>Replace With New Scan</span>
             </button>
-            <button id="shelf-delete" type="button" aria-label="Delete bookshelf, coming soon" title="Delete bookshelf, coming soon">
+            <button id="shelf-delete" type="button" aria-label="Delete bookshelf" title="Delete bookshelf">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.1 4.9 17.1 2.9 12 8 6.9 2.9 4.9 4.9 10 10 4.9 15.1 6.9 17.1 12 12 17.1 17.1 19.1 15.1 14 10Z" transform="translate(0 2)"/></svg>
               <span>Delete bookshelf</span>
             </button>
@@ -1959,7 +1959,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.30</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.32</button>
   </div>
 
 <script>
@@ -6726,6 +6726,56 @@ const cropW = Math.max(1, x1 - x0);
     scanInfoOpen = false;
     updateResultsInfoPanel();
     btnNewImage.click();
+  });
+  const shelfDeleteButton = document.getElementById("shelf-delete");
+  shelfDeleteButton?.addEventListener("click", async () => {
+    if (shelfDeleteButton.disabled) return;
+    const shelfId = activeShelfId;
+    const shelf = activeShelfRecord;
+    if (!sb || !shelfId || !shelf) {
+      window.alert("No saved bookshelf is selected for deletion.");
+      return;
+    }
+    const name = shelf.name || "Untitled bookshelf";
+    const approved = window.confirm(
+      `Delete “${name}” permanently?\n\nThis will remove the bookshelf and all identified books and scan data associated with it. This cannot be undone.\n\nChoose OK to delete, or Cancel to keep it.`
+    );
+    if (!approved) return;
+    shelfDeleteButton.disabled = true;
+    try {
+      const session = await ensureSpinelessSession();
+      if (!session?.user) throw new Error("Please log in again before deleting a bookshelf.");
+      // Delete the owned shelf record; Supabase foreign-key cascading should
+      // remove its dependent book and scan rows atomically. Never remove a
+      // storage image or change the UI unless the database confirms deletion.
+      const { data, error } = await sb.from("shelves")
+        .delete().eq("id", shelfId).eq("user_id", session.user.id)
+        .select("id");
+      if (error) throw error;
+      if (!data?.some(row => row.id === shelfId)) {
+        throw new Error("Deletion was not confirmed by the database. Check permissions or reload.");
+      }
+      if (shelfRefreshTimer) { clearTimeout(shelfRefreshTimer); shelfRefreshTimer = null; }
+      if (shelfRealtimeChannel) { await sb.removeChannel(shelfRealtimeChannel); shelfRealtimeChannel = null; }
+      activeShelfId = null;
+      activeShelfRecord = null;
+      latestServerBookRows = [];
+      catalogAllBooks = catalogAllBooks.filter(book => book.shelf_id !== shelfId);
+      scanInfoOpen = false;
+      updateResultsInfoPanel();
+      // The image is auxiliary; failure to clean it up should not undo
+      // successful deletion of the database record.
+      if (shelf.image_path) {
+        const { error: storageError } = await sb.storage.from(SHELF_IMAGE_BUCKET).remove([shelf.image_path]);
+        if (storageError) console.warn("Shelf deleted, but image cleanup failed:", storageError);
+      }
+      await openShelfList();
+    } catch (error) {
+      console.error("Could not delete bookshelf:", error);
+      window.alert(`Could not delete “${name}”.\n\n${error.message || "Please try again."}\n\nYour bookshelf may still be present; refresh the list to verify.`);
+    } finally {
+      shelfDeleteButton.disabled = false;
+    }
   });
   document.getElementById("results-info-close")?.addEventListener("click", () => {
     scanInfoOpen = false;
