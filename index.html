@@ -843,7 +843,7 @@
       #background-id-stage { font-size: 0.7rem; }
     }
 
-    /* v4.33 — visible shelf name and two-line book identification */
+    /* v4.34 — visible shelf name and two-line book identification */
     #results-shelf-name {
       position: absolute;
       top: calc(11px + env(safe-area-inset-top));
@@ -863,6 +863,11 @@
     #recognized-title-author { display: block; margin-top: 5px; font-size: .93rem; font-weight: 400; line-height: 1.2; overflow-wrap: anywhere; }
     #recognized-title-author:empty { display: none; }
     #screen-results.scan-info-visible #results-shelf-name { visibility: hidden; }
+
+    /* v4.34 — reserve a variable-height header above the shelf photo. */
+    #screen-results { --results-photo-top: 78px; }
+    #results-image-wrapper { top: var(--results-photo-top); align-items: flex-start; }
+    #results-image-inner { align-items: flex-start; }
 
     /* RESULTS SCREEN */
     #screen-results { inset: 0; background: #770c0d; color: #fff; }
@@ -1982,7 +1987,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.33</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.34</button>
   </div>
 
 <script>
@@ -2850,6 +2855,19 @@
   const recognizedTitleText = document.getElementById("recognized-title-text");
   const recognizedTitleAuthor = document.getElementById("recognized-title-author");
   const resultsShelfName = document.getElementById("results-shelf-name");
+  // Long shelf names may wrap; keep the photo directly below the final line.
+  function updateResultsPhotoTop() {
+    if (!resultsShelfName) return;
+    const headerBottom = resultsShelfName.offsetTop + resultsShelfName.offsetHeight;
+    document.getElementById("screen-results")?.style.setProperty(
+      "--results-photo-top", `${Math.max(68, Math.ceil(headerBottom + 12))}px`
+    );
+  }
+  if (resultsShelfName && typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(updateResultsPhotoTop).observe(resultsShelfName);
+  }
+  window.addEventListener("resize", updateResultsPhotoTop);
+
   const recognizedTitleSource = document.getElementById("recognized-title-source");
   const btnNewImage = document.getElementById("btn-new-image");
   const btnNewSearch = document.getElementById("new-search-btn");
@@ -3023,6 +3041,7 @@
     const displayShelfName = activeShelfRecord?.name || `Bookshelf ${nextShelfNumber}`;
     document.getElementById("shelf-title").textContent = displayShelfName;
     if (resultsShelfName) resultsShelfName.textContent = displayShelfName;
+    updateResultsPhotoTop();
     const created = activeShelfRecord?.created_at;
     if (shelfDate) shelfDate.textContent = created
       ? "◴  " + new Date(created).toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric" }) + " - " + new Date(created).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }).replace(" AM", "am").replace(" PM", "pm")
@@ -6720,6 +6739,7 @@ const cropW = Math.max(1, x1 - x0);
     if (!activeShelfId || !sb) {
       if (activeShelfRecord) activeShelfRecord.name = name;
       if (resultsShelfName) resultsShelfName.textContent = name;
+      updateResultsPhotoTop();
       document.getElementById("shelf-title").textContent = name;
       stopShelfRename();
       return;
