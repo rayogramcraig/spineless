@@ -1734,8 +1734,8 @@
     #results-fit-toggle {
       position:absolute; z-index:4; top:calc(48px + 8px); right:10px;
       height:32px; width:32px; display:grid; place-items:center;
-      border:0; padding:0; background:transparent; color:#ff5900; cursor:pointer;
-      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.45));
+      border:0; padding:0; background:rgba(0,0,0,0.9); color:#ff5900; cursor:pointer;
+      border-radius:2px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.45));
     }
     #results-fit-toggle svg {
       width:24px; height:24px; stroke:currentColor; stroke-width:2.4; fill:none;
@@ -1955,10 +1955,10 @@
           <div id="results-shelf-name" aria-label="Current bookshelf"></div>
           <button id="results-fit-toggle" type="button" aria-label="Fit entire shelf image" title="Fit entire shelf image">
             <svg id="results-fit-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 9V3h6"/>
-              <path d="M15 3h6v6"/>
-              <path d="M21 15v6h-6"/>
-              <path d="M9 21H3v-6"/>
+              <path d="M4 10V4h6"/>
+              <path d="M14 4h6v6"/>
+              <path d="M20 14v6h-6"/>
+              <path d="M10 20H4v-6"/>
             </svg>
           </button>
           <div id="results-image-wrapper">
@@ -2057,7 +2057,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.37.1</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.37.2</button>
   </div>
 
 <script>
@@ -2978,18 +2978,16 @@
     resultsFitToggle.title = resultsFitToggle.getAttribute("aria-label");
     document.getElementById("results-fit-icon").innerHTML = resultsFitEntireImage
       ? [
-          '<path d="M12 3v18"/>',
-          '<path d="M3 12h18"/>',
-          '<path d="M18 4v6"/>',
-          '<path d="M20 12h-6"/>',
-          '<path d="M6 20h6"/>',
-          '<path d="M4 18v-6"/>'
+          '<path d="M10 4v6H4"/>',
+          '<path d="M14 4v6h6"/>',
+          '<path d="M20 14h-6v6"/>',
+          '<path d="M4 14h6v6"/>'
         ].join('')
       : [
-          '<path d="M3 9V3h6"/>',
-          '<path d="M15 3h6v6"/>',
-          '<path d="M21 15v6h-6"/>',
-          '<path d="M9 21H3v-6"/>'
+          '<path d="M4 10V4h6"/>',
+          '<path d="M14 4h6v6"/>',
+          '<path d="M20 14v6h-6"/>',
+          '<path d="M10 20H4v-6"/>'
         ].join('');
   }
   resultsFitToggle.addEventListener("click", () => {
