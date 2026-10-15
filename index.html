@@ -119,6 +119,9 @@
     .stats-donut-center span {color:white; font-size:12px;}
     .stats-legend {display:flex; justify-content:center; flex-wrap:wrap; gap:10px 14px; margin-top:16px;}
     .stats-legend-item {display:flex; align-items:center; gap:5px; font-size:12px;}
+    .genre-enrichment { margin-top:18px; text-align:center; }
+    .genre-enrich-button { border:1px solid #ff5900; border-radius:18px; padding:8px 13px; color:#ff5900; background:transparent; cursor:pointer; font:inherit; font-size:13px; }
+    .genre-enrich-button:disabled { opacity:.45; cursor:default; }
     .stats-legend-swatch {display:inline-block; width:9px; height:9px; border-radius:2px;}
     @media(max-width:400px) {
       .shelves-filter-wrap {margin-left:0; margin-right:-12px;}
@@ -2126,7 +2129,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.40</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.41</button>
   </div>
 
 <script>
@@ -2315,8 +2318,7 @@
     showAll();if(authors.length>8) statsPanel.append(seeAll);
   }
   function renderGenreStats(books) {
-    // The present shelf_books schema supplies title and author, not genre.
-    // Only display categories when actual genre information is present.
+    // Each physical book contributes once, using its saved primary genre.
     const counts=new Map(); let classified=0;
     for(const book of books) {
       const genre=String(book.genre||'').trim();
@@ -2347,7 +2349,117 @@
       const text=document.createElement('span');text.textContent=`${name} (${count.toLocaleString()})`;
       row.append(swatch,text);legend.append(row);
     }); statsPanel.append(legend);
-    if(unclassified) addStatsMessage('Genre information is not saved for these books yet. The chart will fill in when genre data is added to the catalog.');
+    if(unclassified) addStatsMessage(`${unclassified} ${unclassified===1?'book is':'books are'} not classified yet.`);
+    renderGenreEnrichmentControls(books);
+  }
+  // Genre enrichment is opt-in and persists results to the existing user's own books.
+  // Open Library work subjects are not themselves genres; map them to one stable
+  // primary category for the donut. Preserve raw subjects for future refinements.
+  const GENRE_RULES = [
+    ['Science Fiction & Fantasy', /science fiction|fantasy fiction|fantasy literature|space opera|dystopi|cyberpunk|magic realism/i],
+    ['Mystery & Crime', /detective|mystery fiction|crime fiction|thrillers?|spy stories|suspense fiction|noir fiction/i],
+    ['Poetry & Drama', /poetry|poems|drama|plays|theater|theatre|dramatic works/i],
+    ['Biography & Memoir', /biograph|autobiograph|memoir|personal narratives|reminiscences|diaries/i],
+    ['Art & Design', /art,|art history|artists|graphic design|architecture|design|photograph|painting|sculpture|typography/i],
+    ['Science & Technology', /science|biology|physics|chemistry|mathematics|technology|computers|engineering|astronomy|natural history/i],
+    ['History', /history|historical studies|civilization|historical events|world war/i],
+    ['Politics', /politic|government|public policy|elections|democracy|international relations/i],
+    ['Psychology & Sociology', /psycholog|sociolog|anthropolog|social sciences|social conditions|human behavior/i],
+    ['Philosophy', /philosoph|ethics|metaphysics|epistemology|existentialism/i],
+    ['Fiction', /fiction|novels|short stories|literary collections|literature/i]
+  ];
+  function normalizeGenre(subjects) {
+    const values=(Array.isArray(subjects)?subjects:[]).filter(x=>typeof x==='string');
+    if(!values.length) return null;
+    // Prefer explicit genre phrases. Ignore ambiguous subject headings such as
+    // "American fiction -- History and criticism" when categorizing fiction.
+    const safe=values.filter(x=>!/(history and criticism|criticism and interpretation)/i.test(x));
+    for(const [genre,pattern] of GENRE_RULES) {
+      if(safe.some(subject=>pattern.test(subject))) return genre;
+    }
+    return null; // Do not invent a genre from unrelated topical subjects.
+  }
+  function openLibraryWorkKey(key) {
+    const match=/^(?:\/works\/)?(OL\d+W)$/.exec(String(key||'').trim());
+    return match ? '/works/'+match[1] : null;
+  }
+  async function fetchBookSubjects(book) {
+    const workKey=openLibraryWorkKey(book.open_library_key);
+    if(workKey) {
+      const resp=await fetch('https://openlibrary.org'+workKey+'.json');
+      if(resp.ok) {
+        const work=await resp.json();
+        if(Array.isArray(work.subjects)) return {subjects:work.subjects, key:workKey};
+      }
+    }
+    // Older records may lack the Open Library work ID. Verify both title and
+    // author before associating a result, to avoid mislabeling similarly titled books.
+    const title=String(book.title||'').trim(), author=String(book.author||'').trim();
+    if(!title || !author || /^(not found|unknown)$/i.test(author)) return null;
+    const params=new URLSearchParams({title,author,fields:'key,title,author_name,subject',limit:'5'});
+    const response=await fetch('https://openlibrary.org/search.json?'+params);
+    if(!response.ok) throw new Error('Open Library '+response.status);
+    const data=await response.json();
+    const canon=str=>String(str||'').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,' ').trim();
+    const targetTitle=canon(title), targetAuthor=canon(author);
+    const doc=(data.docs||[]).find(d=>canon(d.title)===targetTitle &&
+      (d.author_name||[]).some(name=>{
+        const a=canon(name); return a===targetAuthor || (a.length>5 && targetAuthor.includes(a)) || (targetAuthor.length>5 && a.includes(targetAuthor));
+      }));
+    if(!doc) return null;
+    if(Array.isArray(doc.subject) && doc.subject.length) return {subjects:doc.subject,key:openLibraryWorkKey(doc.key)};
+    const candidateKey=openLibraryWorkKey(doc.key);
+    if(!candidateKey) return null;
+    const workResp=await fetch('https://openlibrary.org'+candidateKey+'.json');
+    if(!workResp.ok) return null;
+    const work=await workResp.json();
+    return {subjects:Array.isArray(work.subjects)?work.subjects:[], key:candidateKey};
+  }
+  let genreJobActive=false;
+  let genreRunNumber=0;
+  function renderGenreEnrichmentControls(books) {
+    const missing=books.filter(b=>!b.genre);
+    const block=document.createElement('div');block.className='genre-enrichment';
+    const button=document.createElement('button');button.type='button';
+    button.className='genre-enrich-button';
+    button.textContent=genreJobActive?'Identifying genres…':`Identify genres (${missing.length} remaining)`;
+    button.disabled=genreJobActive || !missing.length;
+    const status=document.createElement('p');status.className='stats-note';
+    status.textContent=missing.length?'Uses Open Library subjects; books without a reliable category stay unclassified.':'All books have genres.';
+    block.append(button,status);statsPanel.append(block);
+    button.addEventListener('click',()=>runGenreEnrichment(missing,button,status));
+  }
+  async function runGenreEnrichment(books,button,status) {
+    if(genreJobActive || !books.length) return;
+    genreJobActive=true;
+    const run=++genreRunNumber;
+    button.disabled=true;
+    let complete=0,classified=0,unmatched=0,failed=0;
+    // A modest request pace is kinder to Open Library, and avoids bursts.
+    for(const book of books) {
+      if(run!==genreRunNumber) break;
+      try {
+        const result=await fetchBookSubjects(book);
+        const subjects=result?.subjects||[];
+        const genre=normalizeGenre(subjects);
+        if(genre) {
+          const payload={genre,genre_source:'openlibrary',genre_subjects:subjects.slice(0,100)};
+          if(result.key && !book.open_library_key) payload.open_library_key=result.key;
+          const {error}=await sb.from('shelf_books').update(payload).eq('id',book.id).eq('shelf_id',book.shelf_id);
+          if(error) throw error;
+          classified++;
+        } else unmatched++;
+      } catch(err) { failed++; console.warn('Genre enrichment failed for',book.title,err); }
+      complete++;
+      if(status.isConnected) status.textContent=`Checked ${complete} of ${books.length} · ${classified} classified · ${unmatched} without matching genre · ${failed} errors`;
+      // Delay is per book, not per request. No automatic retry loop.
+      if(complete<books.length) await new Promise(resolve=>setTimeout(resolve,350));
+    }
+    genreJobActive=false;
+    if(activeStatsTab==='genres') {
+      await loadShelfStats('genres');
+      addStatsMessage(`Enrichment complete: ${classified} classified; ${unmatched} without a matching category${failed?`; ${failed} errors`:''}.`);
+    }
   }
   async function openCatalogSearchFor(author) {
     await openWholeCatalog();
@@ -2412,7 +2524,7 @@
     for (const shelf of shelves) {
       for (let start = 0; ; start += pageSize) {
         const { data, error } = await sb.from("shelf_books")
-          .select("id,shelf_id,title,author,cover_url,cover_id,created_at")
+          .select("id,shelf_id,title,author,isbn,open_library_key,genre,genre_source,cover_url,cover_id,created_at")
           .eq("shelf_id", shelf.id)
           .order("created_at", { ascending: true })
           .range(start, start + pageSize - 1);
