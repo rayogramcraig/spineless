@@ -90,6 +90,41 @@
     #shelf-heading.editing #shelf-name-input { display: block; }
 
 
+    /* v4.40 — Bookshelves statistics, aligned to the supplied mockups */
+    .shelves-filter-wrap {margin: 8px -12px 26px 12px; color:#e8ff29; font-size:14px;}
+    .shelves-filter-bar {display:flex; align-items:center; gap:10px; min-height:36px; padding:0 0 0 0;}
+    .filter-label {margin-left:6px; color:#ff5900; flex:1;}
+    .shelves-filter-tabs {display:flex; align-items:center; border:1px solid #ff5900; border-radius:18px; overflow:hidden; flex:none;}
+    .shelves-filter-tabs button {width:106px; height:34px; border:0; background:transparent; color:#e8ff29; font-size:14px; font-weight:700; cursor:pointer;}
+    .shelves-filter-tabs button+button {border-left:1px solid #ff5900;}
+    .shelves-filter-wrap.is-open .shelves-filter-tabs {border-color:transparent; overflow:visible; gap:0;}
+    .shelves-filter-wrap.is-open .shelves-filter-tabs button {position:relative; border:1px solid transparent; border-radius:16px 16px 0 0;}
+    .shelves-filter-wrap.is-open .shelves-filter-tabs button+button {border-left:0;}
+    .shelves-filter-wrap.is-open .shelves-filter-tabs button.active {border-color:#ff5900; border-bottom-color:#000; background:#000; z-index:2;}
+    #stats-close {border:0; background:none; color:#ff5900; font-size:29px; font-weight:300; line-height:1; cursor:pointer; width:28px; flex:none;}
+    #shelves-stats {position:relative; border:1px solid #ff5900; border-radius:17px; padding:22px 36px 20px; margin-top:-1px; color:#e8ff29; min-height:255px;}
+    .stats-header {display:flex; justify-content:space-between; font-weight:700; margin-bottom:14px;}
+    .stats-author-list {display:grid; gap:7px;}
+    .stats-author-row {display:flex; justify-content:space-between; gap:10px; width:100%; border:0; background:none; color:#e8ff29; text-align:left; font:inherit; font-size:14px; cursor:pointer; padding:0;}
+    .stats-author-row span:first-child {overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .stats-author-row span:last-child {margin-left:auto; font-variant-numeric:tabular-nums;}
+    .stats-author-row:hover span:first-child {text-decoration:underline;}
+    .stats-see-all {display:block; margin-top:19px; border:0; background:none; color:#ff5900; text-decoration:underline; font:inherit; font-weight:700; cursor:pointer;}
+    .stats-note {font-size:12px; color:#bbb; line-height:1.35; margin-top:15px;}
+    .stats-donut-wrap {position:relative; width:min(100%,270px); aspect-ratio:1; margin:20px auto 4px;}
+    .stats-donut {position:absolute; inset:4%; border-radius:50%; background:#666;}
+    .stats-donut::after {content:''; position:absolute; inset:25%; border-radius:50%; background:#000;}
+    .stats-donut-center {position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; align-items:center; pointer-events:none; text-align:center;}
+    .stats-donut-center strong {color:white; font-size:28px;}
+    .stats-donut-center span {color:white; font-size:12px;}
+    .stats-legend {display:flex; justify-content:center; flex-wrap:wrap; gap:10px 14px; margin-top:16px;}
+    .stats-legend-item {display:flex; align-items:center; gap:5px; font-size:12px;}
+    .stats-legend-swatch {display:inline-block; width:9px; height:9px; border-radius:2px;}
+    @media(max-width:400px) {
+      .shelves-filter-wrap {margin-left:0; margin-right:-12px;}
+      .shelves-filter-tabs button {width: min(25vw,106px);}
+      #shelves-stats {padding:20px 24px;}
+    }
     /* v4.31 — complete multi-shelf book catalog */
     #shelves-all-books { display:flex; align-items:center; justify-content:space-between; width:calc(100% - 20px); margin:-16px 0 20px 20px; padding:6px 10px; color:#ff5900; background:#000; border:1px solid #777; border-radius:11px; font-size:17px; text-align:left; cursor:pointer; }
     #shelves-all-books .list-arrow { width:15px; height:15px; flex:none; fill:#ff5900; }
@@ -1843,6 +1878,10 @@
       <div class="shelves-card">
         <div class="shelves-heading"><h1>Bookshelves</h1><button id="shelves-add" type="button" aria-label="Add bookshelf">+</button></div>
         <button id="shelves-all-books" type="button"><span>Search all books</span><svg class="list-arrow" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3.5a1.4 1.4 0 0 1 2.1-1.2L21 10.8a1.45 1.45 0 0 1 0 2.4L8.1 21.7A1.4 1.4 0 0 1 6 20.5z"/></svg></button>
+        <div class="shelves-filter-wrap">
+          <div class="shelves-filter-bar"><span class="filter-label">filter:</span><div class="shelves-filter-tabs"><button type="button" id="stats-genres" aria-expanded="false">Genres</button><button type="button" id="stats-authors" aria-expanded="false">Authors</button></div><button type="button" id="stats-close" aria-label="Close statistics" class="hidden">×</button></div>
+          <section id="shelves-stats" class="hidden" aria-live="polite"></section>
+        </div>
         <div id="shelves-list" aria-label="Your bookshelves"></div>
         <p id="shelves-message" role="status"></p>
         <button type="button" id="shelves-logout">Log out</button>
@@ -2087,7 +2126,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.39</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.40</button>
   </div>
 
 <script>
@@ -2202,6 +2241,123 @@
     while (used.has(number)) number++;
     return number;
   }
+
+  // Stats are calculated from the same saved cross-shelf catalog as Search all books.
+  let activeStatsTab = null;
+  let statsRequest = 0;
+  const statsWrap = document.querySelector('.shelves-filter-wrap');
+  const statsPanel = document.getElementById('shelves-stats');
+  const statsClose = document.getElementById('stats-close');
+  const statsButtons = {genres:document.getElementById('stats-genres'), authors:document.getElementById('stats-authors')};
+  function updateStatsVisibility() {
+    statsWrap.classList.toggle('is-open', !!activeStatsTab);
+    statsPanel.classList.toggle('hidden', !activeStatsTab);
+    statsClose.classList.toggle('hidden', !activeStatsTab);
+    for (const [tab,button] of Object.entries(statsButtons)) {
+      button.classList.toggle('active', tab===activeStatsTab);
+      button.setAttribute('aria-expanded', String(tab===activeStatsTab));
+    }
+  }
+  function setStatsTab(tab) {
+    activeStatsTab = activeStatsTab===tab ? null : tab;
+    updateStatsVisibility();
+    if (activeStatsTab) loadShelfStats(activeStatsTab);
+    else ++statsRequest;
+  }
+  function addStatsMessage(message) {
+    const p=document.createElement('p'); p.className='stats-note'; p.textContent=message; statsPanel.append(p);
+  }
+  async function loadShelfStats(tab) {
+    const serial=++statsRequest;
+    statsPanel.replaceChildren();
+    addStatsMessage('Loading your collection…');
+    try {
+      const books=await fetchWholeCatalog();
+      if(serial!==statsRequest || tab!==activeStatsTab) return;
+      statsPanel.replaceChildren();
+      if(tab==='authors') renderAuthorStats(books);
+      else renderGenreStats(books);
+    } catch(err) {
+      if(serial!==statsRequest) return;
+      console.warn('Statistics could not load:',err);
+      statsPanel.replaceChildren(); addStatsMessage('Could not load statistics. Tap the tab to retry.');
+    }
+  }
+  function renderAuthorStats(books) {
+    const counts=new Map();
+    for(const book of books) {
+      const name=String(book.author||'').trim().replace(/\s+/g,' ');
+      if(!name || /^(?:author\s+)?(?:not found|unknown|n\/?a|none|null|undefined)$/i.test(name)) continue;
+      const key=name.toLocaleLowerCase();
+      if(!counts.has(key)) counts.set(key,{name,count:0});
+      counts.get(key).count++;
+    }
+    const authors=[...counts.values()].sort((a,b)=>b.count-a.count || a.name.localeCompare(b.name));
+    const header=document.createElement('div'); header.className='stats-header';
+    header.innerHTML='<span>Top Authors</span><span>Books</span>'; statsPanel.append(header);
+    if(!authors.length) {addStatsMessage('No authors identified yet.');return;}
+    const list=document.createElement('div'); list.className='stats-author-list'; statsPanel.append(list);
+    const showAll=()=>{
+      list.replaceChildren();
+      for(const item of authors.slice(0,showingAll?authors.length:8)) {
+        const button=document.createElement('button'); button.type='button'; button.className='stats-author-row';
+        const name=document.createElement('span');name.textContent=item.name;
+        const count=document.createElement('span');count.textContent=item.count.toLocaleString();
+        button.append(name,count);
+        button.addEventListener('click',()=>openCatalogSearchFor(item.name));
+        list.append(button);
+      }
+      seeAll.textContent=showingAll?'Show less':'See all';
+    };
+    let showingAll=false;
+    const seeAll=document.createElement('button'); seeAll.type='button';seeAll.className='stats-see-all';
+    seeAll.addEventListener('click',()=>{showingAll=!showingAll;showAll();});
+    showAll();if(authors.length>8) statsPanel.append(seeAll);
+  }
+  function renderGenreStats(books) {
+    // The present shelf_books schema supplies title and author, not genre.
+    // Only display categories when actual genre information is present.
+    const counts=new Map(); let classified=0;
+    for(const book of books) {
+      const genre=String(book.genre||'').trim();
+      if(!genre) continue;
+      classified++;
+      counts.set(genre,(counts.get(genre)||0)+1);
+    }
+    const unclassified=books.length-classified;
+    if(unclassified) counts.set('Unclassified',unclassified);
+    const entries=[...counts.entries()].sort((a,b)=>b[1]-a[1]);
+    const colors=['#ff5900','#86390e','#d6ff00','#aaa05a','#50c56a','#fff','#666'];
+    let offset=0;
+    const stops=entries.map(([label,n],i)=>{
+      const start=offset; offset+=books.length?n/books.length*100:0;
+      return `${colors[i%colors.length]} ${start}% ${offset}%`;
+    });
+    const wrap=document.createElement('div'); wrap.className='stats-donut-wrap';
+    const ring=document.createElement('div'); ring.className='stats-donut';
+    ring.style.background=stops.length?`conic-gradient(${stops.join(',')})`:'#666';
+    const center=document.createElement('div');center.className='stats-donut-center';
+    const total=document.createElement('strong');total.textContent=books.length.toLocaleString();
+    const label=document.createElement('span');label.textContent='books identified';
+    center.append(total,label);wrap.append(ring,center);statsPanel.append(wrap);
+    const legend=document.createElement('div');legend.className='stats-legend';
+    entries.forEach(([name,count],i)=>{
+      const row=document.createElement('div');row.className='stats-legend-item';
+      const swatch=document.createElement('span');swatch.className='stats-legend-swatch';swatch.style.background=colors[i%colors.length];
+      const text=document.createElement('span');text.textContent=`${name} (${count.toLocaleString()})`;
+      row.append(swatch,text);legend.append(row);
+    }); statsPanel.append(legend);
+    if(unclassified) addStatsMessage('Genre information is not saved for these books yet. The chart will fill in when genre data is added to the catalog.');
+  }
+  async function openCatalogSearchFor(author) {
+    await openWholeCatalog();
+    const input=document.getElementById('catalog-search');
+    input.value=author;
+    renderWholeCatalog();
+  }
+  statsButtons.genres.addEventListener('click',()=>setStatsTab('genres'));
+  statsButtons.authors.addEventListener('click',()=>setStatsTab('authors'));
+  statsClose.addEventListener('click',()=>setStatsTab(activeStatsTab));
 
   async function openShelfList() {
     if (!screenShelves.classList.contains("active")) {
