@@ -101,12 +101,16 @@
     #catalog-back img { display:block; width:40px; height:40px; object-fit:contain; }
     #catalog-heading { flex:1; font-size:clamp(18px,5vw,24px); font-weight:700; white-space:nowrap; }
     .catalog-search-line { display:flex; align-items:center; gap:12px; margin-bottom:13px; }
-    .catalog-sort { display:flex; align-items:center; gap:5px; flex:none; color:#ff5900; font-size:15px; white-space:nowrap; }
-    .catalog-sort-options { display:inline-flex; align-items:center; padding:2px 3px; border-radius:18px; background:#160101; }
-    .catalog-sort button { border:0; border-radius:12px; padding:1px 5px; background:transparent; color:#fff; font-size:15px; line-height:1.2; cursor:pointer; }
-    .catalog-sort button.active { color:#ff5900; background:#e8ff29; }
+    .catalog-sort { display:flex; align-items:center; justify-content:center; gap:11px; margin:0 0 13px; color:#ff5900; font-size:15px; white-space:nowrap; }
+    .catalog-sort-options { display:inline-flex; align-items:center; gap:10px; }
+    .catalog-sort button { border:0; padding:0; background:transparent; color:#ff5900; font-size:15px; line-height:1.2; cursor:pointer; }
+    .catalog-sort button.active { color:#ff5900; }
+    .catalog-sort-track { width:49px; height:23px; padding:2px; border:0; border-radius:999px; background:#ff5900; cursor:pointer; display:flex; align-items:center; }
+    .catalog-sort-thumb { display:block; width:19px; height:19px; border-radius:50%; background:#e8ff29; transition:transform .18s ease; }
+    .catalog-sort[data-sort="author"] .catalog-sort-thumb { transform:translateX(26px); }
+    .catalog-search-line { margin-bottom:15px; }
     .catalog-search-line #catalog-search { flex:1; min-width:0; }
-    @media(max-width:390px) { .catalog-search-line { gap:6px; } .catalog-sort { gap:3px; font-size:13px; } .catalog-sort button { font-size:13px; padding:1px 3px; } }
+
     #catalog-search { min-width:0; flex:1; width:100%; height:35px; padding:7px 12px; border:1px solid #bcbcbc; border-radius:18px; outline:none; background:#fff; color:#111; font-size:14px; }
     #catalog-search:focus, #catalog-search:not(:placeholder-shown) { height:54px; border-radius:13px; font-size:26px; }
     #catalog-search::placeholder { color:#c9a99b; }
@@ -1837,10 +1841,11 @@
             <div id="catalog-heading"><span id="catalog-total">0</span> identified books</div>
           </div>
           <div class="catalog-search-line">
-            <div class="catalog-sort" role="group" aria-label="Sort books by"><span>sort by:</span><span class="catalog-sort-options"><button id="catalog-sort-title" type="button" class="active" aria-pressed="true">title</button><button id="catalog-sort-author" type="button" aria-pressed="false">author</button></span></div>
+
             <input id="catalog-search" type="search" placeholder="⌕ search" aria-label="Search book titles and authors" autocomplete="off" />
             <div id="catalog-count"><span id="catalog-matches">0</span><small>matches</small></div>
           </div>
+          <div class="catalog-sort" data-sort="title" role="group" aria-label="Sort books by"><span>sort by:</span><button id="catalog-sort-title" type="button" class="active" aria-pressed="true">title</button><button id="catalog-sort-switch" type="button" class="catalog-sort-track" aria-label="Toggle title and author sort"><span class="catalog-sort-thumb"></span></button><button id="catalog-sort-author" type="button" aria-pressed="false">author</button></div>
         </div>
         <div id="catalog-book-list" aria-label="All identified books"><p id="catalog-message" role="status">Loading books…</p></div>
       </div>
@@ -2064,7 +2069,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.38</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.37.2</button>
   </div>
 
 <script>
@@ -2249,6 +2254,7 @@
   let catalogSortBy = "title";
   function setCatalogSort(field) {
     catalogSortBy = field;
+    document.querySelector(".catalog-sort").dataset.sort = field;
     for (const name of ["title", "author"]) {
       const button = document.getElementById("catalog-sort-" + name);
       button.classList.toggle("active", name === field);
@@ -2265,7 +2271,22 @@
     const sortKey = catalogSortBy;
     const secondKey = sortKey === "title" ? "author" : "title";
     const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
-    const matches = [...filtered].sort((a,b) => collator.compare(String(a[sortKey] || ""), String(b[sortKey] || "")) || collator.compare(String(a[secondKey] || ""), String(b[secondKey] || "")));
+    const authorMissing = book => !String(book.author || "").trim() || /^(?:author\s+)?(?:not found|unknown|n\/?a|none|null|undefined)$/i.test(String(book.author).trim());
+    const authorSortName = book => {
+      if (authorMissing(book)) return "";
+      const name = String(book.author).trim().replace(/\s+/g, " ");
+      // "Last, First" is already surname-first; otherwise use the final word.
+      if (name.includes(",")) return name;
+      const parts = name.split(" ");
+      return parts.length > 1 ? `${parts[parts.length - 1]}, ${parts.slice(0, -1).join(" ")}` : name;
+    };
+    const matches = [...filtered].sort((a,b) => {
+      // Unidentified authors always appear last, even while sorting by title.
+      if (authorMissing(a) !== authorMissing(b)) return authorMissing(a) ? 1 : -1;
+      const key = book => sortKey === "author" ? authorSortName(book) : String(book.title || "");
+      const secondary = book => secondKey === "author" ? authorSortName(book) : String(book.title || "");
+      return collator.compare(key(a), key(b)) || collator.compare(secondary(a), secondary(b));
+    });
     document.getElementById("catalog-total").textContent = catalogAllBooks.length.toLocaleString();
     document.getElementById("catalog-matches").textContent = matches.length.toLocaleString();
     const container = document.getElementById("catalog-book-list");
@@ -2292,7 +2313,7 @@
         } else { const blank=document.createElement("span"); blank.className="catalog-no-cover"; row.append(blank); }
         const copy=document.createElement("span"); copy.className="catalog-book-copy";
         const title=document.createElement("span"); title.className="catalog-book-title"; title.style.display="block"; title.textContent=book.title;
-        const author=document.createElement("span"); author.className="catalog-book-author"; author.style.display="block"; author.textContent=book.author || "";
+        const author=document.createElement("span"); author.className="catalog-book-author"; author.style.display="block"; author.textContent=authorMissing(book) ? "author not found" : book.author;
         copy.append(title,author);
         const loc=document.createElement("span"); loc.className="catalog-book-shelf"; loc.textContent=book.shelfName;
         row.append(copy,loc); row.addEventListener("click",()=>openCatalogBookDetail(book,coverUrl)); fragment.append(row);
@@ -2307,7 +2328,7 @@
   function openCatalogBookDetail(book, coverUrl) {
     selectedCatalogBook = book;
     document.getElementById("catalog-detail-title").textContent = book.title || "";
-    document.getElementById("catalog-detail-author").textContent = book.author || "";
+    document.getElementById("catalog-detail-author").textContent = (!String(book.author || "").trim() || /^(?:author\s+)?(?:not found|unknown|n\/?a|none|null|undefined)$/i.test(String(book.author).trim())) ? "author not found" : book.author;
     document.getElementById("catalog-detail-location").textContent = book.shelfName || "";
     const img=document.getElementById("catalog-detail-cover");
     img.style.display=coverUrl ? "block":"none";
@@ -6865,6 +6886,7 @@ const cropW = Math.max(1, x1 - x0);
   document.getElementById("catalog-back").addEventListener("click", openShelfList);
   document.getElementById("catalog-sort-title").addEventListener("click", () => setCatalogSort("title"));
   document.getElementById("catalog-sort-author").addEventListener("click", () => setCatalogSort("author"));
+  document.getElementById("catalog-sort-switch").addEventListener("click", () => setCatalogSort(catalogSortBy === "title" ? "author" : "title"));
   document.getElementById("catalog-search").addEventListener("input", () => { document.getElementById("catalog-book-list").scrollTop=0; renderWholeCatalog(); });
   document.getElementById("catalog-detail-close").addEventListener("click", closeCatalogDetail);
   document.getElementById("catalog-detail-body").addEventListener("click", locateCatalogBook);
