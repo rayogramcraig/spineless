@@ -141,7 +141,7 @@
       .shelves-filter-tabs button {width: min(25vw,106px);}
       #shelves-stats {padding:20px 24px;}
     }
-    /* v4.43 — simplified filter links, shared bookshelf-row alignment */
+    /* v4.44 — simplified filter links, shared bookshelf-row alignment */
     .shelves-filter-wrap {width:calc(100% - 20px); margin:10px 0 22px 20px;}
     .shelves-filter-bar {height:43px; min-height:43px; gap:12px; padding:0 11px 0 14px; border:1px solid #ff5900; border-radius:11px;}
     .filter-label {margin:0; flex:1;}
@@ -1882,6 +1882,14 @@
       #results-photo-stage { bottom: 150px; }
     }
 
+  
+    /* v4.44 — filtered genre header and unclassified-books link */
+    #catalog-heading.is-genre-filter {display:flex;align-items:baseline;gap:12px;min-width:0;white-space:normal;line-height:1.1;}
+    .catalog-genre-number {font-size:clamp(36px,9vw,46px);font-weight:800;color:#fff;flex:none;}
+    .catalog-genre-name {font-size:clamp(19px,5vw,28px);font-weight:700;color:#ff5900;overflow-wrap:anywhere;}
+    .genre-unclassified-link {display:block;width:100%;margin:19px 0 0;padding:0 8px;border:0;background:none;color:#fff;font:inherit;font-size:13px;line-height:1.4;text-align:center;text-decoration:underline;text-underline-offset:3px;cursor:pointer;}
+    .genre-unclassified-link:hover {color:#e8ff29;}
+    .genre-unclassified-link:focus-visible {outline:2px solid #e8ff29;outline-offset:4px;}
   </style>
 </head>
 <body>
@@ -2176,7 +2184,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.43</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.44</button>
   </div>
 
 <script>
@@ -2440,7 +2448,7 @@
     }
     statsPanel.append(legend);
     if(!total) addStatsMessage('No identified books yet.');
-    renderGenreEnrichmentControls(books);
+    renderGenreUnclassifiedLink(books);
   }
   // Genre enrichment is opt-in and persists results to the existing user's own books.
   // Open Library work subjects are not themselves genres; map them to one stable
@@ -2507,49 +2515,16 @@
   }
   let genreJobActive=false;
   let genreRunNumber=0;
-  function renderGenreEnrichmentControls(books) {
-    const missing=books.filter(b=>!b.genre);
-    const block=document.createElement('div');block.className='genre-enrichment';
-    const button=document.createElement('button');button.type='button';
-    button.className='genre-enrich-button';
-    button.textContent=genreJobActive?'Identifying genres…':`Identify genres (${missing.length} remaining)`;
-    button.disabled=genreJobActive || !missing.length;
-    const status=document.createElement('p');status.className='stats-note';
-    status.textContent=missing.length?'Uses Open Library subjects; books without a reliable category stay unclassified.':'All books have genres.';
-    block.append(button,status);statsPanel.append(block);
-    button.addEventListener('click',()=>runGenreEnrichment(missing,button,status));
-  }
-  async function runGenreEnrichment(books,button,status) {
-    if(genreJobActive || !books.length) return;
-    genreJobActive=true;
-    const run=++genreRunNumber;
-    button.disabled=true;
-    let complete=0,classified=0,unmatched=0,failed=0;
-    // A modest request pace is kinder to Open Library, and avoids bursts.
-    for(const book of books) {
-      if(run!==genreRunNumber) break;
-      try {
-        const result=await fetchBookSubjects(book);
-        const subjects=result?.subjects||[];
-        const genre=normalizeGenre(subjects);
-        if(genre) {
-          const payload={genre,genre_source:'openlibrary',genre_subjects:subjects.slice(0,100)};
-          if(result.key && !book.open_library_key) payload.open_library_key=result.key;
-          const {error}=await sb.from('shelf_books').update(payload).eq('id',book.id).eq('shelf_id',book.shelf_id);
-          if(error) throw error;
-          classified++;
-        } else unmatched++;
-      } catch(err) { failed++; console.warn('Genre enrichment failed for',book.title,err); }
-      complete++;
-      if(status.isConnected) status.textContent=`Checked ${complete} of ${books.length} · ${classified} classified · ${unmatched} without matching genre · ${failed} errors`;
-      // Delay is per book, not per request. No automatic retry loop.
-      if(complete<books.length) await new Promise(resolve=>setTimeout(resolve,350));
-    }
-    genreJobActive=false;
-    if(activeStatsTab==='genres') {
-      await loadShelfStats('genres');
-      addStatsMessage(`Enrichment complete: ${classified} classified; ${unmatched} without a matching category${failed?`; ${failed} errors`:''}.`);
-    }
+  function renderGenreUnclassifiedLink(books) {
+    const missing=books.filter(book=>!String(book.genre||'').trim()).length;
+    if(!missing) return;
+    const link=document.createElement('button');
+    link.type='button';
+    link.className='genre-unclassified-link';
+    link.textContent=`genre for ${missing.toLocaleString()} books not identified`;
+    link.setAttribute('aria-label',`Show ${missing} books without an identified genre`);
+    link.addEventListener('click',()=>openCatalogGenreFilter('__unclassified__'));
+    statsPanel.append(link);
   }
   async function openCatalogSearchFor(author) {
     await openWholeCatalog();
@@ -2562,9 +2537,6 @@
     catalogGenreFilter=genre;
     document.getElementById('catalog-search').value='';
     renderWholeCatalog();
-    const heading=document.getElementById('catalog-heading');
-    const suffix=document.createElement('span');suffix.id='catalog-genre-label';suffix.textContent=` · ${genre}`;
-    heading.append(suffix);
   }
   statsButtons.genres.addEventListener('click',()=>setStatsTab('genres'));
   statsButtons.authors.addEventListener('click',()=>setStatsTab('authors'));
@@ -2653,7 +2625,7 @@
     const q = document.getElementById("catalog-search").value.trim().toLocaleLowerCase();
     const panel = document.getElementById("catalog-panel");
     panel.classList.toggle("searching", Boolean(q));
-    const genreFiltered = catalogGenreFilter ? catalogAllBooks.filter(book=>String(book.genre||'').trim()===catalogGenreFilter) : catalogAllBooks;
+    const genreFiltered = catalogGenreFilter ? catalogAllBooks.filter(book=>catalogGenreFilter==='__unclassified__' ? !String(book.genre||'').trim() : String(book.genre||'').trim()===catalogGenreFilter) : catalogAllBooks;
     const filtered = q ? genreFiltered.filter(book => `${book.title || ""} ${book.author || ""}`.toLocaleLowerCase().includes(q)) : genreFiltered;
     const sortKey = catalogSortBy;
     const secondKey = sortKey === "title" ? "author" : "title";
@@ -2674,7 +2646,20 @@
       const secondary = book => secondKey === "author" ? authorSortName(book) : String(book.title || "");
       return collator.compare(key(a), key(b)) || collator.compare(secondary(a), secondary(b));
     });
-    document.getElementById("catalog-total").textContent = catalogAllBooks.length.toLocaleString();
+    const heading=document.getElementById('catalog-heading');
+    if(catalogGenreFilter) {
+      const headingGenre=catalogGenreFilter==='__unclassified__'?'other':catalogGenreFilter;
+      heading.replaceChildren();
+      const number=document.createElement('strong');number.className='catalog-genre-number';number.textContent=genreFiltered.length.toLocaleString();
+      const name=document.createElement('span');name.className='catalog-genre-name';name.textContent=headingGenre;
+      heading.append(number,name);
+      heading.classList.add('is-genre-filter');
+    } else {
+      heading.classList.remove('is-genre-filter');
+      heading.replaceChildren();
+      const count=document.createElement('span');count.id='catalog-total';count.textContent=catalogAllBooks.length.toLocaleString();
+      heading.append(count,document.createTextNode(' identified books'));
+    }
     document.getElementById("catalog-matches").textContent = matches.length.toLocaleString();
     const container = document.getElementById("catalog-book-list");
     container.replaceChildren();
@@ -2766,7 +2751,6 @@
   }
   async function openWholeCatalog() {
     catalogGenreFilter=null;
-    document.getElementById('catalog-genre-label')?.remove();
     showScreen(screenCatalog);
     const input=document.getElementById("catalog-search"); input.value="";
     document.getElementById("catalog-panel").classList.remove("searching");
