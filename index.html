@@ -119,6 +119,19 @@
     .stats-donut-center span {color:white; font-size:12px;}
     .stats-legend {display:flex; justify-content:center; flex-wrap:wrap; gap:10px 14px; margin-top:16px;}
     .stats-legend-item {display:flex; align-items:center; gap:5px; font-size:12px;}
+
+    /* v4.42 — legend beneath the donut; tappable slice count callouts. */
+    #shelves-stats:has(.stats-donut-wrap) {padding:22px 28px 21px;}
+    .stats-donut-wrap {width:min(100%,300px);margin:4px auto 0;}
+    .stats-donut {inset:0;cursor:pointer;touch-action:manipulation;}
+    .stats-donut::after {inset:25%;pointer-events:none;}
+    .stats-legend {display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;flex-wrap:nowrap;gap:5px;margin:10px 0 0;}
+    .stats-legend-item {font-size:13px;line-height:1.2;gap:9px;}
+    .stats-legend-swatch {width:11px;height:11px;border-radius:0;flex:none;}
+    .stats-genre-tooltip {position:absolute;z-index:4;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:67px;max-width:140px;min-height:49px;padding:5px 11px;border:1px solid #ff5900;border-radius:14px;background:#000;color:#ff5900;cursor:pointer;box-shadow:0 3px 10px #0008;}
+    .stats-genre-tooltip strong {font-size:19px;font-weight:700;line-height:1.1;}
+    .stats-genre-tooltip span {font-size:10px;color:#fff;line-height:1.15;margin-top:3px;}
+    .stats-genre-tooltip:focus-visible {outline:2px solid #e8ff29;outline-offset:2px;}
     .genre-enrichment { margin-top:18px; text-align:center; }
     .genre-enrich-button { border:1px solid #ff5900; border-radius:18px; padding:8px 13px; color:#ff5900; background:transparent; cursor:pointer; font:inherit; font-size:13px; }
     .genre-enrich-button:disabled { opacity:.45; cursor:default; }
@@ -2129,7 +2142,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.41</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.42</button>
   </div>
 
 <script>
@@ -2318,38 +2331,82 @@
     showAll();if(authors.length>8) statsPanel.append(seeAll);
   }
   function renderGenreStats(books) {
-    // Each physical book contributes once, using its saved primary genre.
-    const counts=new Map(); let classified=0;
+    // The five most common identified genres get individual slices; everything
+    // else (including unclassified books) is one non-filterable "other" slice.
+    const counts=new Map();
     for(const book of books) {
       const genre=String(book.genre||'').trim();
-      if(!genre) continue;
-      classified++;
-      counts.set(genre,(counts.get(genre)||0)+1);
+      if(genre) counts.set(genre,(counts.get(genre)||0)+1);
     }
-    const unclassified=books.length-classified;
-    if(unclassified) counts.set('Unclassified',unclassified);
-    const entries=[...counts.entries()].sort((a,b)=>b[1]-a[1]);
-    const colors=['#ff5900','#86390e','#d6ff00','#aaa05a','#50c56a','#fff','#666'];
-    let offset=0;
-    const stops=entries.map(([label,n],i)=>{
-      const start=offset; offset+=books.length?n/books.length*100:0;
-      return `${colors[i%colors.length]} ${start}% ${offset}%`;
+    const ranked=[...counts.entries()].sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0]));
+    const leading=ranked.slice(0,5);
+    const others=books.length-leading.reduce((sum,[,n])=>sum+n,0);
+    const colors=['#ff5900','#86390e','#d6ff00','#aaa05a','#50c56a','#fff'];
+    const entries=leading.map(([name,count],i)=>({name,count,color:colors[i],filterable:true}));
+    if(others>0) entries.push({name:'Not classified / other',count:others,color:'#fff',filterable:false});
+    const total=books.length;
+    let cumulative=0;
+    const slices=entries.map(item=>{
+      const start=cumulative;
+      cumulative+=total?item.count/total*360:0;
+      return {...item,start,end:cumulative};
     });
-    const wrap=document.createElement('div'); wrap.className='stats-donut-wrap';
-    const ring=document.createElement('div'); ring.className='stats-donut';
-    ring.style.background=stops.length?`conic-gradient(${stops.join(',')})`:'#666';
+    const gradient=slices.map(item=>`${item.color} ${item.start}deg ${item.end}deg`).join(',');
+    const wrap=document.createElement('div');wrap.className='stats-donut-wrap';
+    const ring=document.createElement('div');ring.className='stats-donut';
+    ring.style.background=gradient?`conic-gradient(${gradient})`:'#666';
+    ring.setAttribute('role','group');ring.setAttribute('aria-label','Books grouped by genre');
     const center=document.createElement('div');center.className='stats-donut-center';
-    const total=document.createElement('strong');total.textContent=books.length.toLocaleString();
+    const totalText=document.createElement('strong');totalText.textContent=total.toLocaleString();
     const label=document.createElement('span');label.textContent='books identified';
-    center.append(total,label);wrap.append(ring,center);statsPanel.append(wrap);
+    center.append(totalText,label);
+    wrap.append(ring,center);statsPanel.append(wrap);
+
+    const tooltip=document.createElement('button');tooltip.type='button';
+    tooltip.className='stats-genre-tooltip hidden';tooltip.setAttribute('aria-label','Open books in selected genre');
+    wrap.append(tooltip);
+    let selected=null;
+    function selectSlice(item) {
+      selected=item;
+      tooltip.replaceChildren();
+      const num=document.createElement('strong');num.textContent=item.count.toLocaleString();
+      const caption=document.createElement('span');caption.textContent=item.name;
+      tooltip.append(num,caption);
+      tooltip.classList.toggle('hidden',!item.filterable);
+      if(!item.filterable) return;
+      // Position the tooltip over the selected segment but keep it on-screen.
+      const angle=(item.start+item.end)/2*Math.PI/180;
+      const radius=30;
+      const x=50+Math.sin(angle)*radius;
+      const y=50-Math.cos(angle)*radius;
+      tooltip.style.left=`clamp(20%, ${x}%, 80%)`;
+      tooltip.style.top=`clamp(16%, ${y}%, 84%)`;
+      tooltip.setAttribute('aria-label',`Show ${item.count} books in ${item.name}`);
+    }
+    ring.addEventListener('click',event=>{
+      const rect=ring.getBoundingClientRect();
+      const dx=event.clientX-(rect.left+rect.width/2);
+      const dy=event.clientY-(rect.top+rect.height/2);
+      const distance=Math.hypot(dx,dy);
+      // Ignore touches in the empty center or outside the donut.
+      if(distance < rect.width*.27 || distance > rect.width*.51) return;
+      const angle=(Math.atan2(dx,-dy)*180/Math.PI+360)%360;
+      const item=slices.find(slice=>angle>=slice.start && angle<slice.end);
+      if(item && item.filterable) selectSlice(item);
+      else {selected=null;tooltip.classList.add('hidden');}
+    });
+    tooltip.addEventListener('click',()=>{
+      if(selected?.filterable) openCatalogGenreFilter(selected.name);
+    });
     const legend=document.createElement('div');legend.className='stats-legend';
-    entries.forEach(([name,count],i)=>{
+    for(const item of entries) {
       const row=document.createElement('div');row.className='stats-legend-item';
-      const swatch=document.createElement('span');swatch.className='stats-legend-swatch';swatch.style.background=colors[i%colors.length];
-      const text=document.createElement('span');text.textContent=`${name} (${count.toLocaleString()})`;
+      const swatch=document.createElement('span');swatch.className='stats-legend-swatch';swatch.style.background=item.color;
+      const text=document.createElement('span');text.textContent=item.name.toLowerCase();
       row.append(swatch,text);legend.append(row);
-    }); statsPanel.append(legend);
-    if(unclassified) addStatsMessage(`${unclassified} ${unclassified===1?'book is':'books are'} not classified yet.`);
+    }
+    statsPanel.append(legend);
+    if(!total) addStatsMessage('No identified books yet.');
     renderGenreEnrichmentControls(books);
   }
   // Genre enrichment is opt-in and persists results to the existing user's own books.
@@ -2467,6 +2524,15 @@
     input.value=author;
     renderWholeCatalog();
   }
+  async function openCatalogGenreFilter(genre) {
+    await openWholeCatalog();
+    catalogGenreFilter=genre;
+    document.getElementById('catalog-search').value='';
+    renderWholeCatalog();
+    const heading=document.getElementById('catalog-heading');
+    const suffix=document.createElement('span');suffix.id='catalog-genre-label';suffix.textContent=` · ${genre}`;
+    heading.append(suffix);
+  }
   statsButtons.genres.addEventListener('click',()=>setStatsTab('genres'));
   statsButtons.authors.addEventListener('click',()=>setStatsTab('authors'));
   statsClose.addEventListener('click',()=>setStatsTab(activeStatsTab));
@@ -2537,6 +2603,7 @@
     return all.sort((a,b) => String(a.title).localeCompare(String(b.title), undefined, { sensitivity:"base" }) || String(a.author || "").localeCompare(String(b.author || "")));
   }
 
+  let catalogGenreFilter=null;
   let catalogSortBy = "title";
   function setCatalogSort(field) {
     catalogSortBy = field;
@@ -2553,7 +2620,8 @@
     const q = document.getElementById("catalog-search").value.trim().toLocaleLowerCase();
     const panel = document.getElementById("catalog-panel");
     panel.classList.toggle("searching", Boolean(q));
-    const filtered = q ? catalogAllBooks.filter(book => `${book.title || ""} ${book.author || ""}`.toLocaleLowerCase().includes(q)) : catalogAllBooks;
+    const genreFiltered = catalogGenreFilter ? catalogAllBooks.filter(book=>String(book.genre||'').trim()===catalogGenreFilter) : catalogAllBooks;
+    const filtered = q ? genreFiltered.filter(book => `${book.title || ""} ${book.author || ""}`.toLocaleLowerCase().includes(q)) : genreFiltered;
     const sortKey = catalogSortBy;
     const secondKey = sortKey === "title" ? "author" : "title";
     const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
@@ -2664,6 +2732,8 @@
     }
   }
   async function openWholeCatalog() {
+    catalogGenreFilter=null;
+    document.getElementById('catalog-genre-label')?.remove();
     showScreen(screenCatalog);
     const input=document.getElementById("catalog-search"); input.value="";
     document.getElementById("catalog-panel").classList.remove("searching");
