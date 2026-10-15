@@ -141,6 +141,25 @@
       .shelves-filter-tabs button {width: min(25vw,106px);}
       #shelves-stats {padding:20px 24px;}
     }
+    /* v4.43 — simplified filter links, shared bookshelf-row alignment */
+    .shelves-filter-wrap {width:calc(100% - 20px); margin:10px 0 22px 20px;}
+    .shelves-filter-bar {height:43px; min-height:43px; gap:12px; padding:0 11px 0 14px; border:1px solid #ff5900; border-radius:11px;}
+    .filter-label {margin:0; flex:1;}
+    .shelves-filter-tabs,.shelves-filter-wrap.is-open .shelves-filter-tabs {display:flex; align-items:center; gap:29px; border:0; border-radius:0; overflow:visible;}
+    .shelves-filter-tabs button,.shelves-filter-wrap.is-open .shelves-filter-tabs button {position:static; width:auto; height:auto; padding:3px 0; border:0; border-radius:0; background:transparent; color:#ff5900; font-size:14px; font-weight:400; line-height:1.15; text-decoration:none;}
+    .shelves-filter-tabs button+button,.shelves-filter-wrap.is-open .shelves-filter-tabs button+button {border:0;}
+    .shelves-filter-wrap.is-open .shelves-filter-tabs button.active {border:0; border-radius:0; background:transparent; color:#e8ff29; font-weight:700; text-decoration:underline; text-underline-offset:3px;}
+    #stats-close {width:19px; font-size:24px; margin-left:4px;}
+    #shelves-stats,#shelves-stats:has(.stats-donut-wrap) {margin-top:-1px; padding:18px 14px 24px; border:1px solid #ff5900; border-top:0; border-radius:0 0 12px 12px; min-height:0;}
+    .shelves-filter-wrap.is-open .shelves-filter-bar {border-radius:11px 11px 0 0;}
+    .stats-donut-wrap {width:min(100%,242px); margin:4px auto 0;}
+    .stats-legend {margin:18px 6px 3px;}
+    @media(max-width:400px) {
+      .shelves-filter-wrap {width:calc(100% - 20px); margin-left:20px; margin-right:0;}
+      .shelves-filter-tabs button,.shelves-filter-wrap.is-open .shelves-filter-tabs button {width:auto;}
+      .shelves-filter-tabs,.shelves-filter-wrap.is-open .shelves-filter-tabs {gap:24px;}
+      #shelves-stats,#shelves-stats:has(.stats-donut-wrap) {padding:18px 14px 24px;}
+    }
     /* v4.31 — complete multi-shelf book catalog */
     #shelves-all-books { display:flex; align-items:center; justify-content:space-between; width:calc(100% - 20px); margin:-16px 0 20px 20px; padding:6px 10px; color:#ff5900; background:#000; border:1px solid #777; border-radius:11px; font-size:17px; text-align:left; cursor:pointer; }
     #shelves-all-books .list-arrow { width:15px; height:15px; flex:none; fill:#ff5900; }
@@ -2142,7 +2161,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.42</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.43</button>
   </div>
 
 <script>
@@ -2331,8 +2350,8 @@
     showAll();if(authors.length>8) statsPanel.append(seeAll);
   }
   function renderGenreStats(books) {
-    // The five most common identified genres get individual slices; everything
-    // else (including unclassified books) is one non-filterable "other" slice.
+    // Only the top five identified genres are charted. Their slices add up
+    // to a complete donut; remaining/unclassified books are excluded.
     const counts=new Map();
     for(const book of books) {
       const genre=String(book.genre||'').trim();
@@ -2340,22 +2359,21 @@
     }
     const ranked=[...counts.entries()].sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0]));
     const leading=ranked.slice(0,5);
-    const others=books.length-leading.reduce((sum,[,n])=>sum+n,0);
-    const colors=['#ff5900','#86390e','#d6ff00','#aaa05a','#50c56a','#fff'];
+    const colors=['#ff5900','#86390e','#d6ff00','#aaa05a','#50c56a'];
     const entries=leading.map(([name,count],i)=>({name,count,color:colors[i],filterable:true}));
-    if(others>0) entries.push({name:'Not classified / other',count:others,color:'#fff',filterable:false});
     const total=books.length;
+    const chartTotal=entries.reduce((sum,item)=>sum+item.count,0);
     let cumulative=0;
     const slices=entries.map(item=>{
       const start=cumulative;
-      cumulative+=total?item.count/total*360:0;
+      cumulative+=chartTotal?item.count/chartTotal*360:0;
       return {...item,start,end:cumulative};
     });
     const gradient=slices.map(item=>`${item.color} ${item.start}deg ${item.end}deg`).join(',');
     const wrap=document.createElement('div');wrap.className='stats-donut-wrap';
     const ring=document.createElement('div');ring.className='stats-donut';
     ring.style.background=gradient?`conic-gradient(${gradient})`:'#666';
-    ring.setAttribute('role','group');ring.setAttribute('aria-label','Books grouped by genre');
+    ring.setAttribute('role','group');ring.setAttribute('aria-label','Top five identified genres');
     const center=document.createElement('div');center.className='stats-donut-center';
     const totalText=document.createElement('strong');totalText.textContent=total.toLocaleString();
     const label=document.createElement('span');label.textContent='books identified';
