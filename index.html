@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Spineless — Persistent Shelf</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 
   <!-- iOS web app meta -->
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -28,6 +28,11 @@
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+  <script>
+    if (location.protocol === "capacitor:") {
+      document.documentElement.classList.add("spineless-native-ios");
+    }
+  </script>
   <style>
     :root {
       --bg-dark: #111;
@@ -314,6 +319,20 @@
     text-align: center;
     pointer-events: none;
     margin-bottom: clamp(62px, 8vh, 96px);
+    }
+
+    /* Capacitor uses a native camera / photo-library chooser. Web keeps file input. */
+    #native-image-picker { display: none; }
+    .spineless-native-ios #imageInput { pointer-events: none; }
+    .spineless-native-ios #native-image-picker {
+      display: block;
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      z-index: 6;
+      cursor: pointer;
     }
 
     #imageInput {
@@ -944,10 +963,10 @@
     /* v4.35 — visible shelf name and two-line book identification */
     #results-shelf-name {
       position: absolute;
-      top: calc(11px + env(safe-area-inset-top));
-      left: 75px;
-      right: 14px;
-      z-index: 15;
+	  top: calc(44px + env(safe-area-inset-top));
+	  left: 16px;
+	  right: 16px;
+	        z-index: 15;
       color: #ff5900;
       font-size: clamp(19px, 5.5vw, 23px);
       font-weight: 800;
@@ -986,7 +1005,7 @@
 
     #recognized-title-wrap {
       position: absolute;
-      top: 0;
+	  top: calc(44px + env(safe-area-inset-top));
       left: 0;
       right: auto;
       bottom: auto;
@@ -1131,6 +1150,11 @@
       pointer-events: auto;
     }
 
+	#screen-results {
+	  --results-photo-top: calc(96px + env(safe-area-inset-top));
+	}
+	
+	
     #screen-results.scan-info-visible #recognized-title-wrap { visibility: hidden; }
 
     #results-info-status-title,
@@ -1890,6 +1914,18 @@
     .genre-unclassified-link {display:block;width:100%;margin:19px 0 0;padding:0 8px;border:0;background:none;color:#fff;font:inherit;font-size:13px;line-height:1.4;text-align:center;text-decoration:underline;text-underline-offset:3px;cursor:pointer;}
     .genre-unclassified-link:hover {color:#e8ff29;}
     .genre-unclassified-link:focus-visible {outline:2px solid #e8ff29;outline-offset:4px;}
+    /* Native iOS safe-area correction: the photo card owns the visible shelf header. */
+    .spineless-native-ios #results-photo-stage {
+      top: max(54px, env(safe-area-inset-top, 54px));
+    }
+    .spineless-native-ios #screen-catalog,
+    .spineless-native-ios #screen-shelves {
+      padding-top: calc(20px + max(54px, env(safe-area-inset-top, 54px)));
+      padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    }
+    .spineless-native-ios #screen-add .add-stage {
+      top: calc(14px + max(54px, env(safe-area-inset-top, 54px)));
+    }
   </style>
 </head>
 <body>
@@ -1915,6 +1951,7 @@
       <div class="add-stage">
         <div class="camera-card" aria-label="Scan your books">
           <input type="file" id="imageInput" accept="image/*" aria-label="Take a picture or choose a bookshelf photo" />
+          <button type="button" id="native-image-picker" aria-label="Take a picture or choose a bookshelf photo"></button>
           <div class="camera-card-title">
             <img class="scan-books-icon" src="bookshelf.svg" alt="" aria-hidden="true" />
             <span>Scan your books</span>
@@ -4059,19 +4096,53 @@
 
   /* ========================== */
 
-  imageInput.addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  async function processNewShelfImage(dataUrl) {
+    if (!dataUrl) return;
     await ensureSpinelessSession();
     activeShelfId = null;
     activeShelfRecord = null;
+    imageDataUrl = dataUrl;
+    startOCR(imageDataUrl).catch(err => console.error(err));
+  }
+
+  imageInput.addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      imageDataUrl = ev.target.result;
-      startOCR(imageDataUrl).catch(err => console.error(err));
+      processNewShelfImage(ev.target.result).catch(err => console.error(err));
     };
     reader.readAsDataURL(file);
   });
+
+  const nativeImagePicker = document.getElementById("native-image-picker");
+  if (nativeImagePicker) {
+    nativeImagePicker.addEventListener("click", async () => {
+      const camera = window.Capacitor?.Plugins?.Camera;
+      if (!camera) {
+        alert("Native camera is not installed. Run npm install @capacitor/camera, then npx cap sync ios and rebuild in Xcode.");
+        return;
+      }
+      try {
+        const photo = await camera.getPhoto({
+          quality: 90,
+          allowEditing: false,
+          resultType: "dataUrl",
+          source: "PROMPT",
+          promptLabelHeader: "Scan your books",
+          promptLabelPhoto: "Choose from library",
+          promptLabelPicture: "Take photo"
+        });
+        if (photo?.dataUrl) await processNewShelfImage(photo.dataUrl);
+      } catch (err) {
+        // Canceling the picker is normal; do not treat it as an application error.
+        if (!/cancel/i.test(String(err?.message || err))) {
+          console.error("Native camera failed:", err);
+          alert("Unable to open the camera. Check camera and photo permissions in iPhone Settings.");
+        }
+      }
+    });
+  }
 
   function extractCatalogTokens(textValue) {
     return String(textValue || "")
