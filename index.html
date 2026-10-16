@@ -2821,7 +2821,7 @@
       const { data, error } = loginMode === "recovery"
         ? await sb.auth.updateUser({ password })
         : loginMode === "signup"
-          ? await sb.auth.signUp({ email, password })
+          ? await sb.auth.signUp({ email, password, options: { emailRedirectTo: new URL("confirmed.html", location.href).href } })
           : await sb.auth.signInWithPassword({ email, password });
       if (error) throw error;
       if (loginMode === "recovery") {

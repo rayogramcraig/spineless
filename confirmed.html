@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>spineless — Confirm your account</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="favicon.ico">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Chivo,sans-serif}
+    body{background:#810b0d;color:white;min-height:100dvh;padding:clamp(14px,3vw,26px);display:grid;place-items:center}
+    main{background:#000;border-radius:26px;width:min(100%,560px);min-height:min(620px,calc(100dvh - 52px));padding:clamp(30px,7vw,56px) 26px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+    .brand{font-size:clamp(2.2rem,9vw,3.5rem);font-weight:700;letter-spacing:-.05em;color:#ff5900;margin-bottom:55px}
+    .glyph{width:80px;height:80px;border:3px solid #e8ff29;border-radius:50%;display:grid;place-items:center;color:#e8ff29;font-size:43px;font-weight:600;margin-bottom:30px}
+    h1{font-size:clamp(1.8rem,6vw,2.3rem);line-height:1.12;margin:0 0 15px;font-weight:700}
+    p{line-height:1.45;font-size:1rem;max-width:355px;margin:0 0 30px}
+    [hidden]{display:none!important}a.button{display:inline-block;background:#ff5900;color:#fff;border-radius:999px;padding:16px 30px;font:700 1.05rem Chivo,sans-serif;text-decoration:none;min-width:225px}
+    a.button:focus-visible{outline:3px solid #e8ff29;outline-offset:3px}
+    .foot{font-size:12px;color:#aaa;margin-top:22px}
+    @media(prefers-reduced-motion:no-preference){.glyph.loading{animation:pulse 1.5s infinite alternate}@keyframes pulse{to{opacity:.45}}}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand">spineless</div>
+    <div class="glyph loading" id="glyph" aria-hidden="true">…</div>
+    <h1 id="headline">Confirming your email…</h1>
+    <p id="description" role="status" aria-live="polite">Checking your account confirmation.</p>
+    <a class="button" id="cta" href="./index.html" hidden>OPEN SPINELESS</a>
+    <div class="foot" id="foot"></div>
+  </main>
+  <script>
+    (async () => {
+      const headline = document.getElementById('headline');
+      const description = document.getElementById('description');
+      const glyph = document.getElementById('glyph');
+      const cta = document.getElementById('cta');
+      const foot = document.getElementById('foot');
+      const hash = new URLSearchParams(location.hash.replace(/^#/,''));
+      const query = new URLSearchParams(location.search);
+      const err = hash.get('error_description') || query.get('error_description') || hash.get('error') || query.get('error');
+      const hasCallback = hash.has('access_token') || query.has('code');
+      function show(title, copy, success) {
+        headline.textContent = title;
+        description.textContent = copy;
+        glyph.classList.remove('loading');
+        glyph.textContent = success ? '✓' : '!';
+        glyph.style.borderColor = success ? '#e8ff29' : '#ff5900';
+        glyph.style.color = success ? '#e8ff29' : '#ff5900';
+        cta.hidden = false;
+        foot.textContent = success ? 'Your bookshelf is ready.' : 'You can sign in or create another confirmation email from the app.';
+        // Strip access tokens and other sensitive callback data from address bar.
+        history.replaceState(null, '', location.pathname);
+      }
+      if (err) {
+        show('Confirmation link invalid', err.replace(/\+/g,' '), false);
+        return;
+      }
+      if (!hasCallback) {
+        show('Welcome to spineless', 'Open the app to sign in. If you followed a confirmation link, it may already have been used or expired.', false);
+        return;
+      }
+      if (!window.supabase) {
+        show('Unable to confirm', 'Could not load the sign-in service. Please try opening the confirmation link again.', false);
+        return;
+      }
+      try {
+        const sb = window.supabase.createClient('https://npjiuowtneivxbgskobd.supabase.co', 'sb_publishable_5b4sobnsVujOLdjKvh3xtg_OZBIfFy_', {auth:{persistSession:true,detectSessionInUrl:true,autoRefreshToken:true}});
+        // Supabase processes the OAuth/email callback during client initialization.
+        const { data, error } = await sb.auth.getSession();
+        if (error) throw error;
+        if (!data?.session?.user || data.session.user.is_anonymous) throw new Error('No verified account session was returned.');
+        show('Email confirmed!', 'Your account is ready. You can now start building your bookshelf.', true);
+      } catch (e) {
+        show('Could not confirm email', 'This link may be expired or already used. Try signing in to spineless, or create a new confirmation email.', false);
+      }
+    })();
+  </script>
+</body>
+</html>
