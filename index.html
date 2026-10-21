@@ -2221,7 +2221,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.45</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.46</button>
   </div>
 
 <script>
@@ -2550,8 +2550,80 @@
     const work=await workResp.json();
     return {subjects:Array.isArray(work.subjects)?work.subjects:[], key:candidateKey};
   }
+  // v4.46: Fill missing genres on existing shelves and new scans, without
+  // requiring rescanning. Each account is isolated by its authenticated user ID.
   let genreJobActive=false;
   let genreRunNumber=0;
+  const genreAttempted = new Map(); // user ID -> IDs attempted this page session
+  let genreBackfillRefreshTimer = null;
+  function scheduleGenreStatsRefresh() {
+    if (genreBackfillRefreshTimer) return;
+    genreBackfillRefreshTimer = setTimeout(() => {
+      genreBackfillRefreshTimer = null;
+      if (activeStatsTab === 'genres' && screenShelves.classList.contains('active')) {
+        loadShelfStats('genres');
+      }
+    }, 1200);
+  }
+  async function startGenreBackfill() {
+    if (genreJobActive || !sb) return;
+    genreJobActive = true;
+    const run = ++genreRunNumber;
+    try {
+      const session = await ensureSpinelessSession();
+      const userId = session?.user?.id;
+      if (!userId) return;
+      let attempted = genreAttempted.get(userId);
+      if (!attempted) { attempted = new Set(); genreAttempted.set(userId, attempted); }
+      const books = await fetchWholeCatalog();
+      // Do not attempt a book more than once per page session. A subsequent
+      // app launch can retry unmatched books, without writing bogus categories.
+      const queue = books.filter(book => !String(book.genre || '').trim() &&
+        book.id && !attempted.has(book.id) &&
+        String(book.title || '').trim() && String(book.author || '').trim());
+      let cursor = 0;
+      let changed = 0;
+      const worker = async () => {
+        while (cursor < queue.length && run === genreRunNumber) {
+          const book = queue[cursor++];
+          attempted.add(book.id);
+          try {
+            // Account switches must never let a pending lookup write to the
+            // previous user's records using the next user's credentials.
+            const current = await ensureSpinelessSession();
+            if (current?.user?.id !== userId) return;
+            const result = await fetchBookSubjects(book);
+            const subjects = (result?.subjects || []).filter(x => typeof x === 'string').slice(0, 150);
+            const genre = normalizeGenre(subjects);
+            if (genre) {
+              const latest = await ensureSpinelessSession();
+              if (latest?.user?.id !== userId) return;
+              const { data, error } = await sb.from('shelf_books')
+                .update({genre, genre_source:'openlibrary', genre_subjects:subjects})
+                .eq('id', book.id).eq('user_id', userId).is('genre', null)
+                .select('id');
+              if (error) throw error;
+              if (data?.length) {
+                changed++;
+                if (changed % 5 === 0) scheduleGenreStatsRefresh();
+              }
+            }
+          } catch (err) {
+            console.warn('Genre lookup failed for book', book.id, err);
+          }
+          // Respect Open Library's shared public service and avoid bursts.
+          await new Promise(resolve => setTimeout(resolve, 650));
+        }
+      };
+      await Promise.all([worker(), worker()]);
+      if (changed) scheduleGenreStatsRefresh();
+      console.info(`Genre backfill: ${changed} updated / ${queue.length} checked.`);
+    } catch(err) {
+      console.warn('Genre backfill could not start:', err);
+    } finally {
+      genreJobActive = false;
+    }
+  }
   function renderGenreUnclassifiedLink(books) {
     const missing=books.filter(book=>!String(book.genre||'').trim()).length;
     if(!missing) return;
@@ -2614,6 +2686,8 @@
         });
         list.append(row);
       }
+      // Start only after shelves are rendered; it never blocks navigation.
+      if (shelves.length) void startGenreBackfill();
     } catch (error) {
       console.warn("Could not list bookshelves:", error);
       message.textContent = "Could not load bookshelves. Please try again.";
@@ -4138,7 +4212,11 @@
         // Canceling the picker is normal; do not treat it as an application error.
         if (!/cancel/i.test(String(err?.message || err))) {
           console.error("Native camera failed:", err);
-          alert("Unable to open the camera. Check camera and photo permissions in iPhone Settings.");
+          const details = [
+            err?.code ? `Code: ${err.code}` : "",
+            err?.message ? `Message: ${err.message}` : `Error: ${String(err)}`
+          ].filter(Boolean).join("\n");
+          alert(`Spineless camera error\n\n${details}`);
         }
       }
     });
