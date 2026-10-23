@@ -2307,7 +2307,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.49</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.52</button>
   </div>
 
 <script>
@@ -7665,8 +7665,9 @@ const cropW = Math.max(1, x1 - x0);
   const shelfOverlayQuery=document.getElementById('shelf-overlay-query');
   const shelfFilterPanel=document.getElementById('shelf-overlay-filter-panel');
   let shelfOverlaySort='title',shelfOverlayTab=null,shelfOverlayFilter=null;
-  function showShelfBookOverlay(){
+  function showShelfBookOverlay({clearSearch=false}={}){
     if(!screenOCR.classList.contains('active') || !screenOCR.classList.contains('mode-search')) return;
+    if(clearSearch){ shelfOverlayQuery.value=''; shelfBookOverlayList.scrollTop=0; }
     shelfBookOverlay.classList.remove('hidden');renderShelfBookOverlay();
   }
   function hideShelfBookOverlay(){shelfBookOverlay.classList.add('hidden');}
@@ -7759,7 +7760,7 @@ const cropW = Math.max(1, x1 - x0);
   document.getElementById('shelf-sort-switch').addEventListener('click',()=>{shelfOverlaySort=shelfOverlaySort==='title'?'author':'title';renderShelfBookOverlay();});
   document.getElementById('camera-cancel').addEventListener('click',(event)=>{event.preventDefault();event.stopPropagation();openShelfList();});
   document.getElementById('results-title-info').addEventListener('click',()=>{scanInfoOpen=true;updateResultsInfoPanel();});
-  document.getElementById('results-open-list').addEventListener('click',()=>{scanInfoOpen=false;updateResultsInfoPanel();screenOCR.classList.add('mode-search');showScreen(screenOCR);showShelfBookOverlay();});
+  document.getElementById('results-open-list').addEventListener('click',()=>{scanInfoOpen=false;updateResultsInfoPanel();screenOCR.classList.add('mode-search');showScreen(screenOCR);showShelfBookOverlay({clearSearch:true});});
   // Restore a shelf into its default book list instead of starting in search mode.
   const originalRestoreShelfRecord=restoreShelfRecord;
   restoreShelfRecord=async function(...args){
