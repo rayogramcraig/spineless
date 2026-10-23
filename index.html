@@ -1927,7 +1927,7 @@
       top: calc(14px + max(54px, env(safe-area-inset-top, 54px)));
     }
   
-/* v4.48 refinements */
+/* v4.49 refinements */
 #build-version {display:none;}
 #screen-catalog.active ~ #build-version {display:block;}
 #app:has(#screen-catalog.active) #build-version,
@@ -1958,6 +1958,38 @@
 .shelf-overlay-book-title {display:block;font-size:19px;line-height:1.15;}
 .shelf-overlay-book-author {display:block;margin-top:4px;font-size:13px;line-height:1.2;overflow-wrap:anywhere;}
 .shelf-overlay-empty {color:#fff;padding:12px;font-size:14px;line-height:1.4;}
+
+
+/* v4.49 — bookshelf-specific catalog and search fixes */
+#screen-ocr.mode-search .search-container {width:calc(100% - 120px);max-width:420px;min-width:200px;}
+#screen-ocr.mode-search .search-input {display:block;width:100%;min-width:0;box-sizing:border-box;border-radius:24px;}
+#shelf-book-list-overlay {inset:calc(8px + env(safe-area-inset-top)) 4% calc(12px + env(safe-area-inset-bottom));padding:0;background:rgba(122,12,11,.95);border:0;border-radius:14px;}
+#shelf-book-list-overlay .shelf-overlay-top {margin:0;padding:9px 12px;gap:8px;min-height:42px;background:#ff5900;color:#fff;}
+#shelf-overlay-title {color:#fff;font-size:16px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.shelf-overlay-info {flex:none;color:#ffd9bf;font-size:18px;}
+.shelf-overlay-search-line {display:flex;align-items:center;gap:12px;padding:20px 13px 14px;}
+.shelf-overlay-total {flex:none;min-width:61px;text-align:center;line-height:1;color:#fff;}
+.shelf-overlay-total strong {display:block;font-size:30px;}
+.shelf-overlay-total small {display:block;font-size:9px;white-space:nowrap;margin-top:4px;}
+#shelf-overlay-query {display:block;flex:1;min-width:0;width:100%;height:36px;border-radius:20px;padding:6px 12px;border:1px solid #aaa;background:white;color:#111;font-size:14px;outline:none;}
+#shelf-overlay-query::placeholder {color:#c7a69b;}
+#shelf-overlay-close {flex:none;width:23px;font-size:28px;line-height:1;padding:0;}
+.shelf-overlay-filter-bar {display:flex;align-items:center;justify-content:space-around;margin:0 14px 12px;border:1px solid #ff5900;border-radius:10px;min-height:36px;color:#ff5900;font-size:14px;}
+.shelf-overlay-filter-bar button {background:none;border:0;color:#ff5900;font-size:14px;cursor:pointer;padding:5px;}
+.shelf-overlay-filter-bar button.active {color:#e8ff29;text-decoration:underline;text-underline-offset:3px;font-weight:700;}
+#shelf-overlay-filter-panel {margin:-12px 14px 12px;padding:15px 12px;border:1px solid #ff5900;border-top:0;border-radius:0 0 10px 10px;background:#000;color:#e8ff29;max-height:40%;overflow-y:auto;}
+.shelf-filter-row {display:flex;width:100%;justify-content:space-between;gap:12px;background:none;border:0;color:#e8ff29;text-align:left;padding:5px 0;font-size:14px;cursor:pointer;}
+.shelf-filter-row span:first-child {min-width:0;overflow-wrap:anywhere;}
+.shelf-filter-row span:last-child {flex:none;}
+.shelf-filter-heading {display:flex;justify-content:space-between;font-weight:700;margin-bottom:8px;}
+.shelf-filter-clear {color:#ff5900;background:none;border:0;text-decoration:underline;font-size:13px;padding:8px 0;cursor:pointer;}
+.shelf-overlay-sort {display:flex;align-items:center;justify-content:center;gap:9px;color:#ff5900;margin:1px 0 12px;font-size:14px;}
+.shelf-overlay-sort button:not(.catalog-sort-track) {background:none;border:0;color:#ff5900;font-size:14px;cursor:pointer;}
+.shelf-overlay-sort .catalog-sort-track {width:49px;height:23px;border:0;padding:2px;}
+.shelf-overlay-sort[data-sort="author"] .catalog-sort-thumb {transform:translateX(26px);}
+#shelf-overlay-list {padding:0 14px 14px;}
+.shelf-overlay-row {background:#161213;}
+@media(max-width:370px){.shelf-overlay-search-line{gap:7px;padding-left:8px;padding-right:8px}.shelf-overlay-total{min-width:54px}.shelf-overlay-total strong{font-size:27px}}
 
 </style>
 </head>
@@ -2052,8 +2084,11 @@
         </div>
       </div>
       <div id="shelf-book-list-overlay" class="hidden" aria-label="Books identified on this shelf">
-        <div class="shelf-overlay-top"><strong id="shelf-overlay-title">Bookshelf</strong><button type="button" id="shelf-overlay-close" aria-label="Close list">×</button></div>
-        <div class="shelf-overlay-actions"><button type="button" id="shelf-overlay-search">⌕ search shelf</button><button type="button" id="shelf-overlay-photo">View photo ↗</button></div>
+        <div class="shelf-overlay-top"><span class="shelf-overlay-info">ⓘ</span><strong id="shelf-overlay-title">Bookshelf</strong></div>
+        <div class="shelf-overlay-search-line"><div class="shelf-overlay-total"><strong id="shelf-overlay-total">0</strong><small>books identified</small></div><input type="search" id="shelf-overlay-query" placeholder="⌕ search" autocomplete="off" aria-label="Filter books on this shelf"><button type="button" id="shelf-overlay-close" aria-label="Show bookshelf photo">×</button></div>
+        <div class="shelf-overlay-filter-bar"><span>filter:</span><button id="shelf-overlay-genres" type="button">Genres</button><button id="shelf-overlay-authors" type="button">Authors</button></div>
+        <div id="shelf-overlay-filter-panel" class="hidden"></div>
+        <div class="shelf-overlay-sort" data-sort="title"><span>sort by:</span><button id="shelf-sort-title" type="button">title</button><button id="shelf-sort-switch" type="button" class="catalog-sort-track" aria-label="Toggle sort"><span class="catalog-sort-thumb"></span></button><button id="shelf-sort-author" type="button">author</button></div>
         <div id="shelf-overlay-list" aria-label="Books on this shelf"></div>
       </div>
       <div id="scan-word-overlay"></div>
@@ -2262,7 +2297,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.48</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.49</button>
   </div>
 
 <script>
@@ -7614,48 +7649,77 @@ const cropW = Math.max(1, x1 - x0);
   window.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
 
 
-  // v4.48: Non-destructive bookshelf list, using the existing catalog entries.
+  // v4.49: per-shelf catalog with live search, genre and author filters.
   const shelfBookOverlay=document.getElementById('shelf-book-list-overlay');
   const shelfBookOverlayList=document.getElementById('shelf-overlay-list');
-  let overlayRenderQueued=false;
-  function showShelfBookOverlay() {
+  const shelfOverlayQuery=document.getElementById('shelf-overlay-query');
+  const shelfFilterPanel=document.getElementById('shelf-overlay-filter-panel');
+  let shelfOverlaySort='title',shelfOverlayTab=null,shelfOverlayFilter=null;
+  function showShelfBookOverlay(){
     if(!screenOCR.classList.contains('active') || !screenOCR.classList.contains('mode-search')) return;
-    shelfBookOverlay.classList.remove('hidden');
-    renderShelfBookOverlay();
+    shelfBookOverlay.classList.remove('hidden');renderShelfBookOverlay();
   }
   function hideShelfBookOverlay(){shelfBookOverlay.classList.add('hidden');}
+  function showShelfOverlayPhoto(){
+    hideShelfBookOverlay();
+    // The X returns to the photo, not to the separate OCR search field.
+    showScreen(screenResults);setupResultsScreen();
+  }
+  function shelfOverlayRows(){
+    const genresById=new Map((latestServerBookRows||[]).map(row=>[String(row.id),String(row.genre||'').trim()]));
+    return bookCatalog.filter(e=>e?.result?.title&&e.match?.bbox).map(entry=>({entry,title:String(entry.result.title||''),author:String(entry.result.author||''),genre:genresById.get(String(entry.persistentBookId))||String(entry.result.genre||'').trim()}));
+  }
+  function renderShelfOverlayFilters(){
+    const data=shelfOverlayRows();shelfFilterPanel.replaceChildren();
+    document.getElementById('shelf-overlay-genres').classList.toggle('active',shelfOverlayTab==='genres');
+    document.getElementById('shelf-overlay-authors').classList.toggle('active',shelfOverlayTab==='authors');
+    shelfFilterPanel.classList.toggle('hidden',!shelfOverlayTab);
+    if(!shelfOverlayTab)return;
+    const isGenre=shelfOverlayTab==='genres';const counts=new Map();
+    for(const row of data){const value=(isGenre?row.genre:row.author).trim() || (isGenre?'Genre not identified':'Author not found');counts.set(value,(counts.get(value)||0)+1);}
+    const ranked=[...counts.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+    const heading=document.createElement('div');heading.className='shelf-filter-heading';heading.innerHTML=`<span>${isGenre?'Top Genres':'Top Authors'}</span><span>Books</span>`;shelfFilterPanel.append(heading);
+    for(const [name,count] of ranked){const button=document.createElement('button');button.type='button';button.className='shelf-filter-row';const title=document.createElement('span');title.textContent=name;const num=document.createElement('span');num.textContent=count;button.append(title,num);button.addEventListener('click',()=>{shelfOverlayFilter={type:shelfOverlayTab,value:name};shelfOverlayTab=null;shelfOverlayQuery.value='';renderShelfBookOverlay();});shelfFilterPanel.append(button);}
+    if(shelfOverlayFilter){const clear=document.createElement('button');clear.className='shelf-filter-clear';clear.textContent='Clear filter';clear.addEventListener('click',()=>{shelfOverlayFilter=null;shelfOverlayTab=null;renderShelfBookOverlay();});shelfFilterPanel.append(clear);}
+  }
   function renderShelfBookOverlay(){
-    if(shelfBookOverlay.classList.contains('hidden')) return;
-    document.getElementById('shelf-overlay-title').textContent=activeShelfRecord?.name || 'Bookshelf';
+    if(shelfBookOverlay.classList.contains('hidden'))return;
+    document.getElementById('shelf-overlay-title').textContent=activeShelfRecord?.name||'Bookshelf';
+    const all=shelfOverlayRows();const query=shelfOverlayQuery.value.trim().toLocaleLowerCase();
+    document.getElementById('shelf-overlay-total').textContent=all.length.toLocaleString();
+    renderShelfOverlayFilters();
+    const collator=new Intl.Collator(undefined,{sensitivity:'base',numeric:true});
+    let rows=all.filter(row=>{
+      if(shelfOverlayFilter){const field=shelfOverlayFilter.type==='genres'?'genre':'author';const value=row[field].trim()||(field==='genre'?'Genre not identified':'Author not found');if(value!==shelfOverlayFilter.value)return false;}
+      return !query||`${row.title} ${row.author} ${row.genre}`.toLocaleLowerCase().includes(query);
+    });
+    const missingAuthor=row=>!row.author.trim()||/^(?:author\s+)?(?:not found|unknown|n\/?a|none|null|undefined)$/i.test(row.author.trim());
+    const authorKey=row=>{const n=row.author.trim();if(n.includes(','))return n;const parts=n.split(/\s+/);return parts.length>1?`${parts.at(-1)}, ${parts.slice(0,-1).join(' ')}`:n;};
+    rows.sort((a,b)=>Number(missingAuthor(a))-Number(missingAuthor(b))||collator.compare(shelfOverlaySort==='author'?authorKey(a):a.title,shelfOverlaySort==='author'?authorKey(b):b.title)||collator.compare(a.title,b.title));
+    document.querySelector('.shelf-overlay-sort').dataset.sort=shelfOverlaySort;
     shelfBookOverlayList.replaceChildren();
-    const known=bookCatalog.filter(e=>e?.result?.title && e.match?.bbox).sort((a,b)=>String(a.result.title).localeCompare(String(b.result.title)));
-    if(!known.length){const p=document.createElement('p');p.className='shelf-overlay-empty';p.textContent='Books are still being identified. You can search the shelf while identification continues.';shelfBookOverlayList.append(p);return;}
+    if(!rows.length){const p=document.createElement('p');p.className='shelf-overlay-empty';p.textContent=all.length?'No matching books.':'Books are still being identified.';shelfBookOverlayList.append(p);return;}
     const fragment=document.createDocumentFragment();
-    for(const entry of known){
+    for(const {entry,title:bookTitle,author:bookAuthor} of rows){
       const row=document.createElement('button');row.type='button';row.className='shelf-overlay-row';
-      const cover=entry.result.cover_url || (entry.result.cover_i ? `https://covers.openlibrary.org/b/id/${encodeURIComponent(entry.result.cover_i)}-S.jpg`:'');
-      if(cover){const img=document.createElement('img');img.className='shelf-overlay-cover';img.loading='lazy';img.src=cover;img.alt='';row.append(img);}
-      else {const space=document.createElement('span');space.className='shelf-overlay-cover';row.append(space);}
+      const cover=entry.result.cover_url||(entry.result.cover_i?`https://covers.openlibrary.org/b/id/${encodeURIComponent(entry.result.cover_i)}-S.jpg`:'');
+      if(cover){const img=document.createElement('img');img.className='shelf-overlay-cover';img.loading='lazy';img.src=cover;img.alt='';row.append(img);}else{const space=document.createElement('span');space.className='shelf-overlay-cover';row.append(space);}
       const copy=document.createElement('span');copy.className='shelf-overlay-copy';
-      const title=document.createElement('span');title.className='shelf-overlay-book-title';title.textContent=entry.result.title;
-      const author=document.createElement('span');author.className='shelf-overlay-book-author';author.textContent=entry.result.author || 'author not found';
-      copy.append(title,author);row.append(copy);
+      const name=document.createElement('span');name.className='shelf-overlay-book-title';name.textContent=bookTitle;
+      const author=document.createElement('span');author.className='shelf-overlay-book-author';author.textContent=bookAuthor||'author not found';copy.append(name,author);row.append(copy);
       row.addEventListener('click',()=>{
-        hideShelfBookOverlay();
-        const normalized=normalizeToken(entry.result.title);
-        let idx=termList.findIndex(t=>t===normalized);
-        if(idx<0){termList.push(normalized);idx=termList.length-1;}
-        currentTermIndex=idx;currentTerm=termList[idx];currentMatches=[{...entry.match,catalogEntry:entry}];currentMatchIndex=0;
-        transitionShelfView(screenResults,setupResultsScreen);
-        requestAnimationFrame(()=>drawHighlightsForTerm(currentTerm,0));
-      });
-      fragment.append(row);
+        hideShelfBookOverlay();const normalized=normalizeToken(entry.result.title);let idx=termList.findIndex(t=>t===normalized);
+        if(idx<0){termList.push(normalized);idx=termList.length-1;}currentTermIndex=idx;currentTerm=termList[idx];currentMatches=[{...entry.match,catalogEntry:entry}];currentMatchIndex=0;
+        transitionShelfView(screenResults,setupResultsScreen);requestAnimationFrame(()=>drawHighlightsForTerm(currentTerm,0));
+      });fragment.append(row);
     }
     shelfBookOverlayList.append(fragment);
   }
-  document.getElementById('shelf-overlay-search').addEventListener('click',()=>{hideShelfBookOverlay();document.getElementById('searchInput').focus();});
-  document.getElementById('shelf-overlay-photo').addEventListener('click',hideShelfBookOverlay);
-  document.getElementById('shelf-overlay-close').addEventListener('click',hideShelfBookOverlay);
+  shelfOverlayQuery.addEventListener('input',()=>{shelfBookOverlayList.scrollTop=0;renderShelfBookOverlay();});
+  document.getElementById('shelf-overlay-close').addEventListener('click',showShelfOverlayPhoto);
+  for(const [id,type] of [['shelf-overlay-genres','genres'],['shelf-overlay-authors','authors']])document.getElementById(id).addEventListener('click',()=>{shelfOverlayTab=shelfOverlayTab===type?null:type;renderShelfBookOverlay();});
+  for(const [id,type] of [['shelf-sort-title','title'],['shelf-sort-author','author']])document.getElementById(id).addEventListener('click',()=>{shelfOverlaySort=type;renderShelfBookOverlay();});
+  document.getElementById('shelf-sort-switch').addEventListener('click',()=>{shelfOverlaySort=shelfOverlaySort==='title'?'author':'title';renderShelfBookOverlay();});
   document.getElementById('camera-cancel').addEventListener('click',(event)=>{event.preventDefault();event.stopPropagation();openShelfList();});
   document.getElementById('results-title-info').addEventListener('click',()=>{scanInfoOpen=true;updateResultsInfoPanel();});
   document.getElementById('results-open-list').addEventListener('click',()=>{scanInfoOpen=false;updateResultsInfoPanel();screenOCR.classList.add('mode-search');showScreen(screenOCR);showShelfBookOverlay();});
