@@ -1960,6 +1960,15 @@
 .shelf-overlay-empty {color:#fff;padding:12px;font-size:14px;line-height:1.4;}
 
 
+/* v4.50 — photo search width and isolated shelf-list interactions */
+#results-utility-bar { grid-template-columns:44px minmax(0,1fr); }
+#results-utility-bar #utility-new-search {grid-column:2; width:100%; max-width:none; justify-self:stretch; display:block;}
+#screen-ocr.mode-search:has(#shelf-book-list-overlay:not(.hidden)) #ocr-overlay,
+#screen-ocr.mode-search:has(#shelf-book-list-overlay:not(.hidden)) #search-shelf-panel,
+#screen-ocr.mode-search:has(#shelf-book-list-overlay:not(.hidden)) #search-shelves {visibility:hidden;pointer-events:none;}
+#shelf-book-list-overlay {pointer-events:auto;}
+#shelf-overlay-query {appearance:none;-webkit-appearance:none;}
+
 /* v4.49 — bookshelf-specific catalog and search fixes */
 #screen-ocr.mode-search .search-container {width:calc(100% - 120px);max-width:420px;min-width:200px;}
 #screen-ocr.mode-search .search-input {display:block;width:100%;min-width:0;box-sizing:border-box;border-radius:24px;}
@@ -7715,6 +7724,8 @@ const cropW = Math.max(1, x1 - x0);
     }
     shelfBookOverlayList.append(fragment);
   }
+  // Keep all overlay interactions out of the OCR backdrop's click-to-close handler.
+  shelfBookOverlay.addEventListener('click',(event)=>event.stopPropagation());
   shelfOverlayQuery.addEventListener('input',()=>{shelfBookOverlayList.scrollTop=0;renderShelfBookOverlay();});
   document.getElementById('shelf-overlay-close').addEventListener('click',showShelfOverlayPhoto);
   for(const [id,type] of [['shelf-overlay-genres','genres'],['shelf-overlay-authors','authors']])document.getElementById(id).addEventListener('click',()=>{shelfOverlayTab=shelfOverlayTab===type?null:type;renderShelfBookOverlay();});
