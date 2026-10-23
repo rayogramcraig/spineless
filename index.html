@@ -129,7 +129,7 @@
     #shelves-stats:has(.stats-donut-wrap) {padding:22px 28px 21px;}
     .stats-donut-wrap {width:min(100%,300px);margin:4px auto 0;}
     .stats-donut {inset:0;cursor:pointer;touch-action:manipulation;}
-    .stats-donut::after {inset:28%;pointer-events:none;}
+    .stats-donut::after {inset:12.5%;pointer-events:none;}
     .stats-legend {display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;flex-wrap:nowrap;gap:5px;margin:10px 0 0;}
     .stats-legend-item {font-size:13px;line-height:1.2;gap:9px;}
     .stats-legend-swatch {width:11px;height:11px;border-radius:0;flex:none;}
@@ -1927,19 +1927,23 @@
       top: calc(14px + max(54px, env(safe-area-inset-top, 54px)));
     }
   
-/* v4.47 refinements */
+/* v4.48 refinements */
 #build-version {display:none;}
 #screen-catalog.active ~ #build-version {display:block;}
 #app:has(#screen-catalog.active) #build-version,
-#app:has(#screen-shelves.active) #build-version {display:block;}
+#app:has(#screen-shelves.active) #build-version,
+#app:has(#screen-login.active) #build-version {display:block;}
 #camera-cancel {position:absolute; z-index:15; top:13px; right:16px; width:44px;height:44px; border:0;background:transparent;color:#ff5900;font-size:39px;line-height:1;cursor:pointer;}
 .stats-donut-center span:first-child {font-size:12px;}
 .stats-donut-center strong {font-size:29px;margin:3px 0;}
 .stats-legend {gap:5px;}
 .stats-legend-item {max-width:100%;overflow-wrap:anywhere;}
 #results-photo-card {position:relative;}
-#results-title-info {position:absolute;top:5px;left:6px;z-index:17;width:28px;height:28px;border-radius:50%;border:0;background:#ffd1aa;color:#ff5900;font-size:19px;font-weight:800;cursor:pointer;}
-#results-photo-card #results-shelf-name {padding-left:40px;}
+#results-title-info {position:absolute;top:8px;left:10px;z-index:17;width:21px;height:21px;border-radius:50%;border:2px solid #ffbd92;background:transparent;color:#ffbd92;font-size:13px;font-weight:700;line-height:17px;padding:0;text-align:center;cursor:pointer;}
+#results-photo-card #results-shelf-name {padding-left:34px;}
+#screen-results #utility-data {display:none;}
+#results-open-list {position:absolute;bottom:calc(17px + env(safe-area-inset-bottom));right:16px;z-index:19;width:42px;height:44px;border:0;background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:5px;}
+#results-open-list svg {width:25px;height:29px;display:block;}
 #shelf-book-list-overlay {position:absolute;z-index:24;inset:calc(10px + env(safe-area-inset-top)) 6% calc(18px + env(safe-area-inset-bottom));border-radius:18px;background:rgba(75,3,3,.91);border:1px solid #ff5900;display:flex;flex-direction:column;padding:15px 12px;overflow:hidden;color:white;}
 #shelf-book-list-overlay.hidden {display:none !important;}
 .shelf-overlay-top {display:flex;align-items:center;gap:10px;margin:0 6px 12px;}
@@ -2207,6 +2211,9 @@
         </div>
       </div>
 
+      <button id="results-open-list" type="button" aria-label="List books on this shelf" title="List books on this shelf">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24.713 29" aria-hidden="true"><path d="M3.5 3.5h17.713M3.5 13.5h17.713M3.5 23.5h17.713" stroke="#ff5800" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M3 1.5h3v4H3zm0 10h3v4H3zm0 10h3v4H3z" fill="#760d0d"/></svg>
+      </button>
       <div id="results-utility-bar" aria-label="Results controls">
         <button id="utility-new-image" class="results-utility-icon" aria-label="Bookshelves" title="Bookshelves">
           <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzNyIgaGVpZ2h0PSIzMy4yMDUiIHZpZXdCb3g9IjAgMCAzNyAzMy4yMDUiPgogIDxnIGlkPSJHcm91cF8yOCIgZGF0YS1uYW1lPSJHcm91cCAyOCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoLTE1IC03OTkpIj4KICAgIDxnIGlkPSJSZWN0YW5nbGVfMjQiIGRhdGEtbmFtZT0iUmVjdGFuZ2xlIDI0IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxNSA4MDYpIiBmaWxsPSIjNzcwYzBkIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiI+CiAgICAgIDxyZWN0IHdpZHRoPSIzNyIgaGVpZ2h0PSIyMi40OCIgcng9IjMiIHN0cm9rZT0ibm9uZSIvPgogICAgICA8cmVjdCB4PSIxIiB5PSIxIiB3aWR0aD0iMzUiIGhlaWdodD0iMjAuNDgiIHJ4PSIyIiBmaWxsPSJub25lIi8+CiAgICA8L2c+CiAgICA8ZyBpZD0iUmVjdGFuZ2xlXzM5IiBkYXRhLW5hbWU9IlJlY3RhbmdsZSAzOSIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjAgODAzKSIgZmlsbD0iIzc3MGMwZCIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiPgogICAgICA8cmVjdCB3aWR0aD0iMjcuMDI4IiBoZWlnaHQ9IjI3LjEyMiIgcng9IjMiIHN0cm9rZT0ibm9uZSIvPgogICAgICA8cmVjdCB4PSIxIiB5PSIxIiB3aWR0aD0iMjUuMDI4IiBoZWlnaHQ9IjI1LjEyMiIgcng9IjIiIGZpbGw9Im5vbmUiLz4KICAgIDwvZz4KICAgIDxnIGlkPSJHcm91cF80OCIgZGF0YS1uYW1lPSJHcm91cCA0OCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjQuNTYzIDc5OSkiPgogICAgICA8ZyBpZD0iUmVjdGFuZ2xlXzE4IiBkYXRhLW5hbWU9IlJlY3RhbmdsZSAxOCIgZmlsbD0iIzc3MGMwZCIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiPgogICAgICAgIDxyZWN0IHdpZHRoPSIxNy44NzQiIGhlaWdodD0iMzMuMjA1IiByeD0iMyIgc3Ryb2tlPSJub25lIi8+CiAgICAgICAgPHJlY3QgeD0iMSIgeT0iMSIgd2lkdGg9IjE1Ljg3NCIgaGVpZ2h0PSIzMS4yMDUiIHJ4PSIyIiBmaWxsPSJub25lIi8+CiAgICAgIDwvZz4KICAgICAgPGcgaWQ9IlJlY3RhbmdsZV8xOSIgZGF0YS1uYW1lPSJSZWN0YW5nbGUgMTkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMTAuMjI5KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiPgogICAgICAgIDxyZWN0IHdpZHRoPSIxNy44NzQiIGhlaWdodD0iMTMuMjA2IiBzdHJva2U9Im5vbmUiLz4KICAgICAgICA8cmVjdCB4PSIxIiB5PSIxIiB3aWR0aD0iMTUuODc0IiBoZWlnaHQ9IjExLjIwNiIgZmlsbD0ibm9uZSIvPgogICAgICA8L2c+CiAgICAgIDxnIGlkPSJHcm91cF8xOSIgZGF0YS1uYW1lPSJHcm91cCAxOSIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNS4yMjIgNC45ODgpIj4KICAgICAgICA8bGluZSBpZD0iTGluZV83IiBkYXRhLW5hbWU9IkxpbmUgNyIgeDI9IjAuMTY4IiB5Mj0iNi41NTQiIHRyYW5zZm9ybT0ibWF0cml4KDAuOTQsIC0wLjM0MiwgMC4zNDIsIDAuOTQsIDAsIDAuMTc4KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgICA8bGluZSBpZD0iTGluZV8xOCIgZGF0YS1uYW1lPSJMaW5lIDE4IiB5Mj0iNC40ODQiIHRyYW5zZm9ybT0ibWF0cml4KDAuOTQsIC0wLjM0MiwgMC4zNDIsIDAuOTQsIDMuMDQ4LCAyLjExKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgICA8bGluZSBpZD0iTGluZV8xMCIgZGF0YS1uYW1lPSJMaW5lIDEwIiB5Mj0iNi40NTkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDYuODk1KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgPC9nPgogICAgICA8ZyBpZD0iR3JvdXBfMjIiIGRhdGEtbmFtZT0iR3JvdXAgMjIiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDYuMjg2IDE1LjEyMSkiPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzkiIGRhdGEtbmFtZT0iTGluZSA5IiB5Mj0iNS45MDciIHRyYW5zZm9ybT0idHJhbnNsYXRlKDcuOTQ4IDMuMTExKSByb3RhdGUoOTApIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzUiIGRhdGEtbmFtZT0iTGluZSA1IiB4MT0iMC4wNCIgeTI9IjYuNzU5IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgtMC45NDMgMCkgcm90YXRlKDkpIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICAgIDxwYXRoIGlkPSJQYXRoXzE0IiBkYXRhLW5hbWU9IlBhdGggMTQiIGQ9Ik0wLDBWNS45MTQiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDcuOTQ4IDUuNjc0KSByb3RhdGUoOTApIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzEwLTIiIGRhdGEtbmFtZT0iTGluZSAxMCIgeTI9IjUuOTA3IiB0cmFuc2Zvcm09InRyYW5zbGF0ZSg3Ljk0OCAwLjQxOCkgcm90YXRlKDkwKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgPC9nPgogICAgICA8ZyBpZD0iR3JvdXBfMjEiIGRhdGEtbmFtZT0iR3JvdXAgMjEiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDYuODk3IDI0LjQwNikiPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzctMiIgZGF0YS1uYW1lPSJMaW5lIDciIHkyPSI1LjkyNiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNS4xMTYgMS4wOCkiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmNTkwMCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgICAgICAgPGxpbmUgaWQ9IkxpbmVfNiIgZGF0YS1uYW1lPSJMaW5lIDYiIHkyPSI3LjAwNiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMi4yMDIpIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZjU5MDAiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICAgIDxsaW5lIGlkPSJMaW5lXzE5IiBkYXRhLW5hbWU9IkxpbmUgMTkiIHkyPSI1LjkyNiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMCAxLjA4KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY1OTAwIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgPC9nPgogICAgPC9nPgogIDwvZz4KPC9zdmc+Cg==" width="37" height="34" alt="" />
@@ -2255,7 +2262,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.47</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.48</button>
   </div>
 
 <script>
@@ -7607,7 +7614,7 @@ const cropW = Math.max(1, x1 - x0);
   window.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
 
 
-  // v4.47: Non-destructive bookshelf list, using the existing catalog entries.
+  // v4.48: Non-destructive bookshelf list, using the existing catalog entries.
   const shelfBookOverlay=document.getElementById('shelf-book-list-overlay');
   const shelfBookOverlayList=document.getElementById('shelf-overlay-list');
   let overlayRenderQueued=false;
@@ -7651,6 +7658,7 @@ const cropW = Math.max(1, x1 - x0);
   document.getElementById('shelf-overlay-close').addEventListener('click',hideShelfBookOverlay);
   document.getElementById('camera-cancel').addEventListener('click',(event)=>{event.preventDefault();event.stopPropagation();openShelfList();});
   document.getElementById('results-title-info').addEventListener('click',()=>{scanInfoOpen=true;updateResultsInfoPanel();});
+  document.getElementById('results-open-list').addEventListener('click',()=>{scanInfoOpen=false;updateResultsInfoPanel();screenOCR.classList.add('mode-search');showScreen(screenOCR);showShelfBookOverlay();});
   // Restore a shelf into its default book list instead of starting in search mode.
   const originalRestoreShelfRecord=restoreShelfRecord;
   restoreShelfRecord=async function(...args){
