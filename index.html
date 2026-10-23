@@ -1939,7 +1939,7 @@
 .stats-legend {gap:5px;}
 .stats-legend-item {max-width:100%;overflow-wrap:anywhere;}
 #results-photo-card {position:relative;}
-#results-title-info {position:absolute;top:8px;left:10px;z-index:17;width:21px;height:21px;border-radius:50%;border:2px solid #ffbd92;background:transparent;color:#ffbd92;font-size:13px;font-weight:700;line-height:17px;padding:0;text-align:center;cursor:pointer;}
+#results-title-info {position:absolute;top:12px;left:10px;z-index:17;width:21px;height:21px;border-radius:50%;border:2px solid #ffbd92;background:transparent;color:#ffbd92;font-size:13px;font-weight:700;line-height:17px;padding:0;text-align:center;cursor:pointer;}
 #results-photo-card #results-shelf-name {padding-left:34px;}
 #screen-results #utility-data {display:none;}
 #results-open-list {position:absolute;bottom:calc(17px + env(safe-area-inset-bottom));right:16px;z-index:19;width:42px;height:44px;border:0;background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:5px;}
@@ -1962,7 +1962,7 @@
 
 /* v4.50 — photo search width and isolated shelf-list interactions */
 #results-utility-bar { grid-template-columns:44px minmax(0,1fr); }
-#results-utility-bar #utility-new-search {grid-column:2; width:100%; max-width:none; justify-self:stretch; display:block;}
+#results-utility-bar #utility-new-search {grid-column:2; width:97%; max-width:none; justify-self:stretch; display:block;}
 #screen-ocr.mode-search:has(#shelf-book-list-overlay:not(.hidden)) #ocr-overlay,
 #screen-ocr.mode-search:has(#shelf-book-list-overlay:not(.hidden)) #search-shelf-panel,
 #screen-ocr.mode-search:has(#shelf-book-list-overlay:not(.hidden)) #search-shelves {visibility:hidden;pointer-events:none;}
@@ -1976,6 +1976,7 @@
 #shelf-book-list-overlay .shelf-overlay-top {margin:0;padding:9px 12px;gap:8px;min-height:42px;background:#ff5900;color:#fff;}
 #shelf-overlay-title {color:#fff;font-size:16px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .shelf-overlay-info {flex:none;color:#ffd9bf;font-size:18px;}
+#shelf-overlay-info {border:0;background:transparent;padding:0;cursor:pointer;line-height:1;display:inline-flex;align-items:center;justify-content:center;}
 .shelf-overlay-search-line {display:flex;align-items:center;gap:12px;padding:20px 13px 14px;}
 .shelf-overlay-total {flex:none;min-width:61px;text-align:center;line-height:1;color:#fff;}
 .shelf-overlay-total strong {display:block;font-size:30px;}
@@ -2093,7 +2094,7 @@
         </div>
       </div>
       <div id="shelf-book-list-overlay" class="hidden" aria-label="Books identified on this shelf">
-        <div class="shelf-overlay-top"><span class="shelf-overlay-info">ⓘ</span><strong id="shelf-overlay-title">Bookshelf</strong></div>
+        <div class="shelf-overlay-top"><button id="shelf-overlay-info" class="shelf-overlay-info" type="button" aria-label="Bookshelf details" title="Bookshelf details">ⓘ</button><strong id="shelf-overlay-title">Bookshelf</strong></div>
         <div class="shelf-overlay-search-line"><div class="shelf-overlay-total"><strong id="shelf-overlay-total">0</strong><small>books identified</small></div><input type="search" id="shelf-overlay-query" placeholder="⌕ search" autocomplete="off" aria-label="Filter books on this shelf"><button type="button" id="shelf-overlay-close" aria-label="Show bookshelf photo">×</button></div>
         <div class="shelf-overlay-filter-bar"><span>filter:</span><button id="shelf-overlay-genres" type="button">Genres</button><button id="shelf-overlay-authors" type="button">Authors</button></div>
         <div id="shelf-overlay-filter-panel" class="hidden"></div>
@@ -7727,6 +7728,31 @@ const cropW = Math.max(1, x1 - x0);
   // Keep all overlay interactions out of the OCR backdrop's click-to-close handler.
   shelfBookOverlay.addEventListener('click',(event)=>event.stopPropagation());
   shelfOverlayQuery.addEventListener('input',()=>{shelfBookOverlayList.scrollTop=0;renderShelfBookOverlay();});
+  // v4.51 — The shelf-list info icon uses the existing shelf details modal.
+  // Remember that it was opened from the list so closing returns to that list.
+  let shelfInfoFromList=false;
+  document.getElementById('shelf-overlay-info').addEventListener('click',()=>{
+    shelfInfoFromList=true;
+    showScreen(screenResults);
+    scanInfoOpen=true;
+    updateResultsInfoPanel();
+  });
+  const returnToShelfListAfterInfo=()=>{
+    if(!shelfInfoFromList)return;
+    shelfInfoFromList=false;
+    scanInfoOpen=false;
+    updateResultsInfoPanel();
+    screenOCR.classList.add('mode-search');
+    showScreen(screenOCR);
+    showShelfBookOverlay();
+  };
+  document.getElementById('results-info-close')?.addEventListener('click',returnToShelfListAfterInfo);
+  resultsInfoPanel?.addEventListener('click',event=>{
+    if(event.target===resultsInfoPanel)returnToShelfListAfterInfo();
+  });
+  document.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&shelfInfoFromList)returnToShelfListAfterInfo();
+  });
   document.getElementById('shelf-overlay-close').addEventListener('click',showShelfOverlayPhoto);
   for(const [id,type] of [['shelf-overlay-genres','genres'],['shelf-overlay-authors','authors']])document.getElementById(id).addEventListener('click',()=>{shelfOverlayTab=shelfOverlayTab===type?null:type;renderShelfBookOverlay();});
   for(const [id,type] of [['shelf-sort-title','title'],['shelf-sort-author','author']])document.getElementById(id).addEventListener('click',()=>{shelfOverlaySort=type;renderShelfBookOverlay();});
