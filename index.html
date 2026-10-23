@@ -2043,6 +2043,29 @@
     top: max(54px, env(safe-area-inset-top, 0px));
   }
 }
+
+/* v4.58 — list autocomplete styled like the bookshelf-photo suggestions */
+.list-search-wrap { position:relative; flex:1 1 auto; min-width:0; width:100%; }
+.list-search-wrap > input { width:100%; }
+.catalog-fixed { position:relative; z-index:5; }
+.shelf-overlay-search-line { position:relative; z-index:6; }
+.list-search-suggestions {
+  display:none; position:absolute; top:calc(100% + 8px); left:0; right:0;
+  z-index:100; max-height:min(40vh,320px); overflow-y:auto;
+  border-radius:24px; background:rgba(255,255,255,.96); color:#111;
+  box-shadow:var(--shadow-soft); -webkit-overflow-scrolling:touch;
+}
+.list-search-suggestions.visible { display:block; }
+.list-search-suggestions button[role="option"] {
+  display:block; width:100%; padding:12px 18px; margin:0;
+  border:0; border-bottom:1px solid rgba(0,0,0,.08);
+  border-radius:0; background:transparent; color:#111;
+  text-align:left; font:inherit; font-size:clamp(17px,5vw,22px);
+  line-height:1.25; white-space:normal; overflow-wrap:anywhere; cursor:pointer;
+}
+.list-search-suggestions button[role="option"]:last-child { border-bottom:0; }
+.list-search-suggestions button[role="option"]:hover,
+.list-search-suggestions button[role="option"]:focus-visible { background:rgba(0,0,0,.05); }
   </style>
 </head>
 <body>
@@ -2350,7 +2373,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.57</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.58</button>
   </div>
 
 <script>
