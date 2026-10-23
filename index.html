@@ -111,7 +111,7 @@
     .stats-header {display:flex; justify-content:space-between; font-weight:700; margin-bottom:14px;}
     .stats-author-list {display:grid; gap:7px;}
     .stats-author-row {display:flex; justify-content:space-between; gap:10px; width:100%; border:0; background:none; color:#e8ff29; text-align:left; font:inherit; font-size:14px; cursor:pointer; padding:0;}
-    .stats-author-row span:first-child {overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .stats-author-row span:first-child {min-width:0; flex:1; overflow-wrap:anywhere; white-space:normal;}
     .stats-author-row span:last-child {margin-left:auto; font-variant-numeric:tabular-nums;}
     .stats-author-row:hover span:first-child {text-decoration:underline;}
     .stats-see-all {display:block; margin-top:19px; border:0; background:none; color:#ff5900; text-decoration:underline; font:inherit; font-weight:700; cursor:pointer;}
@@ -129,7 +129,7 @@
     #shelves-stats:has(.stats-donut-wrap) {padding:22px 28px 21px;}
     .stats-donut-wrap {width:min(100%,300px);margin:4px auto 0;}
     .stats-donut {inset:0;cursor:pointer;touch-action:manipulation;}
-    .stats-donut::after {inset:12.5%;pointer-events:none;}
+    .stats-donut::after {inset:28%;pointer-events:none;}
     .stats-legend {display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;flex-wrap:nowrap;gap:5px;margin:10px 0 0;}
     .stats-legend-item {font-size:13px;line-height:1.2;gap:9px;}
     .stats-legend-swatch {width:11px;height:11px;border-radius:0;flex:none;}
@@ -214,9 +214,9 @@
     #catalog-book-list { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:0 19px 18px; scrollbar-width:thin; }
     .catalog-book { display:flex; align-items:center; width:100%; gap:8px; min-height:59px; margin-bottom:8px; padding:6px 9px; border:1px solid #786d6d; border-radius:16px; background:transparent; color:#fff; text-align:left; cursor:pointer; }
     .catalog-cover { width:31px; height:43px; flex:none; object-fit:cover; }
-    .catalog-book-copy { min-width:0; flex:1; }
+    .catalog-book-copy { min-width:0; flex:1; overflow-wrap:anywhere; }
     .catalog-book-title { font-size:clamp(15px,4.5vw,20px); line-height:1.14; overflow-wrap:anywhere; }
-    .catalog-book-author { margin-top:3px; font-size:13px; line-height:1.13; }
+    .catalog-book-author { margin-top:3px; font-size:13px; line-height:1.2; white-space:normal; overflow-wrap:anywhere; word-break:normal; }
     .catalog-book-shelf { max-width:35%; align-self:flex-end; margin-bottom:3px; color:#ff5900; font-size:13px; font-weight:700; line-height:1.15; text-align:right; overflow-wrap:anywhere; }
     .catalog-no-cover { flex:none; width:31px; height:43px; }
     #catalog-message { padding:12px 0; color:#ddd; font-size:14px; }
@@ -1926,7 +1926,36 @@
     .spineless-native-ios #screen-add .add-stage {
       top: calc(14px + max(54px, env(safe-area-inset-top, 54px)));
     }
-  </style>
+  
+/* v4.47 refinements */
+#build-version {display:none;}
+#screen-catalog.active ~ #build-version {display:block;}
+#app:has(#screen-catalog.active) #build-version,
+#app:has(#screen-shelves.active) #build-version {display:block;}
+#camera-cancel {position:absolute; z-index:15; top:13px; right:16px; width:44px;height:44px; border:0;background:transparent;color:#ff5900;font-size:39px;line-height:1;cursor:pointer;}
+.stats-donut-center span:first-child {font-size:12px;}
+.stats-donut-center strong {font-size:29px;margin:3px 0;}
+.stats-legend {gap:5px;}
+.stats-legend-item {max-width:100%;overflow-wrap:anywhere;}
+#results-photo-card {position:relative;}
+#results-title-info {position:absolute;top:5px;left:6px;z-index:17;width:28px;height:28px;border-radius:50%;border:0;background:#ffd1aa;color:#ff5900;font-size:19px;font-weight:800;cursor:pointer;}
+#results-photo-card #results-shelf-name {padding-left:40px;}
+#shelf-book-list-overlay {position:absolute;z-index:24;inset:calc(10px + env(safe-area-inset-top)) 6% calc(18px + env(safe-area-inset-bottom));border-radius:18px;background:rgba(75,3,3,.91);border:1px solid #ff5900;display:flex;flex-direction:column;padding:15px 12px;overflow:hidden;color:white;}
+#shelf-book-list-overlay.hidden {display:none !important;}
+.shelf-overlay-top {display:flex;align-items:center;gap:10px;margin:0 6px 12px;}
+#shelf-overlay-title {min-width:0;flex:1;overflow-wrap:anywhere;color:#ff5900;font-size:20px;line-height:1.2;}
+#shelf-overlay-close {border:0;background:transparent;color:#ff5900;font-size:31px;cursor:pointer;}
+.shelf-overlay-actions {display:flex;gap:8px;margin-bottom:12px;}
+.shelf-overlay-actions button {flex:1;min-width:0;padding:9px 7px;border:1px solid #ff5900;border-radius:12px;background:#220404;color:#ff5900;font-size:14px;cursor:pointer;}
+#shelf-overlay-list {overflow-y:auto;overscroll-behavior:contain;min-height:0;flex:1;}
+.shelf-overlay-row {display:flex;align-items:center;gap:10px;width:100%;min-height:60px;margin:0 0 8px;padding:8px;border:1px solid #888;border-radius:15px;background:#171313;color:white;text-align:left;cursor:pointer;}
+.shelf-overlay-cover {width:32px;height:44px;flex:none;object-fit:cover;}
+.shelf-overlay-copy {min-width:0;flex:1;overflow-wrap:anywhere;}
+.shelf-overlay-book-title {display:block;font-size:19px;line-height:1.15;}
+.shelf-overlay-book-author {display:block;margin-top:4px;font-size:13px;line-height:1.2;overflow-wrap:anywhere;}
+.shelf-overlay-empty {color:#fff;padding:12px;font-size:14px;line-height:1.4;}
+
+</style>
 </head>
 <body>
   <div id="app">
@@ -1948,7 +1977,7 @@
 
     <!-- ADD IMAGE -->
     <div id="screen-add" class="screen">
-      <div class="add-stage">
+      <div class="add-stage"><button id="camera-cancel" type="button" aria-label="Cancel adding bookshelf" title="Cancel">×</button>
         <div class="camera-card" aria-label="Scan your books">
           <input type="file" id="imageInput" accept="image/*" aria-label="Take a picture or choose a bookshelf photo" />
           <button type="button" id="native-image-picker" aria-label="Take a picture or choose a bookshelf photo"></button>
@@ -2018,6 +2047,11 @@
           <button id="search-close" type="button" aria-label="Return to results" title="Back to results">×</button>
         </div>
       </div>
+      <div id="shelf-book-list-overlay" class="hidden" aria-label="Books identified on this shelf">
+        <div class="shelf-overlay-top"><strong id="shelf-overlay-title">Bookshelf</strong><button type="button" id="shelf-overlay-close" aria-label="Close list">×</button></div>
+        <div class="shelf-overlay-actions"><button type="button" id="shelf-overlay-search">⌕ search shelf</button><button type="button" id="shelf-overlay-photo">View photo ↗</button></div>
+        <div id="shelf-overlay-list" aria-label="Books on this shelf"></div>
+      </div>
       <div id="scan-word-overlay"></div>
       <div id="scan-gradient"><div id="scan-band"></div></div>
       <div id="analysis-progress-ring" aria-hidden="true"></div>
@@ -2049,7 +2083,7 @@
 
       <div id="background-id-banner" aria-live="polite">
         <div id="background-id-headline">Your shelf is ready to explore.</div>
-        <div id="background-id-detail">We’re still identifying books in the background. Search anything we’ve found so far.</div>
+        <div id="background-id-detail">You can start searching now, with limited results. We’re analyzing your books to improve accuracy. Full analysis can take up to 15 minutes.</div>
         <div id="background-id-stage">preparing book identification…</div>
         <div id="background-id-ring" aria-hidden="true">
           <div id="background-id-ring-copy">
@@ -2075,7 +2109,7 @@
           <div id="shelf-details-section">
         <div id="results-info-status">
           <div id="results-info-status-title">Identifying your books…</div>
-          <div id="results-info-status-copy">Full book identification is still running. Tap the highlighted search term to inspect the OCR text already found.</div>
+          <div id="results-info-status-copy">You can start searching now, with limited results. We’re analyzing your books to improve accuracy. Full analysis can take up to 15 minutes.</div>
           <div id="results-info-status-stage">preparing…</div>
           <div id="results-info-progress-track"><div id="results-info-progress-bar"></div></div>
         </div>
@@ -2116,7 +2150,7 @@
 
       <div id="results-photo-stage">
         <div id="results-photo-card">
-          <div id="results-shelf-name" aria-label="Current bookshelf"></div>
+          <div id="results-shelf-name" aria-label="Current bookshelf"></div><button id="results-title-info" type="button" aria-label="Bookshelf information" title="Bookshelf information">i</button>
           <button id="results-fit-toggle" type="button" aria-label="Fit entire shelf image" title="Fit entire shelf image">
             <svg id="results-fit-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 10V4h6"/>
@@ -2221,7 +2255,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.46</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.47</button>
   </div>
 
 <script>
@@ -2418,8 +2452,8 @@
       if(genre) counts.set(genre,(counts.get(genre)||0)+1);
     }
     const ranked=[...counts.entries()].sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0]));
-    const leading=ranked.slice(0,5);
-    const colors=['#ff5900','#86390e','#d6ff00','#aaa05a','#50c56a'];
+    const leading=ranked.slice(0,10);
+    const colors=['#ff5900','#86390e','#d6ff00','#aaa05a','#50c56a','#ffffff','#b56b27','#8063a5','#2ea7a0','#c87b95'];
     const entries=leading.map(([name,count],i)=>({name,count,color:colors[i],filterable:true}));
     const total=books.length;
     const chartTotal=entries.reduce((sum,item)=>sum+item.count,0);
@@ -2433,10 +2467,11 @@
     const wrap=document.createElement('div');wrap.className='stats-donut-wrap';
     const ring=document.createElement('div');ring.className='stats-donut';
     ring.style.background=gradient?`conic-gradient(${gradient})`:'#666';
-    ring.setAttribute('role','group');ring.setAttribute('aria-label','Top five identified genres');
+    ring.setAttribute('role','group');ring.setAttribute('aria-label','Top ten identified genres');
     const center=document.createElement('div');center.className='stats-donut-center';
     const totalText=document.createElement('strong');totalText.textContent=total.toLocaleString();
-    const label=document.createElement('span');label.textContent='books identified';
+    const label=document.createElement('span');label.textContent='books identified (beta)';
+    const eyebrow=document.createElement('span');eyebrow.textContent='top 10 genres of';center.append(eyebrow);
     center.append(totalText,label);
     wrap.append(ring,center);statsPanel.append(wrap);
 
@@ -2467,7 +2502,7 @@
       const dy=event.clientY-(rect.top+rect.height/2);
       const distance=Math.hypot(dx,dy);
       // Ignore touches in the empty center or outside the donut.
-      if(distance < rect.width*.375 || distance > rect.width*.51) return;
+      if(distance < rect.width*.285 || distance > rect.width*.51) return;
       const angle=(Math.atan2(dx,-dy)*180/Math.PI+360)%360;
       const item=slices.find(slice=>angle>=slice.start && angle<slice.end);
       if(item && item.filterable) selectSlice(item);
@@ -2672,7 +2707,7 @@
         row.className = "shelf-list-row" + (shelf.id === activeShelfId ? " current" : "");
         row.textContent = shelf.name || "Untitled bookshelf";
         row.addEventListener("click", async () => {
-          if (shelf.id === activeShelfId) { showScreen(shelfListReturnScreen); return; }
+          if (shelf.id === activeShelfId) { showScreen(shelfListReturnScreen); if (shelfListReturnScreen === screenOCR) showShelfBookOverlay(); return; }
           message.textContent = `Opening ${shelf.name || "bookshelf"}…`;
           row.disabled = true;
           try {
@@ -3310,7 +3345,7 @@
     if (["queued","processing"].includes(shelf.status)) {
       screenOCR.classList.add("id-background-active");
       if (backgroundIDHeadline) backgroundIDHeadline.textContent = "Identifying your books…";
-      if (backgroundIDDetail) backgroundIDDetail.textContent = "OCR search is ready. Tap a search term to inspect the text found while full identification finishes.";
+      if (backgroundIDDetail) backgroundIDDetail.textContent = "You can start searching now, with limited results. We’re analyzing your books to improve accuracy. Full analysis can take up to 15 minutes.";
       if (backgroundIDStage) backgroundIDStage.textContent = shelf.status === "queued"
         ? `${Number(shelf.identified_count || bookCatalog.length)} matched · book identification queued…`
         : `${Number(shelf.identified_count || bookCatalog.length)} matched · identifying books… ${Math.round(backgroundProcessPercent)}% complete`;
@@ -3347,6 +3382,7 @@
       .map(serverBookToCatalogEntry)
       .filter(Boolean)
       .map(mergeRememberedCatalogEnrichment);
+    if (document.getElementById("shelf-book-list-overlay") && !document.getElementById("shelf-book-list-overlay").classList.contains("hidden")) renderShelfBookOverlay();
     aiSpineWords = (wordsRes.data || []).map(serverWordToAIWord).filter(Boolean);
     rebuildCatalogTerms();
     buildTermList();
@@ -3706,7 +3742,7 @@
       if (resultsInfoStatusTitle) resultsInfoStatusTitle.textContent = activeShelfRecord?.status === "error" ? "Identification paused" : "Identifying your books…";
       if (resultsInfoStatusCopy) resultsInfoStatusCopy.textContent = activeShelfRecord?.status === "error"
         ? "OCR search is still available. Tap the highlighted search term to inspect the text found."
-        : "Full book identification is still running. Tap the highlighted search term to inspect the OCR text already found.";
+        : "You can start searching now, with limited results. We’re analyzing your books to improve accuracy. Full analysis can take up to 15 minutes.";
       if (resultsInfoStatusStage) resultsInfoStatusStage.textContent = activeShelfRecord?.status === "error"
         ? (activeShelfRecord.last_error || "The worker will retry when Spineless opens again.")
         : `${Number(activeShelfRecord?.identified_count || bookCatalog.length || 0)} matched · ${Math.round(backgroundProcessPercent)}% complete`;
@@ -3737,7 +3773,7 @@
   function updateBackgroundIDMetric(finalCredibleCount = null) {
     if (!USE_BOOK_ID || !backgroundIDValue || !backgroundIDLabel) return;
     const matchedCount = finalCredibleCount == null ? bookCatalog.length : Number(finalCredibleCount || 0);
-    backgroundIDValue.textContent = String(Math.max(0, matchedCount));
+    backgroundIDValue.textContent = `${Math.round(Math.max(0, Math.min(100, backgroundProcessPercent)))}%`;
     backgroundIDLabel.textContent = "matched";
     setBackgroundRingFill(backgroundProcessPercent);
   }
@@ -3750,7 +3786,7 @@
     }
     screenOCR.classList.add("id-background-active");
     if (backgroundIDHeadline) backgroundIDHeadline.textContent = "Identifying your books…";
-    if (backgroundIDDetail) backgroundIDDetail.textContent = "OCR search is ready. Tap a search term to inspect the text found while full identification finishes.";
+    if (backgroundIDDetail) backgroundIDDetail.textContent = "You can start searching now, with limited results. We’re analyzing your books to improve accuracy. Full analysis can take up to 15 minutes.";
     if (backgroundIDStage) backgroundIDStage.textContent = "preparing book identification…";
     backgroundSpineCount = 0;
     backgroundProcessPercent = 0;
@@ -3799,6 +3835,7 @@
   ]);
 
   function showScreen(el) {
+    if(el !== screenOCR) document.getElementById("shelf-book-list-overlay")?.classList.add("hidden");
     [screenLogin, screenAdd, screenOCR, screenResults, screenShelves, screenCatalog].forEach((s) => s.classList.remove("active"));
     el.classList.add("active");
   }
@@ -7568,6 +7605,60 @@ const cropW = Math.max(1, x1 - x0);
   document.addEventListener("gestureend",    (e) => e.preventDefault(), { passive: false });
 
   window.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+
+
+  // v4.47: Non-destructive bookshelf list, using the existing catalog entries.
+  const shelfBookOverlay=document.getElementById('shelf-book-list-overlay');
+  const shelfBookOverlayList=document.getElementById('shelf-overlay-list');
+  let overlayRenderQueued=false;
+  function showShelfBookOverlay() {
+    if(!screenOCR.classList.contains('active') || !screenOCR.classList.contains('mode-search')) return;
+    shelfBookOverlay.classList.remove('hidden');
+    renderShelfBookOverlay();
+  }
+  function hideShelfBookOverlay(){shelfBookOverlay.classList.add('hidden');}
+  function renderShelfBookOverlay(){
+    if(shelfBookOverlay.classList.contains('hidden')) return;
+    document.getElementById('shelf-overlay-title').textContent=activeShelfRecord?.name || 'Bookshelf';
+    shelfBookOverlayList.replaceChildren();
+    const known=bookCatalog.filter(e=>e?.result?.title && e.match?.bbox).sort((a,b)=>String(a.result.title).localeCompare(String(b.result.title)));
+    if(!known.length){const p=document.createElement('p');p.className='shelf-overlay-empty';p.textContent='Books are still being identified. You can search the shelf while identification continues.';shelfBookOverlayList.append(p);return;}
+    const fragment=document.createDocumentFragment();
+    for(const entry of known){
+      const row=document.createElement('button');row.type='button';row.className='shelf-overlay-row';
+      const cover=entry.result.cover_url || (entry.result.cover_i ? `https://covers.openlibrary.org/b/id/${encodeURIComponent(entry.result.cover_i)}-S.jpg`:'');
+      if(cover){const img=document.createElement('img');img.className='shelf-overlay-cover';img.loading='lazy';img.src=cover;img.alt='';row.append(img);}
+      else {const space=document.createElement('span');space.className='shelf-overlay-cover';row.append(space);}
+      const copy=document.createElement('span');copy.className='shelf-overlay-copy';
+      const title=document.createElement('span');title.className='shelf-overlay-book-title';title.textContent=entry.result.title;
+      const author=document.createElement('span');author.className='shelf-overlay-book-author';author.textContent=entry.result.author || 'author not found';
+      copy.append(title,author);row.append(copy);
+      row.addEventListener('click',()=>{
+        hideShelfBookOverlay();
+        const normalized=normalizeToken(entry.result.title);
+        let idx=termList.findIndex(t=>t===normalized);
+        if(idx<0){termList.push(normalized);idx=termList.length-1;}
+        currentTermIndex=idx;currentTerm=termList[idx];currentMatches=[{...entry.match,catalogEntry:entry}];currentMatchIndex=0;
+        transitionShelfView(screenResults,setupResultsScreen);
+        requestAnimationFrame(()=>drawHighlightsForTerm(currentTerm,0));
+      });
+      fragment.append(row);
+    }
+    shelfBookOverlayList.append(fragment);
+  }
+  document.getElementById('shelf-overlay-search').addEventListener('click',()=>{hideShelfBookOverlay();document.getElementById('searchInput').focus();});
+  document.getElementById('shelf-overlay-photo').addEventListener('click',hideShelfBookOverlay);
+  document.getElementById('shelf-overlay-close').addEventListener('click',hideShelfBookOverlay);
+  document.getElementById('camera-cancel').addEventListener('click',(event)=>{event.preventDefault();event.stopPropagation();openShelfList();});
+  document.getElementById('results-title-info').addEventListener('click',()=>{scanInfoOpen=true;updateResultsInfoPanel();});
+  // Restore a shelf into its default book list instead of starting in search mode.
+  const originalRestoreShelfRecord=restoreShelfRecord;
+  restoreShelfRecord=async function(...args){
+    const restored=await originalRestoreShelfRecord(...args);
+    if(restored && screenOCR.classList.contains('active') && screenOCR.classList.contains('mode-search')) showShelfBookOverlay();
+    return restored;
+  };
+  // When coming back from a photo/search result, the bookshelf icon still works.
 
   loadWordLists();
 
