@@ -2035,6 +2035,14 @@
   justify-self:center; margin-right:0;
 }
 
+
+/* v4.56 — browser-only mobile safe-area offset for the bookshelf photo header.
+   The Capacitor iOS app already has its own safe-area rule above. */
+@media (max-width: 767px) {
+  html:not(.spineless-native-ios) #results-photo-stage {
+    top: max(54px, env(safe-area-inset-top, 0px));
+  }
+}
   </style>
 </head>
 <body>
@@ -2342,7 +2350,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.55</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.56</button>
   </div>
 
 <script>
