@@ -1998,6 +1998,12 @@
 .shelf-overlay-sort .catalog-sort-track {width:49px;height:23px;border:0;padding:2px;}
 .shelf-overlay-sort[data-sort="author"] .catalog-sort-thumb {transform:translateX(26px);}
 #shelf-overlay-list {padding:0 14px 14px;}
+/* v4.53: visible selected shelf filter and one-tap reset */
+#shelf-overlay-selection {display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 14px 12px;font-size:14px;line-height:1.3;color:#fff;}
+#shelf-overlay-selection-text {min-width:0;overflow-wrap:anywhere;}
+#shelf-overlay-selection-text strong {color:#fff;font-weight:700;}
+#shelf-overlay-selection-text .filter-type {color:#ff5900;}
+#shelf-overlay-selection-clear {border:0;background:transparent;color:#fff;text-decoration:underline;font:inherit;font-size:13px;padding:3px 0;cursor:pointer;flex:none;}
 .shelf-overlay-row {background:#161213;}
 @media(max-width:370px){.shelf-overlay-search-line{gap:7px;padding-left:8px;padding-right:8px}.shelf-overlay-total{min-width:54px}.shelf-overlay-total strong{font-size:27px}}
 
@@ -2099,6 +2105,7 @@
         <div class="shelf-overlay-filter-bar"><span>filter:</span><button id="shelf-overlay-genres" type="button">Genres</button><button id="shelf-overlay-authors" type="button">Authors</button></div>
         <div id="shelf-overlay-filter-panel" class="hidden"></div>
         <div class="shelf-overlay-sort" data-sort="title"><span>sort by:</span><button id="shelf-sort-title" type="button">title</button><button id="shelf-sort-switch" type="button" class="catalog-sort-track" aria-label="Toggle sort"><span class="catalog-sort-thumb"></span></button><button id="shelf-sort-author" type="button">author</button></div>
+        <div id="shelf-overlay-selection" class="hidden" aria-live="polite"><span id="shelf-overlay-selection-text"></span><button type="button" id="shelf-overlay-selection-clear">clear</button></div>
         <div id="shelf-overlay-list" aria-label="Books on this shelf"></div>
       </div>
       <div id="scan-word-overlay"></div>
@@ -2307,7 +2314,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.52</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.53</button>
   </div>
 
 <script>
@@ -7706,6 +7713,17 @@ const cropW = Math.max(1, x1 - x0);
     });
     const missingAuthor=row=>!row.author.trim()||/^(?:author\s+)?(?:not found|unknown|n\/?a|none|null|undefined)$/i.test(row.author.trim());
     const authorKey=row=>{const n=row.author.trim();if(n.includes(','))return n;const parts=n.split(/\s+/);return parts.length>1?`${parts.at(-1)}, ${parts.slice(0,-1).join(' ')}`:n;};
+    const selectionBar=document.getElementById('shelf-overlay-selection');
+    const selectionText=document.getElementById('shelf-overlay-selection-text');
+    selectionBar.classList.toggle('hidden',!shelfOverlayFilter);
+    if(shelfOverlayFilter){
+      selectionText.replaceChildren();
+      const count=document.createElement('strong');count.textContent=String(rows.length);
+      const type=document.createElement('span');type.className='filter-type';type.textContent=` book${rows.length===1?'':'s'} by `;
+      if(shelfOverlayFilter.type==='genres')type.textContent=` book${rows.length===1?'':'s'} in `;
+      const name=document.createTextNode(shelfOverlayFilter.value);
+      selectionText.append(count,type,name);
+    }
     rows.sort((a,b)=>Number(missingAuthor(a))-Number(missingAuthor(b))||collator.compare(shelfOverlaySort==='author'?authorKey(a):a.title,shelfOverlaySort==='author'?authorKey(b):b.title)||collator.compare(a.title,b.title));
     document.querySelector('.shelf-overlay-sort').dataset.sort=shelfOverlaySort;
     shelfBookOverlayList.replaceChildren();
@@ -7754,6 +7772,7 @@ const cropW = Math.max(1, x1 - x0);
   document.addEventListener('keydown',event=>{
     if(event.key==='Escape'&&shelfInfoFromList)returnToShelfListAfterInfo();
   });
+  document.getElementById('shelf-overlay-selection-clear').addEventListener('click',()=>{shelfOverlayFilter=null;shelfOverlayTab=null;shelfOverlayQuery.value='';shelfBookOverlayList.scrollTop=0;renderShelfBookOverlay();});
   document.getElementById('shelf-overlay-close').addEventListener('click',showShelfOverlayPhoto);
   for(const [id,type] of [['shelf-overlay-genres','genres'],['shelf-overlay-authors','authors']])document.getElementById(id).addEventListener('click',()=>{shelfOverlayTab=shelfOverlayTab===type?null:type;renderShelfBookOverlay();});
   for(const [id,type] of [['shelf-sort-title','title'],['shelf-sort-author','author']])document.getElementById(id).addEventListener('click',()=>{shelfOverlaySort=type;renderShelfBookOverlay();});
