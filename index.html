@@ -78,6 +78,7 @@
     }
     .screen.active { display: block; }
     .hidden { display: none !important; }
+    #camera-cancel[hidden], #admin-view-panel[hidden], #shelves-add[hidden], #utility-new-image[hidden], #btn-new-image[hidden], #shelf-delete[hidden], #shelf-rename[hidden], #shelf-new-scan[hidden] { display: none !important; }
 
     #screen-shelves { background: #810b0d; padding: 22px 12px 14px; }
     .shelves-card { height: 100%; max-width: 560px; margin: auto; overflow-y: auto; border-radius: 26px; background: #000; padding: 22px 26px 32px; }
@@ -2113,7 +2114,7 @@
     <!-- ADD IMAGE — redesigned, using existing scan/camera handlers -->
     <div id="screen-add" class="screen">
       <div class="add-stage">
-        <button id="camera-cancel" type="button" aria-label="Cancel adding bookshelf" title="Cancel">×</button>
+        <button id="camera-cancel" type="button" hidden aria-label="Cancel adding bookshelf" title="Cancel">×</button>
         <section class="camera-card" aria-label="Scan your books">
           <input type="file" id="imageInput" accept="image/*" aria-label="Take a picture or choose a bookshelf photo" />
           <button type="button" id="native-image-picker" aria-label="Take a picture or choose a bookshelf photo"></button>
@@ -2144,6 +2145,11 @@
         </div>
         <div id="shelves-list" aria-label="Your bookshelves"></div>
         <p id="shelves-message" role="status"></p>
+        <section id="admin-view-panel" hidden aria-label="Admin user support" style="margin:24px 0;padding:15px;border:1px solid #ff5900;border-radius:12px;">
+          <label for="admin-user-select" style="display:block;color:#ff5900;margin-bottom:9px">Admin: view a user's bookshelves</label>
+          <select id="admin-user-select" style="width:100%;padding:10px;border-radius:8px;background:#fff;color:#111"><option value="">My account</option></select>
+          <p id="admin-view-status" role="status" style="margin-top:10px;font-size:13px;color:#fff"></p>
+        </section>
         <button type="button" id="shelves-logout">Log out</button>
         <button id="shelves-back" type="button">← Back</button>
       </div>
@@ -2398,7 +2404,7 @@
       </div>
     </div>
 
-    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.58</button>
+    <button type="button" id="build-version" aria-label="Refresh Spineless" title="Refresh Spineless">v4.59</button>
   </div>
 
 <script>
@@ -2476,6 +2482,52 @@
     : null;
 
   let spinelessSession = null;
+  let adminAccess = false;
+  let viewedUserId = null;
+  let viewedUserEmail = "";
+  let adminUsersLoaded = false;
+  const viewedAccountId = () => viewedUserId || spinelessSession?.user?.id;
+  const isAdminViewing = () => Boolean(viewedUserId && viewedUserId !== spinelessSession?.user?.id);
+  function updateCameraCancel(hasShelves) {
+    document.getElementById("camera-cancel").hidden = !hasShelves;
+  }
+  async function openInitialScreen() {
+    const shelves = await fetchUserShelves();
+    nextShelfNumber = nextAvailableShelfNumber(shelves);
+    updateCameraCancel(shelves.length > 0);
+    if (shelves.length) await openShelfList();
+    else showScreen(screenAdd);
+  }
+  async function loadAdminUserPicker() {
+    const panel = document.getElementById('admin-view-panel');
+    if (!spinelessSession?.user || !sb) return;
+    if (!adminUsersLoaded) {
+      // Only the server can grant admin access; never trust an HTML flag or user metadata.
+      const { data, error } = await sb.rpc('spineless_admin_users');
+      if (error) { panel.hidden = true; return; }
+      adminAccess = true; adminUsersLoaded = true;
+      const select = document.getElementById('admin-user-select');
+      select.replaceChildren(new Option('My account', ''));
+      for (const user of (data || [])) {
+        if (user.id !== spinelessSession.user.id) select.add(new Option(user.email || user.id, user.id));
+      }
+    }
+    panel.hidden = !adminAccess;
+    document.getElementById('admin-user-select').value = viewedUserId || '';
+    document.getElementById('admin-view-status').textContent = isAdminViewing()
+      ? `Viewing ${viewedUserEmail} — read-only. Select My account to exit.` : '';
+  }
+  document.getElementById('admin-user-select').addEventListener('change', async (event) => {
+    if (!adminAccess) return;
+    const id = event.target.value;
+    viewedUserId = id || null;
+    viewedUserEmail = id ? event.target.selectedOptions[0].textContent : '';
+    activeShelfId = null; activeShelfRecord = null;
+    if (shelfRealtimeChannel) { await sb.removeChannel(shelfRealtimeChannel); shelfRealtimeChannel = null; }
+    if (shelfRefreshTimer) { clearTimeout(shelfRefreshTimer); shelfRefreshTimer = null; }
+    latestServerBookRows = []; bookCatalog = []; catalogAllBooks = [];
+    await openShelfList();
+  });
   let activeShelfId = null;
   let activeShelfRecord = null;
   let shelfRealtimeChannel = null;
@@ -2497,7 +2549,7 @@
     const session = await ensureSpinelessSession();
     if (!session?.user) throw new Error("Your shelves are unavailable right now.");
     const { data, error } = await sb.from("shelves").select("*")
-      .eq("user_id", session.user.id).order("created_at", { ascending: false });
+      .eq("user_id", viewedAccountId()).order("created_at", { ascending: false });
     if (error) throw error;
     // A scan can leave a row behind if its image upload failed. Such a row
     // cannot be opened and must not appear as a bookshelf in the UI.
@@ -2836,6 +2888,7 @@
     scanInfoOpen = false;
     updateResultsInfoPanel();
     showScreen(screenShelves);
+    void loadAdminUserPicker();
     const list = document.getElementById("shelves-list");
     const message = document.getElementById("shelves-message");
     list.replaceChildren();
@@ -2845,7 +2898,9 @@
       nextShelfNumber = nextAvailableShelfNumber(shelves);
       document.getElementById("shelves-count").textContent = String(shelves.length);
       document.getElementById("shelves-count-label").textContent = shelves.length === 1 ? "Bookshelf" : "Bookshelves";
-      message.textContent = shelves.length ? "" : "No bookshelves yet. Tap + to add one.";
+      updateCameraCancel(shelves.length > 0);
+      document.getElementById('shelves-add').hidden = isAdminViewing();
+      message.textContent = shelves.length ? "" : (isAdminViewing() ? "This user has no bookshelves." : "No bookshelves yet. Tap + to add one.");
       for (const shelf of shelves) {
         const row = document.createElement("button");
         row.type = "button";
@@ -2867,7 +2922,7 @@
         list.append(row);
       }
       // Start only after shelves are rendered; it never blocks navigation.
-      if (shelves.length) void startGenreBackfill();
+      if (shelves.length && !isAdminViewing()) void startGenreBackfill();
     } catch (error) {
       console.warn("Could not list bookshelves:", error);
       message.textContent = "Could not load bookshelves. Please try again.";
@@ -3122,7 +3177,7 @@
         spinelessSession = data.session;
         activeShelfId = null;
         activeShelfRecord = null;
-        await openShelfList();
+        await openInitialScreen();
       } else {
         message.textContent = "Check your email to confirm your account, then return here to log in.";
         setLoginMode("login");
@@ -3150,6 +3205,7 @@
     if (shelfRealtimeChannel) { sb.removeChannel(shelfRealtimeChannel); shelfRealtimeChannel = null; }
     await sb.auth.signOut();
     spinelessSession = null;
+    viewedUserId = null; adminAccess = false; adminUsersLoaded = false;
     activeShelfId = null;
     activeShelfRecord = null;
     document.getElementById("shelves-list").replaceChildren();
@@ -3163,7 +3219,7 @@
   }
 
   async function createPersistentShelf(dataUrl, width, height) {
-    if (!sb) return null;
+    if (!sb || isAdminViewing()) return null;
     const session = await ensureSpinelessSession();
     if (!session?.user) return null;
 
@@ -3219,6 +3275,7 @@
   }
 
   async function persistShelfSearchState() {
+    if (isAdminViewing()) return false;
     if (!sb || !activeShelfId || !spinelessSession?.user) return false;
     try {
       persistenceBusy = true;
@@ -3252,7 +3309,7 @@
   }
 
   async function kickShelfWorker() {
-    if (!USE_BOOK_ID || !activeShelfId) return;
+    if (isAdminViewing() || !USE_BOOK_ID || !activeShelfId) return;
     // The worker chooses queued jobs server-side. It returns immediately, then
     // continues in EdgeRuntime.waitUntil and self-chains between chunks.
     fetch(SHELF_WORKER_ENDPOINT, {
@@ -3585,8 +3642,11 @@
     if (!sb || !shelf?.id || !shelf.image_path) return false;
     activeShelfId = shelf.id;
     activeShelfRecord = shelf;
+    document.getElementById('shelf-delete').hidden = isAdminViewing();
+    document.getElementById('shelf-rename').hidden = isAdminViewing();
+    document.getElementById('shelf-new-scan').hidden = isAdminViewing();
     updateSearchPlaceholder();
-    subscribeToShelf(shelf.id);
+    if (!isAdminViewing()) subscribeToShelf(shelf.id);
 
     const { data: blob, error } = await sb.storage.from(SHELF_IMAGE_BUCKET).download(shelf.image_path);
     if (error) throw error;
@@ -3594,7 +3654,10 @@
 
     // If the browser disappeared during local OCR, resume that local part from
     // the stored source image. Once OCR is saved, all long book-ID work is server-side.
-    if (shelf.status === "reading" || !Array.isArray(shelf.ocr_words) || !shelf.ocr_words.length) {
+    if (isAdminViewing() && (!Array.isArray(shelf.ocr_words) || !shelf.ocr_words.length)) {
+      throw new Error("This bookshelf has not finished its initial scan.");
+    }
+    if (!isAdminViewing() && (shelf.status === "reading" || !Array.isArray(shelf.ocr_words) || !shelf.ocr_words.length)) {
       await startOCR(dataUrl, { reuseShelfId: shelf.id, skipUpload: true });
       return true;
     }
@@ -3619,7 +3682,7 @@
   async function bootstrapPersistentSession() {
     try {
       const session = await ensureSpinelessSession();
-      if (session?.user) await openShelfList();
+      if (session?.user) await openInitialScreen();
       else showLogin();
     } catch (err) {
       console.warn("Could not restore account:", err);
@@ -3983,6 +4046,13 @@
     if(el !== screenOCR) document.getElementById("shelf-book-list-overlay")?.classList.add("hidden");
     [screenLogin, screenAdd, screenOCR, screenResults, screenShelves, screenCatalog].forEach((s) => s.classList.remove("active"));
     el.classList.add("active");
+    if (isAdminViewing()) {
+      document.getElementById('utility-new-image').hidden = true;
+      document.getElementById('btn-new-image').hidden = true;
+    } else {
+      document.getElementById('utility-new-image').hidden = false;
+      document.getElementById('btn-new-image').hidden = false;
+    }
   }
 
   // Animate the same shelf and search control between the two screen layouts.
@@ -7434,6 +7504,7 @@
     if (searchCatalogStats) searchCatalogStats.classList.remove("visible");
     recognitionRequestSerial++;
     stopScanPulses();
+    if (isAdminViewing()) { openShelfList(); return; }
     showScreen(screenAdd);
   });
 
@@ -7607,7 +7678,7 @@ const cropW = Math.max(1, x1 - x0);
   document.getElementById("catalog-detail-hint").addEventListener("click", locateCatalogBook);
   document.getElementById("catalog-detail-body").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); locateCatalogBook(); } });
   document.getElementById("catalog-detail").addEventListener("click", e=>{if(e.target.id==="catalog-detail") closeCatalogDetail();});
-  document.getElementById("shelves-add").addEventListener("click", () => btnNewImage.click());
+  document.getElementById("shelves-add").addEventListener("click", () => { if (!isAdminViewing()) btnNewImage.click(); });
   document.getElementById("shelves-back").addEventListener("click", () => showScreen(shelfListReturnScreen));
 
   const shelfHeading = document.getElementById("shelf-heading");
@@ -7615,7 +7686,8 @@ const cropW = Math.max(1, x1 - x0);
   const shelfRename = document.getElementById("shelf-rename");
   function stopShelfRename() { shelfHeading.classList.remove("editing"); shelfRename.disabled = false; }
   async function saveShelfName() {
-    if (!shelfHeading.classList.contains("editing")) return;
+    if (isAdminViewing()) return;
+    if (isAdminViewing() || !shelfHeading.classList.contains("editing")) return;
     const name = shelfNameInput.value.trim();
     if (!name) { shelfNameInput.focus(); return; }
     if (!activeShelfId || !sb) {
@@ -7909,7 +7981,7 @@ const cropW = Math.max(1, x1 - x0);
   for(const [id,type] of [['shelf-overlay-genres','genres'],['shelf-overlay-authors','authors']])document.getElementById(id).addEventListener('click',()=>{shelfOverlayTab=shelfOverlayTab===type?null:type;renderShelfBookOverlay();});
   for(const [id,type] of [['shelf-sort-title','title'],['shelf-sort-author','author']])document.getElementById(id).addEventListener('click',()=>{shelfOverlaySort=type;renderShelfBookOverlay();});
   document.getElementById('shelf-sort-switch').addEventListener('click',()=>{shelfOverlaySort=shelfOverlaySort==='title'?'author':'title';renderShelfBookOverlay();});
-  document.getElementById('camera-cancel').addEventListener('click',(event)=>{event.preventDefault();event.stopPropagation();openShelfList();});
+  document.getElementById('camera-cancel').addEventListener('click',(event)=>{event.preventDefault();event.stopPropagation();if (!event.currentTarget.hidden) openShelfList();});
   document.getElementById('results-title-info').addEventListener('click',()=>{scanInfoOpen=true;updateResultsInfoPanel();});
   document.getElementById('results-open-list').addEventListener('click',()=>{scanInfoOpen=false;updateResultsInfoPanel();screenOCR.classList.add('mode-search');showScreen(screenOCR);showShelfBookOverlay({clearSearch:true});});
   // Restore a shelf into its default book list instead of starting in search mode.
