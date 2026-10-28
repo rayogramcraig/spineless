@@ -1,13 +1,63 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>spineless | Beta requests</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"><style>
 :root{font-family:Chivo,Arial,sans-serif;background:#790b0b;color:#f4edd5}*{box-sizing:border-box}body{margin:0;min-height:100svh;padding:clamp(12px,3vw,26px)}main{background:#050505;border-radius:30px;min-height:calc(100svh - 52px);padding:clamp(20px,5vw,60px)}.wrap{max-width:1100px;margin:auto}h1{font-size:clamp(32px,5.5vw,58px);letter-spacing:-.055em;line-height:1.05;margin:0 0 18px;color:white}h1 span,.brand{color:#ff5b00}p{line-height:1.5}.hint{opacity:.82}button,input{font:inherit}button{cursor:pointer;border:0;border-radius:28px;padding:12px 20px;background:#ff5b00;color:white;font-weight:800}button.secondary{background:#292929}button:disabled{opacity:.55;cursor:wait}input{width:100%;font-size:18px;padding:14px;background:#f4ecd0;border:2px solid transparent;border-radius:3px;color:#111}label{display:block;margin:18px 0 7px}.panel{border:2px dotted #ff5b00;border-radius:26px;padding:clamp(22px,4vw,40px);margin-top:36px}#auth{max-width:550px}.toolbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:20px 0}.toolbar .actions{display:flex;gap:10px;flex-wrap:wrap}.count{font-size:22px;font-weight:800}.tablewrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:640px}th,td{text-align:left;padding:16px 12px;border-bottom:1px solid #393939}th{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#c4bbaa}td{font-size:15px}td small{opacity:.68}td a{color:#f5d9a5}select{background:#222;color:white;border:1px solid #777;border-radius:6px;padding:9px;font:inherit}#message{min-height:24px;color:#ffb37e}[hidden]{display:none!important}@media(max-width:550px){main{padding:22px 16px}.panel{padding:20px 14px}.toolbar{align-items:flex-start}.toolbar .actions{width:100%}}
-</style></head><body><main><div class="wrap"><h1><span>spineless</span> beta requests</h1><p class="hint">Private invitation list</p><section id="auth" class="panel"><h2>Administrator sign in</h2><p>Use your existing spineless account.</p><form id="login"><label for="email">Email</label><input id="email" type="email" autocomplete="email" required><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required><p><button type="submit" id="loginButton">Sign in</button></p></form></section><section id="dashboard" hidden><div class="toolbar"><div class="count" id="count">Requests</div><div class="actions"><button class="secondary" id="refresh">Refresh</button><button class="secondary" id="logout">Sign out</button></div></div><div class="tablewrap"><table><thead><tr><th>Name</th><th>Email</th><th>Requested</th><th>Status</th></tr></thead><tbody id="requests"></tbody></table></div><p class="hint">Change a status to “Invited” after you manually send a TestFlight invitation.</p></section><p id="message" role="status" aria-live="polite"></p></div></main><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script>
+</style></head><body><main><div class="wrap"><h1><span>spineless</span> beta requests</h1><p class="hint">Private invitation list</p><section id="auth" class="panel"><h2>Administrator sign in</h2><p>Use your existing spineless account.</p><form id="login"><label for="email">Email</label><input id="email" type="email" autocomplete="email" required><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required><p><button type="submit" id="loginButton">Sign in</button></p></form></section><section id="dashboard" hidden><div class="toolbar"><div class="count" id="count">Requests</div><div class="actions"><button class="secondary" id="refresh">Refresh</button><button class="secondary" id="logout">Sign out</button></div></div><div class="tablewrap"><table><thead><tr><th>Name</th><th>Email</th><th>Requested</th><th>Status</th></tr></thead><tbody id="requests"></tbody></table></div><p class="hint">Change a status to “Invited” after you manually send a TestFlight invitation.</p></section><p id="message" role="status" aria-live="polite"></p></div></main><script type="module">
 const URL='https://npjiuowtneivxbgskobd.supabase.co';
 const KEY='sb_publishable_5b4sobnsVujOLdjKvh3xtg_OZBIfFy_';
-const client=window.supabase.createClient(URL,KEY,{auth:{persistSession:true,autoRefreshToken:true}});
 const $=id=>document.getElementById(id);
-function say(t){$('message').textContent=t||''}
+const button=$('loginButton');
+let client=null;
+function say(message){$('message').textContent=message||''}
 function showAdmin(yes){$('auth').hidden=yes;$('dashboard').hidden=!yes}
 function dateText(v){return v?new Date(v).toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):''}
-async function load(){say('Loading requests…');const {data,error}=await client.from('spineless_beta_requests').select('id,name,email,status,created_at,invited_at').order('created_at',{ascending:false});if(error){showAdmin(false);say('Access denied or unable to load requests. Check your administrator permissions.');return false}showAdmin(true);$('requests').replaceChildren();$('count').textContent=`${data.length} request${data.length===1?'':'s'}`;for(const item of data){const tr=document.createElement('tr');for(const val of [item.name,item.email,dateText(item.created_at)]){const td=document.createElement('td');td.textContent=val;tr.append(td)}const td= document.createElement('td');const select=document.createElement('select');for(const v of ['pending','invited','declined']){const option=document.createElement('option');option.value=v;option.textContent=v[0].toUpperCase()+v.slice(1);option.selected=v===item.status;select.append(option)}select.setAttribute('aria-label',`Status for ${item.name}`);select.addEventListener('change',async()=>{const next=select.value;select.disabled=true;const {error}=await client.from('spineless_beta_requests').update({status:next,invited_at:next==='invited'?(item.invited_at||new Date().toISOString()):null}).eq('id',item.id);select.disabled=false;if(error){say('Could not save status: '+error.message);select.value=item.status}else{item.status=next;item.invited_at=next==='invited'?(item.invited_at||new Date().toISOString()):null;say('Saved.')}});td.append(select);tr.append(td);$('requests').append(tr)}if(!data.length){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=4;td.textContent='No requests yet.';tr.append(td);$('requests').append(tr)}say('');return true}
-$('login').addEventListener('submit',async e=>{e.preventDefault();$('loginButton').disabled=true;say('Signing in…');const {error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});$('loginButton').disabled=false;if(error){say(error.message);return}await load()});$('refresh').onclick=load;$('logout').onclick=async()=>{await client.auth.signOut();showAdmin(false);$('password').value='';say('Signed out.')};(async()=>{const {data}=await client.auth.getSession();if(data.session)await load()})();
+async function load(){
+  say('Loading requests…');
+  const {data,error}=await client.from('spineless_beta_requests').select('id,name,email,status,created_at,invited_at').order('created_at',{ascending:false});
+  if(error){showAdmin(false);say('Unable to load requests: '+error.message);return false}
+  showAdmin(true);$('requests').replaceChildren();$('count').textContent=`${data.length} request${data.length===1?'':'s'}`;
+  for(const item of data){
+    const tr=document.createElement('tr');
+    for(const val of [item.name,item.email,dateText(item.created_at)]){const td=document.createElement('td');td.textContent=val;tr.append(td)}
+    const td=document.createElement('td');const select=document.createElement('select');
+    for(const v of ['pending','invited','declined']){const option=document.createElement('option');option.value=v;option.textContent=v[0].toUpperCase()+v.slice(1);option.selected=v===item.status;select.append(option)}
+    select.setAttribute('aria-label',`Status for ${item.name}`);
+    select.addEventListener('change',async()=>{
+      const next=select.value;select.disabled=true;
+      const invited_at=next==='invited'?(item.invited_at||new Date().toISOString()):null;
+      const {error}=await client.from('spineless_beta_requests').update({status:next,invited_at}).eq('id',item.id);
+      select.disabled=false;
+      if(error){say('Could not save status: '+error.message);select.value=item.status}else{item.status=next;item.invited_at=invited_at;say('Saved.')}
+    });
+    td.append(select);tr.append(td);$('requests').append(tr)
+  }
+  if(!data.length){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=4;td.textContent='No requests yet.';tr.append(td);$('requests').append(tr)}
+  say('');return true;
+}
+// Attach the handler before loading any external library, so the form can never silently reload.
+$('login').addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(!client){say('Still connecting to Supabase. Please try again.');return}
+  button.disabled=true;say('Signing in…');
+  try {
+    const {error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});
+    if(error){say('Sign-in failed: '+error.message);return}
+    await load();
+  } catch(error){say('Connection error: '+(error?.message||String(error)))}
+  finally{button.disabled=false}
+});
+$('refresh').onclick=()=>load().catch(err=>say('Connection error: '+err.message));
+$('logout').onclick=async()=>{await client.auth.signOut();showAdmin(false);$('password').value='';say('Signed out.')};
+button.disabled=true;say('Connecting to Supabase…');
+try {
+  let library;
+  try {library=await import('https://esm.sh/@supabase/supabase-js@2?bundle')}
+  catch(first){library=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm')}
+  client=library.createClient(URL,KEY,{auth:{persistSession:true,autoRefreshToken:true}});
+  button.disabled=false;say('');
+  const {data,error}=await client.auth.getSession();
+  if(error) say('Session check: '+error.message);
+  else if(data.session) await load();
+} catch(error){
+  button.disabled=true;
+  say('Could not load Supabase. Please reload the page or check whether a browser extension is blocking the connection. Details: '+(error?.message||String(error)));
+}
 </script></body></html>
