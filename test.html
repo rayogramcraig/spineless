@@ -2846,7 +2846,11 @@
         }
       };
       await Promise.all([worker(), worker()]);
-      if (changed) scheduleGenreStatsRefresh();
+      if (changed) {
+        scheduleGenreStatsRefresh();
+        // Refresh the active shelf's genre filter from the saved records.
+        if (activeShelfId && !isAdminViewing()) scheduleShelfRefresh(700);
+      }
       console.info(`Genre backfill: ${changed} updated / ${queue.length} checked.`);
     } catch(err) {
       console.warn('Genre backfill could not start:', err);
@@ -3534,6 +3538,11 @@
     backgroundProcessPercent = Math.max(0, Math.min(100, Number(shelf.processing_progress || 0)));
 
     if (shelf.status === "complete") {
+      // Book identification and genre classification are independent phases.
+      // Once the worker has saved its final book list, fill missing genres for
+      // the signed-in owner without requiring a visit to the Bookshelves view.
+      // Never write while an administrator is viewing another account.
+      if (!isAdminViewing()) void startGenreBackfill();
       screenOCR.classList.remove("id-background-active");
       if (backgroundIDHeadline) backgroundIDHeadline.textContent = "Your shelf is ready.";
       if (backgroundIDDetail) backgroundIDDetail.textContent = "Book identification is complete. Search titles, authors, or anything we read on the shelf.";
